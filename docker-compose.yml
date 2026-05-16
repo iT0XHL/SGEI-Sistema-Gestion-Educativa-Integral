@@ -1,0 +1,103 @@
+services:
+  # ============================================================
+  # PostgreSQL 15 — Base de datos con DDL auto-cargado
+  # ============================================================
+  db:
+    image: postgres:15-alpine
+    container_name: sgei-db
+    environment:
+      POSTGRES_USER: sgei
+      POSTGRES_PASSWORD: sgei
+      POSTGRES_DB: sgei_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - sgei-db-data:/var/lib/postgresql/data
+      - "./SQL/00-setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
+      - "./SQL/sgei_ddl_v2.1_auditado (1).sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgei -d sgei_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - sgei-network
+
+  # ============================================================
+  # Backend — Next.js 14 Route Handlers (puerto 3001)
+  # ============================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ./Dockerfile
+    container_name: sgei-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Base de datos
+      DATABASE_URL: "postgresql://sgei:sgei@db:5432/sgei_db"
+      DIRECT_URL: "postgresql://sgei:sgei@db:5432/sgei_db"
+
+      # Node
+      NODE_ENV: "development"
+
+      # JWT
+      JWT_SECRET: "dev-secret-cambiar-en-produccion-minimo-64-caracteres-1234567890abcdef"
+      JWT_EXPIRES_IN: "8h"
+      JWT_COOKIE_NAME: "sgei_token"
+
+      # Seguridad
+      BCRYPT_SALT_ROUNDS: "12"
+
+      # CORS
+      FRONTEND_ORIGIN: "http://localhost:3000"
+
+      # Almacenamiento
+      MAX_FILE_SIZE_MB: "5"
+
+      # Hot reload (Windows)
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - sgei-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ============================================================
+  # Frontend — Vite React (puerto 3000)
+  # ============================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ./Dockerfile
+    container_name: sgei-frontend
+    depends_on:
+      - backend
+    environment:
+      # Hot reload con polling (Windows)
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - sgei-network
+
+volumes:
+  sgei-db-data:
+
+networks:
+  sgei-network:
+    driver: bridge

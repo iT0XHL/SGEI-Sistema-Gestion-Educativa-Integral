@@ -1,0 +1,721 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["academic_schema", "audit_schema", "auth_schema", "financial_schema"]
+}
+
+model Credencial {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_login     String         @unique @db.VarChar(50)
+  password_hash     String         @db.VarChar(255)
+  activo            Boolean        @default(true)
+  intentos_fallidos Int            @default(0) @db.SmallInt
+  bloqueado_hasta   DateTime?      @db.Timestamptz(6)
+  ultimo_acceso     DateTime?      @db.Timestamptz(6)
+  created_at        DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime       @default(now()) @db.Timestamptz(6)
+  perfil            PerfilUsuario?
+
+  @@index([usuario_login], map: "idx_credencial_login")
+  @@map("credencial")
+  @@schema("auth_schema")
+}
+
+model PerfilUsuario {
+  id                      String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  credencial_id           String                 @unique @db.Uuid
+  rol                     RolUsuario
+  entidad_tipo            String                 @db.VarChar(30)
+  entidad_id              String                 @db.Uuid
+  created_at              DateTime               @default(now()) @db.Timestamptz(6)
+  alumno                  Alumno?
+  asistencias_registradas AsistenciaDocente[]
+  docente                 Docente?
+  situaciones_registradas SituacionFinalAlumno[]
+  historial_notas         HistorialNota[]
+  sesiones_auditoria      SesionAuditoria[]
+  credencial              Credencial             @relation(fields: [credencial_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  boletas_revisadas       BoletaPago[]
+  notificaciones          Notificacion[]
+  pagos_generados         Pago[]
+
+  @@index([entidad_tipo, entidad_id], map: "idx_perfil_entidad")
+  @@index([rol], map: "idx_perfil_rol")
+  @@map("perfil_usuario")
+  @@schema("auth_schema")
+}
+
+model SesionAuditoria {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id       String              @db.Uuid
+  tipo_accion      TipoAccionAuditoria
+  modulo           String              @db.VarChar(60)
+  entidad_afectada String              @db.VarChar(80)
+  entidad_id       String?             @db.Uuid
+  old_value        Json?
+  new_value        Json?
+  ip_origen        String?             @db.Inet
+  user_agent       String?
+  fecha_hora       DateTime            @default(now()) @db.Timestamptz(6)
+  usuario          PerfilUsuario       @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
+
+  @@index([entidad_afectada, entidad_id], map: "idx_auditoria_entidad")
+  @@index([usuario_id, fecha_hora(sort: Desc)], map: "idx_auditoria_usuario")
+  @@map("sesion_auditoria")
+  @@schema("audit_schema")
+}
+
+model InstitucionEducativa {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre              String   @db.VarChar(200)
+  codigo_modular      String   @unique @db.VarChar(20)
+  codigo_ugel         String   @db.VarChar(10)
+  nombre_ugel         String   @db.VarChar(150)
+  resolucion_creacion String?  @db.VarChar(100)
+  modalidad           String   @default("Educación Básica Regular") @db.VarChar(80)
+  gestion             String   @db.VarChar(20)
+  departamento        String   @db.VarChar(80)
+  provincia           String   @db.VarChar(80)
+  distrito            String   @db.VarChar(80)
+  centro_poblado      String?  @db.VarChar(100)
+  direccion           String?  @db.VarChar(255)
+  telefono            String?  @db.VarChar(15)
+  email_institucional String?  @db.VarChar(150)
+  activo              Boolean  @default(true)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("institucion_educativa")
+  @@schema("academic_schema")
+}
+
+model Nivel {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre      String  @unique @db.VarChar(30)
+  descripcion String?
+  cursos      Curso[]
+  grados      Grado[]
+
+  @@map("nivel")
+  @@schema("academic_schema")
+}
+
+model Grado {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id  String    @db.Uuid
+  nombre    String    @db.VarChar(30)
+  orden     Int       @db.SmallInt
+  nivel     Nivel     @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
+  secciones Seccion[]
+
+  @@unique([nivel_id, orden])
+  @@map("grado")
+  @@schema("academic_schema")
+}
+
+model PeriodoAcademico {
+  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  anio         Int                    @unique @map("año") @db.SmallInt
+  nombre       String                 @db.VarChar(60)
+  fecha_inicio DateTime               @db.Date
+  fecha_fin    DateTime               @db.Date
+  activo       Boolean                @default(false)
+  created_at   DateTime               @default(now()) @db.Timestamptz(6)
+  alumnos      Alumno[]
+  asignaciones AsignacionDocente[]
+  bimestres    Bimestre[]
+  escalas      ConfigEscalaLiteral[]
+  secciones    Seccion[]
+  situaciones  SituacionFinalAlumno[]
+  pagos        Pago[]
+
+  @@map("periodo_academico")
+  @@schema("academic_schema")
+}
+
+model Docente {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  perfil_usuario_id   String              @unique @db.Uuid
+  dni                 String              @unique @db.Char(8)
+  nombres             String              @db.VarChar(100)
+  apellido_paterno    String              @db.VarChar(60)
+  apellido_materno    String              @db.VarChar(60)
+  fecha_nacimiento    DateTime?           @db.Date
+  sexo                String?             @db.Char(1)
+  especialidad        String              @db.VarChar(150)
+  titulo_profesional  String?             @db.VarChar(200)
+  telefono            String              @db.VarChar(15)
+  email_institucional String?             @unique @db.VarChar(150)
+  foto_url            String?
+  activo              Boolean             @default(true)
+  fecha_ingreso       DateTime?           @db.Date
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  actividades         Actividad[]
+  asignaciones        AsignacionDocente[]
+  asistencias_alumnos Asistencia[]
+  asistencias         AsistenciaDocente[]
+  perfil              PerfilUsuario       @relation(fields: [perfil_usuario_id], references: [id], onUpdate: NoAction)
+  materiales          Material[]
+  notas               Nota[]
+  secciones_tutoradas Seccion[]
+
+  @@map("docente")
+  @@schema("academic_schema")
+}
+
+model Seccion {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grado_id         String              @db.Uuid
+  periodo_id       String              @db.Uuid
+  nombre           String              @db.VarChar(5)
+  turno            String              @default("Mañana") @db.VarChar(20)
+  cupo_maximo      Int                 @db.SmallInt
+  docente_tutor_id String?             @db.Uuid
+  aula             String?             @db.VarChar(20)
+  actividades      Actividad[]
+  alumnos          Alumno[]
+  asignaciones     AsignacionDocente[]
+  asistencias      Asistencia[]
+  materiales       Material[]
+  docente_tutor    Docente?            @relation(fields: [docente_tutor_id], references: [id], onUpdate: NoAction)
+  grado            Grado               @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
+  periodo          PeriodoAcademico    @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+
+  @@unique([grado_id, periodo_id, nombre])
+  @@map("seccion")
+  @@schema("academic_schema")
+}
+
+model Alumno {
+  id                  String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  perfil_usuario_id   String                 @unique @db.Uuid
+  seccion_id          String                 @db.Uuid
+  periodo_id          String                 @db.Uuid
+  dni                 String                 @unique @db.Char(8)
+  codigo_siagie       String?                @unique @db.VarChar(20)
+  nombres             String                 @db.VarChar(100)
+  apellido_paterno    String                 @db.VarChar(60)
+  apellido_materno    String                 @db.VarChar(60)
+  fecha_nacimiento    DateTime               @db.Date
+  sexo                String                 @db.Char(1)
+  foto_url            String?
+  direccion           String?                @db.VarChar(255)
+  distrito            String?                @db.VarChar(100)
+  telefono_emergencia String?                @db.VarChar(15)
+  grupo_sanguineo     String?                @db.VarChar(5)
+  condicion_especial  String?
+  bloqueo_manual      Boolean                @default(false)
+  activo              Boolean                @default(true)
+  created_at          DateTime               @default(now()) @db.Timestamptz(6)
+  perfil              PerfilUsuario          @relation(fields: [perfil_usuario_id], references: [id], onUpdate: NoAction)
+  periodo             PeriodoAcademico       @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  seccion             Seccion                @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
+  asistencias         Asistencia[]
+  entregas            EntregaActividad[]
+  notas               Nota[]
+  situaciones         SituacionFinalAlumno[]
+  pagos               Pago[]
+
+  @@unique([dni, periodo_id])
+  @@index([codigo_siagie], map: "idx_alumno_codigo_siagie")
+  @@index([dni], map: "idx_alumno_dni")
+  @@index([seccion_id, periodo_id], map: "idx_alumno_seccion_periodo")
+  @@map("alumno")
+  @@schema("academic_schema")
+}
+
+model AsistenciaDocente {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  docente_id     String           @db.Uuid
+  registrado_por String           @db.Uuid
+  fecha          DateTime         @db.Date
+  estado         EstadoAsistencia
+  justificacion  String?
+  hora_registro  DateTime         @default(now()) @db.Timestamptz(6)
+  docente        Docente          @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  registrador    PerfilUsuario    @relation(fields: [registrado_por], references: [id], onUpdate: NoAction)
+
+  @@unique([docente_id, fecha])
+  @@index([docente_id, fecha], map: "idx_asistencia_docente")
+  @@map("asistencia_docente")
+  @@schema("academic_schema")
+}
+
+model Bimestre {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  periodo_id   String           @db.Uuid
+  numero       Int              @db.SmallInt
+  nombre       String           @db.VarChar(40)
+  fecha_inicio DateTime         @db.Date
+  fecha_fin    DateTime         @db.Date
+  cerrado      Boolean          @default(false)
+  periodo      PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  notas        Nota[]
+
+  @@unique([periodo_id, numero])
+  @@index([periodo_id, numero], map: "idx_bimestre_periodo")
+  @@map("bimestre")
+  @@schema("academic_schema")
+}
+
+model Curso {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id        String              @db.Uuid
+  nombre          String              @db.VarChar(120)
+  codigo_cneb     String?             @db.VarChar(20)
+  descripcion     String?
+  horas_semanales Int?                @db.SmallInt
+  actividades     Actividad[]
+  asignaciones    AsignacionDocente[]
+  competencias    Competencia[]
+  nivel           Nivel               @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
+  materiales      Material[]
+
+  @@unique([nivel_id, nombre])
+  @@map("curso")
+  @@schema("academic_schema")
+}
+
+model Competencia {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  curso_id    String  @db.Uuid
+  nombre      String  @db.VarChar(200)
+  descripcion String?
+  tipo        String  @db.VarChar(20)
+  orden       Int?    @db.SmallInt
+  curso       Curso   @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  notas       Nota[]
+
+  @@map("competencia")
+  @@schema("academic_schema")
+}
+
+model AsignacionDocente {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  docente_id String           @db.Uuid
+  curso_id   String           @db.Uuid
+  seccion_id String           @db.Uuid
+  periodo_id String           @db.Uuid
+  activo     Boolean          @default(true)
+  created_at DateTime         @default(now()) @db.Timestamptz(6)
+  curso      Curso            @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  docente    Docente          @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  periodo    PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  seccion    Seccion          @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
+  horarios   Horario[]
+
+  @@unique([docente_id, seccion_id, curso_id, periodo_id])
+  @@map("asignacion_docente")
+  @@schema("academic_schema")
+}
+
+model Horario {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asignacion_id String            @db.Uuid
+  dia_semana    Int               @db.SmallInt
+  hora_inicio   DateTime          @db.Time(6)
+  hora_fin      DateTime          @db.Time(6)
+  aula          String?           @db.VarChar(20)
+  asignacion    AsignacionDocente @relation(fields: [asignacion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([asignacion_id, dia_semana, hora_inicio], map: "idx_horario_asignacion")
+  @@map("horario")
+  @@schema("academic_schema")
+}
+
+model ConfigEscalaLiteral {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  periodo_id     String           @db.Uuid
+  escala         NotaLiteral
+  rango_inferior Decimal          @db.Decimal(4, 2)
+  rango_superior Decimal          @db.Decimal(4, 2)
+  periodo        PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+
+  @@unique([periodo_id, escala])
+  @@map("config_escala_literal")
+  @@schema("academic_schema")
+}
+
+model Nota {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alumno_id       String          @db.Uuid
+  competencia_id  String          @db.Uuid
+  bimestre_id     String          @db.Uuid
+  docente_id      String          @db.Uuid
+  nota_vigesimal  Decimal         @db.Decimal(4, 2)
+  nota_literal    NotaLiteral
+  tipo_evaluacion TipoEvaluacion  @default(Final)
+  cerrada         Boolean         @default(false)
+  observacion     String?
+  fecha_registro  DateTime        @default(now()) @db.Timestamptz(6)
+  alumno          Alumno          @relation(fields: [alumno_id], references: [id], onUpdate: NoAction)
+  bimestre        Bimestre        @relation(fields: [bimestre_id], references: [id], onUpdate: NoAction)
+  competencia     Competencia     @relation(fields: [competencia_id], references: [id], onUpdate: NoAction)
+  docente         Docente         @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  historial       HistorialNota[]
+
+  @@unique([alumno_id, competencia_id, bimestre_id])
+  @@index([alumno_id, bimestre_id, competencia_id], map: "idx_nota_alumno_bimestre")
+  @@index([docente_id], map: "idx_nota_docente")
+  @@index([tipo_evaluacion], map: "idx_nota_tipo_evaluacion")
+  @@map("nota")
+  @@schema("academic_schema")
+}
+
+model SituacionFinalAlumno {
+  id                        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alumno_id                 String           @db.Uuid
+  periodo_id                String           @db.Uuid
+  situacion_final           SituacionFinal
+  numero_areas_desaprobadas Int              @default(0) @db.SmallInt
+  comportamiento            String?          @db.VarChar(10)
+  motivo_retiro             String?
+  observaciones             String?
+  registrado_por            String           @db.Uuid
+  fecha_registro            DateTime         @default(now()) @db.Timestamptz(6)
+  alumno                    Alumno           @relation(fields: [alumno_id], references: [id], onUpdate: NoAction)
+  periodo                   PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  registrador               PerfilUsuario    @relation(fields: [registrado_por], references: [id], onUpdate: NoAction)
+
+  @@unique([alumno_id, periodo_id])
+  @@index([alumno_id, periodo_id], map: "idx_situacion_final")
+  @@map("situacion_final_alumno")
+  @@schema("academic_schema")
+}
+
+model Asistencia {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alumno_id      String           @db.Uuid
+  seccion_id     String           @db.Uuid
+  fecha          DateTime         @db.Date
+  estado         EstadoAsistencia
+  justificacion  String?
+  registrado_por String           @db.Uuid
+  hora_registro  DateTime         @default(now()) @db.Timestamptz(6)
+  alumno         Alumno           @relation(fields: [alumno_id], references: [id], onUpdate: NoAction)
+  registrador    Docente          @relation(fields: [registrado_por], references: [id], onUpdate: NoAction)
+  seccion        Seccion          @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
+
+  @@unique([alumno_id, seccion_id, fecha])
+  @@index([alumno_id, fecha], map: "idx_asistencia_alumno")
+  @@index([seccion_id, fecha], map: "idx_asistencia_fecha")
+  @@map("asistencia")
+  @@schema("academic_schema")
+}
+
+model Material {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  docente_id        String       @db.Uuid
+  curso_id          String       @db.Uuid
+  seccion_id        String       @db.Uuid
+  titulo            String       @db.VarChar(200)
+  descripcion       String?
+  tipo              TipoMaterial
+  url               String
+  fecha_publicacion DateTime     @default(now()) @db.Timestamptz(6)
+  visible           Boolean      @default(true)
+  curso             Curso        @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  docente           Docente      @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  seccion           Seccion      @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
+
+  @@map("material")
+  @@schema("academic_schema")
+}
+
+model Actividad {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  docente_id       String             @db.Uuid
+  curso_id         String             @db.Uuid
+  seccion_id       String             @db.Uuid
+  titulo           String             @db.VarChar(200)
+  descripcion      String?
+  tipo             TipoActividad?
+  fecha_asignacion DateTime           @default(now()) @db.Timestamptz(6)
+  fecha_limite     DateTime           @db.Timestamptz(6)
+  puntaje_maximo   Decimal            @db.Decimal(5, 2)
+  url_adjunto      String?
+  curso            Curso              @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  docente          Docente            @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  seccion          Seccion            @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
+  entregas         EntregaActividad[]
+
+  @@index([seccion_id, curso_id], map: "idx_actividad_seccion")
+  @@map("actividad")
+  @@schema("academic_schema")
+}
+
+model EntregaActividad {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actividad_id        String        @db.Uuid
+  alumno_id           String        @db.Uuid
+  estado              EstadoEntrega @default(pendiente)
+  url_archivo         String?
+  comentario_alumno   String?
+  fecha_entrega       DateTime      @default(now()) @db.Timestamptz(6)
+  nota                Decimal?      @db.Decimal(5, 2)
+  observacion_docente String?
+  fecha_calificacion  DateTime?     @db.Timestamptz(6)
+  actividad           Actividad     @relation(fields: [actividad_id], references: [id], onUpdate: NoAction)
+  alumno              Alumno        @relation(fields: [alumno_id], references: [id], onUpdate: NoAction)
+
+  @@unique([actividad_id, alumno_id])
+  @@index([actividad_id], map: "idx_entrega_actividad")
+  @@index([alumno_id], map: "idx_entrega_alumno")
+  @@index([estado], map: "idx_entrega_estado")
+  @@map("entrega_actividad")
+  @@schema("academic_schema")
+}
+
+model ConceptoPago {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre      String  @db.VarChar(80)
+  descripcion String?
+  monto_base  Decimal @db.Decimal(10, 2)
+  activo      Boolean @default(true)
+  pagos       Pago[]
+
+  @@map("concepto_pago")
+  @@schema("financial_schema")
+}
+
+model Pago {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alumno_id         String           @db.Uuid
+  concepto_id       String           @db.Uuid
+  periodo_id        String           @db.Uuid
+  mes               Int?             @db.SmallInt
+  monto             Decimal          @db.Decimal(10, 2)
+  estado            EstadoPago       @default(Pendiente)
+  fecha_vencimiento DateTime         @db.Date
+  fecha_pago        DateTime?        @db.Date
+  generado_por      String           @db.Uuid
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  boleta            BoletaPago?
+  alumno            Alumno           @relation(fields: [alumno_id], references: [id], onUpdate: NoAction)
+  concepto          ConceptoPago     @relation(fields: [concepto_id], references: [id], onUpdate: NoAction)
+  generador         PerfilUsuario    @relation(fields: [generado_por], references: [id], onUpdate: NoAction)
+  periodo           PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+
+  @@index([alumno_id, estado, mes], map: "idx_pago_estado_alumno")
+  @@index([fecha_vencimiento, estado], map: "idx_pago_vencimiento")
+  @@map("pago")
+  @@schema("financial_schema")
+}
+
+model BoletaPago {
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pago_id             String               @unique @db.Uuid
+  url_archivo         String
+  nombre_archivo      String?              @db.VarChar(200)
+  banco               String?              @db.VarChar(80)
+  numero_operacion    String?              @db.VarChar(50)
+  estado_revision     EstadoRevisionBoleta @default(En_Revision)
+  observacion_rechazo String?
+  revisado_por        String?              @db.Uuid
+  fecha_revision      DateTime?            @db.Timestamptz(6)
+  fecha_subida        DateTime             @default(now()) @db.Timestamptz(6)
+  pago                Pago                 @relation(fields: [pago_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  revisor             PerfilUsuario?       @relation(fields: [revisado_por], references: [id], onUpdate: NoAction)
+
+  @@index([estado_revision], map: "idx_boleta_estado")
+  @@map("boleta_pago")
+  @@schema("financial_schema")
+}
+
+model Notificacion {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_destino_id String           @db.Uuid
+  tipo               TipoNotificacion
+  titulo             String           @db.VarChar(150)
+  cuerpo             String
+  url_accion         String?
+  leida              Boolean          @default(false)
+  fecha_lectura      DateTime?        @db.Timestamptz(6)
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
+  destino            PerfilUsuario    @relation(fields: [usuario_destino_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([usuario_destino_id, leida], map: "idx_notificacion_destino")
+  @@map("notificacion")
+  @@schema("financial_schema")
+}
+
+model HistorialNota {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nota_id          String        @db.Uuid
+  valor_anterior   Decimal       @db.Decimal(4, 2)
+  literal_anterior NotaLiteral
+  valor_nuevo      Decimal       @db.Decimal(4, 2)
+  literal_nuevo    NotaLiteral
+  modificado_por   String        @db.Uuid
+  motivo           String
+  fecha            DateTime      @default(now()) @db.Timestamptz(6)
+  modificador      PerfilUsuario @relation(fields: [modificado_por], references: [id], onUpdate: NoAction)
+  nota             Nota          @relation(fields: [nota_id], references: [id], onUpdate: NoAction)
+
+  @@index([nota_id, fecha(sort: Desc)], map: "idx_historial_nota")
+  @@map("historial_nota")
+  @@schema("audit_schema")
+}
+
+model IntegracionSiagie {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entidad         String            @db.VarChar(60)
+  entidad_id      String            @db.Uuid
+  accion          AccionIntegracion
+  payload_enviado Json
+  respuesta       Json?
+  estado          EstadoIntegracion @default(pendiente)
+  codigo_error    String?           @db.VarChar(20)
+  fecha           DateTime          @default(now()) @db.Timestamptz(6)
+
+  @@index([estado, fecha(sort: Desc)], map: "idx_integracion_estado")
+  @@map("integracion_siagie")
+  @@schema("audit_schema")
+}
+
+enum RolUsuario {
+  Admin
+  Secretaria
+  Docente
+  Alumno
+
+  @@map("rol_usuario")
+  @@schema("auth_schema")
+}
+
+enum TipoAccionAuditoria {
+  CREATE
+  UPDATE
+  DELETE
+  READ_SENSITIVE
+  LOGIN
+  LOGOUT
+
+  @@map("tipo_accion_auditoria")
+  @@schema("auth_schema")
+}
+
+enum EstadoAsistencia {
+  P
+  F
+  T
+  J
+
+  @@map("estado_asistencia")
+  @@schema("academic_schema")
+}
+
+enum TipoMaterial {
+  PDF
+  enlace
+  video
+  imagen
+  otro
+
+  @@map("tipo_material")
+  @@schema("academic_schema")
+}
+
+enum TipoActividad {
+  tarea
+  practica
+  evaluacion
+  proyecto
+
+  @@map("tipo_actividad")
+  @@schema("academic_schema")
+}
+
+enum NotaLiteral {
+  AD
+  A
+  B
+  C
+
+  @@map("nota_literal")
+  @@schema("academic_schema")
+}
+
+enum EstadoEntrega {
+  pendiente
+  entregado
+  calificado
+
+  @@map("estado_entrega")
+  @@schema("academic_schema")
+}
+
+enum SituacionFinal {
+  Promovido
+  Repitente
+  Retirado
+  Trasladado
+  Fallecido
+
+  @@map("situacion_final")
+  @@schema("academic_schema")
+}
+
+enum TipoEvaluacion {
+  Final
+  Recuperacion
+  Ubicacion
+  Estudio_Independiente
+
+  @@map("tipo_evaluacion")
+  @@schema("academic_schema")
+}
+
+enum EstadoPago {
+  Pendiente
+  En_Revision
+  Pagado
+  Rechazado
+
+  @@map("estado_pago")
+  @@schema("financial_schema")
+}
+
+enum EstadoRevisionBoleta {
+  En_Revision
+  Aprobada
+  Rechazada
+
+  @@map("estado_revision_boleta")
+  @@schema("financial_schema")
+}
+
+enum TipoNotificacion {
+  sistema
+  pago
+  academico
+  comunicado
+
+  @@map("tipo_notificacion")
+  @@schema("financial_schema")
+}
+
+enum EstadoIntegracion {
+  exitoso
+  error
+  pendiente
+  reintento
+
+  @@map("estado_integracion")
+  @@schema("audit_schema")
+}
+
+enum AccionIntegracion {
+  CREATE
+  UPDATE
+  DELETE
+  SYNC
+
+  @@map("accion_integracion")
+  @@schema("audit_schema")
+}
