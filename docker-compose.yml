@@ -15,6 +15,7 @@ services:
       - sgei-db-data:/var/lib/postgresql/data
       - "./SQL/00-setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
       - "./SQL/sgei_ddl_v2.1_auditado (1).sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+      - "./SQL/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sgei -d sgei_db"]
       interval: 5s

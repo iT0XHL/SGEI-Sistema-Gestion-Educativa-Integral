@@ -1,11 +1,12 @@
 // ============================================================
 //  lib/auth.ts — Middlewares de protección y helpers RBAC.
 //
-//  withAuth  → verifica el JWT de la cookie HttpOnly.
-//  withRole  → además exige uno de los roles indicados.
+//  Soporta dos formas de uso:
 //
-//  Uso en un Route Handler:
-//    export const GET = withRole(['Admin'], async (req, ctx) => { ... })
+//  Forma 1 — export const GET = withAuth(async (req, { user }) => { ... })
+//  Forma 2 — export function GET(req) { return withAuth(req, async ({ user }) => { ... }) }
+//
+//  withRole idem, solo agrega la verificación de rol.
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, COOKIE_NAME, type JwtClaims } from '@/lib/jwt';
@@ -15,7 +16,7 @@ import type { RolUsuario } from '@/types/roles';
 
 /** Contexto que recibe un handler protegido. */
 export interface AuthCtx {
-  user: JwtClaims;
+  user:   JwtClaims;
   params: Record<string, string>;
 }
 
@@ -24,8 +25,7 @@ export type AuthedHandler = (
   ctx: AuthCtx,
 ) => Promise<NextResponse> | NextResponse;
 
-/** Forma en que Next.js entrega los parámetros de ruta dinámica. */
-type RouteCtx = { params?: Record<string, string> };
+type RouteCtx = { params?: Record<string, string> | Promise<Record<string, string>> };
 
 /** Extrae y verifica el usuario autenticado desde la cookie. */
 export function getUserFromRequest(req: NextRequest): JwtClaims {
@@ -36,26 +36,63 @@ export function getUserFromRequest(req: NextRequest): JwtClaims {
   return verifyToken(token);
 }
 
-/** Envuelve un handler exigiendo autenticación válida. */
-export function withAuth(handler: AuthedHandler) {
-  return async (req: NextRequest, routeCtx: RouteCtx): Promise<NextResponse> => {
+// ── Overloads ─────────────────────────────────────────────────
+
+/** Forma 1: withAuth(handler) → devuelve función de ruta de Next.js. */
+export function withAuth(
+  handler: AuthedHandler,
+): (req: NextRequest, routeCtx: RouteCtx) => Promise<NextResponse>;
+
+/** Forma 2: withAuth(req, handler) → devuelve Promise directamente. */
+export function withAuth(
+  req: NextRequest,
+  handler: (ctx: AuthCtx) => Promise<NextResponse> | NextResponse,
+): Promise<NextResponse>;
+
+/** Implementación unificada. */
+export function withAuth(
+  handlerOrReq: AuthedHandler | NextRequest,
+  inlineHandler?: (ctx: AuthCtx) => Promise<NextResponse> | NextResponse,
+): ((req: NextRequest, routeCtx: RouteCtx) => Promise<NextResponse>) | Promise<NextResponse> {
+  if (typeof handlerOrReq === 'function') {
+    // Forma 1
+    const handler = handlerOrReq;
+    return async (req: NextRequest, routeCtx: RouteCtx): Promise<NextResponse> => {
+      try {
+        const user   = getUserFromRequest(req);
+        const params = routeCtx?.params
+          ? await Promise.resolve(routeCtx.params)
+          : {};
+        return await handler(req, { user, params: params as Record<string, string> });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    };
+  }
+
+  // Forma 2
+  const req     = handlerOrReq;
+  const handler = inlineHandler!;
+  return (async (): Promise<NextResponse> => {
     try {
       const user = getUserFromRequest(req);
-      return await handler(req, { user, params: routeCtx?.params ?? {} });
+      return await handler({ user, params: {} });
     } catch (error) {
       return errorResponse(error);
     }
-  };
+  })();
 }
 
-/** Envuelve un handler exigiendo autenticación + rol permitido (RBAC). */
-export function withRole(roles: RolUsuario[], handler: AuthedHandler) {
+// ── withRole ──────────────────────────────────────────────────
+
+/** Forma 1: withRole(roles, handler) → devuelve función de ruta de Next.js. */
+export function withRole(
+  roles:   RolUsuario[],
+  handler: AuthedHandler,
+): (req: NextRequest, routeCtx: RouteCtx) => Promise<NextResponse> {
   return withAuth(async (req, ctx) => {
     if (!roles.includes(ctx.user.rol)) {
-      throw new ForbiddenError(
-        'INSUFFICIENT_ROLE',
-        'Tu rol no tiene acceso a este recurso.',
-      );
+      throw new ForbiddenError('INSUFFICIENT_ROLE', 'Tu rol no tiene acceso a este recurso.');
     }
     return handler(req, ctx);
   });
@@ -77,7 +114,6 @@ export function canManageNota(user: JwtClaims, docenteId: string): boolean {
   return false;
 }
 
-/** Solo Admin/Secretaria validan vouchers y exportan SIAGIE. */
 export function canValidateVoucher(user: JwtClaims): boolean {
   return user.rol === 'Admin' || user.rol === 'Secretaria';
 }

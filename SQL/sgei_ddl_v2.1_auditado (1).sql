@@ -1053,7 +1053,7 @@ BEGIN
         COALESCE(NEW.id, OLD.id),
         CASE WHEN TG_OP IN ('UPDATE','DELETE') THEN row_to_json(OLD)::JSONB END,
         CASE WHEN TG_OP IN ('INSERT','UPDATE') THEN row_to_json(NEW)::JSONB END,
-        NULLIF(current_setting('request.headers', TRUE), '')::JSONB->>'x-forwarded-for',
+        (NULLIF(current_setting('request.headers', TRUE), '')::JSONB->>'x-forwarded-for')::inet,
         NOW()
     );
     RETURN COALESCE(NEW, OLD);

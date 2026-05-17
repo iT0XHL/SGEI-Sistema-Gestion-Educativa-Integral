@@ -125,14 +125,14 @@ export const PENDING_VOUCHERS = [
 ];
 
 export const ALL_PAYMENTS_SEC = [
-  { id: 'sp1', studentName: 'Carlos Mendoza Ramos',    grade: '3° A', total: 4200, paid: 1400, pending: 2800, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
-  { id: 'sp2', studentName: 'Valentina Torres Lima',   grade: '3° A', total: 4200, paid: 1050, pending: 3150, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
-  { id: 'sp3', studentName: 'Eduardo Quispe Lima',     grade: '3° A', total: 4200, paid: 4200, pending: 0,    estadoDb: 'Pagado'    as const, fechaVencimiento: '2025-12-31', tienePagosParciales: false },
-  { id: 'sp4', studentName: 'Fernanda Mamani Condori', grade: '3° A', total: 4200, paid: 0,    pending: 4200, estadoDb: 'Pendiente' as const, fechaVencimiento: '2025-04-30', tienePagosParciales: false },
-  { id: 'sp5', studentName: 'Gabriel Herrera Apaza',  grade: '3° A', total: 4200, paid: 700,  pending: 3500, estadoDb: 'Pendiente' as const, fechaVencimiento: '2025-04-30', tienePagosParciales: false },
-  { id: 'sp6', studentName: 'Hilda Lazo Vilca',        grade: '2° B', total: 4200, paid: 4200, pending: 0,    estadoDb: 'Pagado'    as const, fechaVencimiento: '2025-12-31', tienePagosParciales: false },
-  { id: 'sp7', studentName: 'Iván Paredes Salas',      grade: '2° B', total: 4200, paid: 2100, pending: 2100, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
-  { id: 'sp8', studentName: 'Juliana Ramos Pacori',    grade: '1° A', total: 4200, paid: 3500, pending: 700,  estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
+  { id: 'sp1', studentName: 'Carlos Mendoza Ramos',    grade: '3° A', total: 4200, paid: 1400, pending: 2800, status: 'partial'  as const, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
+  { id: 'sp2', studentName: 'Valentina Torres Lima',   grade: '3° A', total: 4200, paid: 1050, pending: 3150, status: 'partial'  as const, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
+  { id: 'sp3', studentName: 'Eduardo Quispe Lima',     grade: '3° A', total: 4200, paid: 4200, pending: 0,    status: 'paid'     as const, estadoDb: 'Pagado'    as const, fechaVencimiento: '2025-12-31', tienePagosParciales: false },
+  { id: 'sp4', studentName: 'Fernanda Mamani Condori', grade: '3° A', total: 4200, paid: 0,    pending: 4200, status: 'overdue'  as const, estadoDb: 'Pendiente' as const, fechaVencimiento: '2025-04-30', tienePagosParciales: false },
+  { id: 'sp5', studentName: 'Gabriel Herrera Apaza',  grade: '3° A', total: 4200, paid: 700,  pending: 3500, status: 'overdue'  as const, estadoDb: 'Pendiente' as const, fechaVencimiento: '2025-04-30', tienePagosParciales: false },
+  { id: 'sp6', studentName: 'Hilda Lazo Vilca',        grade: '2° B', total: 4200, paid: 4200, pending: 0,    status: 'paid'     as const, estadoDb: 'Pagado'    as const, fechaVencimiento: '2025-12-31', tienePagosParciales: false },
+  { id: 'sp7', studentName: 'Iván Paredes Salas',      grade: '2° B', total: 4200, paid: 2100, pending: 2100, status: 'partial'  as const, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
+  { id: 'sp8', studentName: 'Juliana Ramos Pacori',    grade: '1° A', total: 4200, paid: 3500, pending: 700,  status: 'partial'  as const, estadoDb: 'Pendiente' as const, fechaVencimiento: '2026-12-31', tienePagosParciales: true  },
 ];
 
 export const TEACHER_ACCOUNTS = [

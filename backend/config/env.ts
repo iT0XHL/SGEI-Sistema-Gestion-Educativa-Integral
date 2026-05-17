@@ -25,6 +25,11 @@ const EnvSchema = z.object({
   // Integración con el frontend existente.
   FRONTEND_ORIGIN: z.string().url().default('http://localhost:3000'),
   MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(5),
+
+  // Supabase Storage — requerido para subida de archivos (materiales, entregas).
+  // No requerido para desarrollo local sin archivos.
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_KEY: z.string().min(1).optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -45,6 +50,8 @@ export const env = {
   DIRECT_URL: data.DIRECT_URL ?? data.DATABASE_URL,
   isProd: data.NODE_ENV === 'production',
   isDev: data.NODE_ENV === 'development',
+  SUPABASE_URL: data.SUPABASE_URL,
+  SUPABASE_SERVICE_KEY: data.SUPABASE_SERVICE_KEY,
 };
 
 export type Env = typeof env;

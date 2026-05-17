@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { GraduationCap, Eye, EyeOff, ArrowRight, BookOpen, Users, Shield, FileText } from 'lucide-react';
 import type { Role } from '../data/mockData';
+import { authApi } from '../../lib/api/auth.api';
 
 interface RoleCard {
   role: Role;
@@ -42,7 +43,7 @@ export default function Login() {
     setError('');
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     if (!email.trim() || !password.trim()) {
@@ -50,10 +51,14 @@ export default function Login() {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const session = await authApi.login({ email: email.trim(), password, rol: selected });
+      navigate(session.redirectTo || ROLE_ROUTE[selected]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Credenciales incorrectas.');
+    } finally {
       setLoading(false);
-      navigate(ROLE_ROUTE[selected]);
-    }, 900);
+    }
   }
 
   function fillDemo() {
