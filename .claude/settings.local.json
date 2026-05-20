@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose build *)",
+      "Bash(docker-compose up *)",
+      "Bash(docker exec sgei-backend *)",
+      "Bash(docker exec sgei-db *)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(docker exec *)"
+    ]
+  }
+}

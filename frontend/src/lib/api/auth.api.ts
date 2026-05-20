@@ -8,12 +8,16 @@ export interface LoginPayload {
 }
 
 export interface SessionUser {
-  perfilId:    string;
+  id:          string;
   rol:         RolUsuario;
   nombre:      string;
   entidadId:   string;
   entidadTipo: string;
-  redirectTo:  string;
+}
+
+export interface LoginResponse {
+  user:       SessionUser;
+  redirectTo: string;
 }
 
 export interface ChangePasswordPayload {
@@ -22,8 +26,8 @@ export interface ChangePasswordPayload {
 }
 
 export const authApi = {
-  login(payload: LoginPayload): Promise<SessionUser> {
-    return apiClient.post<SessionUser>('/api/auth/login', payload);
+  login(payload: LoginPayload): Promise<LoginResponse> {
+    return apiClient.post<LoginResponse>('/api/auth/login', payload);
   },
 
   logout(): Promise<{ mensaje: string }> {

@@ -93,6 +93,16 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
     }
   }
 
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    console.error('[SGEI DB] No se pudo conectar a la base de datos:', error.message);
+    return buildError('DB_UNAVAILABLE', 'Base de datos no disponible. Intenta de nuevo.', 503);
+  }
+
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    console.error('[SGEI DB] Error de validación Prisma:', error.message);
+    return buildError('INTERNAL_ERROR', 'Error interno del servidor', 500);
+  }
+
   // 4. RAISE EXCEPTION desde triggers / stored procedures de la DB.
   if (error instanceof Error) {
     const msg = error.message;

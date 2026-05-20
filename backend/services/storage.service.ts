@@ -7,6 +7,7 @@
 //  Si SUPABASE_URL / SUPABASE_SERVICE_KEY no están configuradas,
 //  los métodos lanzan StorageNotConfiguredError con mensaje claro.
 // ============================================================
+import { createClient } from '@supabase/supabase-js';
 import { env } from '@/config/env';
 import { AppError } from '@/errors/http-errors';
 import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE, type BucketName } from '@/storage/buckets';
@@ -32,10 +33,6 @@ function getClient() {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
     throw new StorageNotConfiguredError();
   }
-  // Importación dinámica diferida para no romper builds sin Supabase.
-  // En producción @supabase/supabase-js debe estar instalado.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createClient } = require('@supabase/supabase-js');
   return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, {
     auth: { persistSession: false },
   });

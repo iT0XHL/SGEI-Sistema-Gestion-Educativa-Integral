@@ -3,44 +3,49 @@ import {
   Upload, CheckCircle2, Clock, X, CreditCard, DollarSign,
   AlertCircle, Bell, MessageSquare, RefreshCw, Paperclip
 } from 'lucide-react';
-import { PAYMENTS } from '../../data/mockData';
+import { useSession } from '../../../lib/hooks/useSession';
+import { pagosApi } from '../../../lib/api/pagos.api';
+import { boletasApi } from '../../../lib/api/boletas.api';
+import { apiClient } from '../../../lib/api/client';
+import type { EstadoPagoRow, EstadoPago } from '../../../types/pago';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🔑 Corrección #7 — Los pagos se obtienen de la API, no del mock estático.
-// En producción: GET /api/pagos?alumno_id={alumno_id_sesion}
-// El alumno_id viene del JWT / sesión activa — NUNCA hardcodeado.
-// ─────────────────────────────────────────────────────────────────────────────
-const MOCK_ALUMNO_ID = 'alm-uuid-carlos-mendoza-ramos';
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-// ── Tipos locales (antes en voucherStore.ts — eliminado en Corrección 1) ─────
-export type VoucherStatus = 'submitted' | 'approved' | 'rejected';
+const MESES: Record<number, string> = {
+  1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
+  5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
+  9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre',
+};
 
-interface VoucherEntry {
-  id: string;
-  paymentId: string;
-  studentName: string;
-  grade: string;
-  month: string;
-  amount: number;
-  status: VoucherStatus;
-  observation: string | null;
-  submittedAt: string;
-  initials: string;
+function getNombreMes(row: EstadoPagoRow): string {
+  return row.mes ? (MESES[row.mes] ?? `Mes ${row.mes}`) : row.concepto;
 }
 
-type ApiPayment = typeof PAYMENTS[number];
-
-async function fetchPagosAlumno(_alumnoId: string): Promise<ApiPayment[]> {
-  // En producción:
-  // const res = await fetch(`/api/pagos?alumno_id=${_alumnoId}`);
-  // if (!res.ok) throw new Error('Error al cargar los pagos');
-  // return res.json();
-  await new Promise(r => setTimeout(r, 0));
-  return PAYMENTS.map(p => ({
-    ...p,
-    id: `pago-uuid-2025-${p.month.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-')}`,
-  }));
+function getAnio(row: EstadoPagoRow): number {
+  return new Date(row.fecha_vencimiento).getFullYear();
 }
+
+function formatFecha(iso: string): string {
+  return new Date(iso).toLocaleDateString('es-PE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+}
+
+function toPaymentStatus(estado: EstadoPago): 'paid' | 'pending' | 'overdue' {
+  if (estado === 'Pagado')    return 'paid';
+  if (estado === 'Rechazado') return 'overdue';
+  return 'pending';
+}
+
+function puedeSubirVoucher(row: EstadoPagoRow): boolean {
+  return row.estado !== 'Pagado' && row.estado_boleta !== 'En_Revision';
+}
+
+function puedeReenviar(row: EstadoPagoRow): boolean {
+  return row.estado_boleta === 'Rechazada';
+}
+
+// ── UI maps ────────────────────────────────────────────────────────────────────
 
 type PaymentStatus = 'paid' | 'pending' | 'overdue';
 
@@ -56,146 +61,142 @@ const VOUCHER_STATUS: Record<string, { label: string; cls: string; icon: React.E
   rejected:  { label: 'Rechazado',   cls: 'bg-red-50 text-red-700 border-red-200',              icon: AlertCircle },
 };
 
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export default function AlumnoPagos() {
-  const [payments, setPayments]         = useState<ApiPayment[]>([]);
-  const [voucherData, setVoucherData]   = useState<Record<string, VoucherEntry>>({});
-  const [errorMsg, setErrorMsg]         = useState<string | null>(null);
+  const { session, loading: sessionLoading } = useSession();
+
+  const [pagos,       setPagos]       = useState<EstadoPagoRow[]>([]);
+  const [institucion, setInstitucion] = useState<{ nombre: string } | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [errorMsg,    setErrorMsg]    = useState<string | null>(null);
 
   // Upload modal
-  const [uploadModal, setUploadModal]   = useState<string | null>(null);
+  const [uploadModal,  setUploadModal]  = useState<string | null>(null); // pago_id
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading]       = useState(false);
+  const [uploading,    setUploading]    = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Observation modal
-  const [obsModal, setObsModal] = useState<{ id: string; month: string } | null>(null);
+  // Other modals
+  const [obsModal,      setObsModal]      = useState<{ id: string; month: string } | null>(null);
+  const [reuploadModal, setReuploadModal] = useState<string | null>(null); // pago_id
 
-  // Re-upload confirmation modal
-  const [reuploadModal, setReuploadModal] = useState<string | null>(null);
+  // ── Data loading ──────────────────────────────────────────────────────────────
 
-  // ── Carga inicial: pagos + vouchers del alumno ────────────────────────────
   useEffect(() => {
-    fetchPagosAlumno(MOCK_ALUMNO_ID)
-      .then(data => {
-        setPayments(data);
-        // En producción: cargar vouchers reales del alumno
-        // fetch(`/api/boletas?alumno_id=${MOCK_ALUMNO_ID}`)
-        //   .then(r => r.json())
-        //   .then(vouchers => setVoucherData(
-        //     Object.fromEntries(vouchers.map((v: any) => [v.pago_id, {
-        //       id: v.id, paymentId: v.pago_id,
-        //       studentName: v.alumno_nombre, grade: v.grado,
-        //       month: v.mes, amount: v.monto,
-        //       status: v.estado === 'En_Revision' ? 'submitted'
-        //             : v.estado === 'Aprobada'    ? 'approved'
-        //             : 'rejected',
-        //       observation: v.observacion,
-        //       submittedAt: v.fecha_envio,
-        //       initials: v.iniciales,
-        //     }]))
-        //   ));
-      })
-      .catch(err => {
-        setErrorMsg('No se pudieron cargar los datos de pagos.');
-        console.error('Error al cargar pagos:', err);
-      });
-  }, []);
+    if (sessionLoading || !session) return;
 
-  const paid    = payments.filter(p => p.status === 'paid');
-  const pending = payments.filter(p => p.status !== 'paid');
-  const totalPaid    = paid.reduce((s, p) => s + p.amount, 0);
-  const totalPending = pending.reduce((s, p) => s + p.amount, 0);
+    let aborted = false;
 
-  const rejectedWithObs = Object.values(voucherData).filter(
-    v => v.status === 'rejected' && v.observation
-  );
+    async function cargar() {
+      try {
+        setLoading(true);
+        setErrorMsg(null);
 
-  function handleFileChange(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    setSelectedFile(files[0]);
-  }
+        const pagosData = await pagosApi.listar() as EstadoPagoRow[];
+        if (aborted) return;
 
-  // ── Corrección 1: subida real con multipart/form-data ────────────────────
+        setPagos(pagosData);
+
+        try {
+          const inst = await apiClient.get<{ nombre: string }>('/api/institucion');
+          if (!aborted) setInstitucion(inst);
+        } catch { /* keep null — hardcoded fallback used in render */ }
+
+      } catch (err) {
+        if (!aborted) {
+          setErrorMsg(err instanceof Error ? err.message : 'No se pudieron cargar los datos de pagos.');
+        }
+      } finally {
+        if (!aborted) setLoading(false);
+      }
+    }
+
+    cargar();
+    return () => { aborted = true; };
+  }, [session, sessionLoading]);
+
+  // ── Upload submit ──────────────────────────────────────────────────────────────
+
   async function handleUploadSubmit() {
     if (!uploadModal || !selectedFile) return;
-    const payment = payments.find(p => p.id === uploadModal);
-    if (!payment) return;
     setUploading(true);
     setErrorMsg(null);
 
     try {
-      const formData = new FormData();
-      formData.append('pago_id', uploadModal);
-      formData.append('archivo', selectedFile); // File del input
+      await boletasApi.subir({ pago_id: uploadModal, archivo: selectedFile });
 
-      // En producción: descommentar la llamada real
-      // const res = await fetch('/api/boletas', { method: 'POST', body: formData });
-      // if (!res.ok) throw new Error('Error al subir el voucher');
-      // const saved = await res.json();
+      const actualizados = await pagosApi.listar() as EstadoPagoRow[];
+      setPagos(actualizados);
 
-      // Mock: simular latencia de red
-      await new Promise(r => setTimeout(r, 1200));
-
-      const newEntry: VoucherEntry = {
-        id: `vc-${uploadModal}`,
-        paymentId: uploadModal,
-        studentName: 'Carlos Mendoza Ramos',
-        grade: '3° A',
-        month: `${payment.month} ${payment.year}`,
-        amount: payment.amount,
-        status: 'submitted',
-        observation: null,
-        submittedAt: new Date().toLocaleDateString('es-PE'),
-        initials: 'CM',
-      };
-      setVoucherData(prev => ({ ...prev, [uploadModal]: newEntry }));
       setUploadModal(null);
       setSelectedFile(null);
-    } catch {
-      setErrorMsg('No se pudo subir el voucher. Intenta nuevamente.');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error al subir el comprobante.');
     } finally {
       setUploading(false);
     }
   }
 
-  // ── Reenvío de voucher rechazado ─────────────────────────────────────────
-  async function handleReupload(paymentId: string) {
-    try {
-      // En producción:
-      // const res = await fetch(`/api/boletas/${paymentId}/resubmit`, { method: 'POST' });
-      // if (!res.ok) throw new Error('Error al reenviar');
-
-      // Mock
-      await new Promise(r => setTimeout(r, 600));
-
-      setVoucherData(prev => {
-        if (!prev[paymentId]) return prev;
-        return {
-          ...prev,
-          [paymentId]: {
-            ...prev[paymentId],
-            status: 'submitted',
-            observation: null,
-            submittedAt: new Date().toLocaleDateString('es-PE'),
-          },
-        };
-      });
-      setReuploadModal(null);
-    } catch {
-      setErrorMsg('No se pudo reenviar el voucher. Intenta nuevamente.');
-    }
+  function handleConfirmarReenvio() {
+    setUploadModal(reuploadModal);
+    setReuploadModal(null);
+    setSelectedFile(null);
   }
 
-  const sortedPayments = [
-    ...payments.filter(p => p.status !== 'paid'),
-    ...payments.filter(p => p.status === 'paid'),
+  // ── Derived metrics ────────────────────────────────────────────────────────────
+
+  const pagados        = pagos.filter(p => p.estado === 'Pagado');
+  const pendientes     = pagos.filter(p => p.estado !== 'Pagado');
+  const totalPagado    = pagados.reduce((s, p) => s + p.monto, 0);
+  const totalPendiente = pendientes.reduce((s, p) => s + p.monto, 0);
+  const totalAnual     = pagos.reduce((s, p) => s + p.monto, 0);
+
+  const rechazadosConObs = pagos.filter(
+    p => p.estado_boleta === 'Rechazada' && p.observacion_rechazo,
+  );
+
+  const sortedPagos = [
+    ...pagos.filter(p => p.estado !== 'Pagado'),
+    ...pagos.filter(p => p.estado === 'Pagado'),
   ];
+
+  const anio             = pagos.length > 0 ? getAnio(pagos[0]!) : new Date().getFullYear();
+  const montoPrimero     = pagos[0]?.monto ?? 350;
+  const institucionNombre = institucion?.nombre ?? 'I.E. San José de Calasanz';
+
+  // Obs modal data (computed once, used in JSX)
+  const obsRow = obsModal ? (pagos.find(p => p.pago_id === obsModal.id) ?? null) : null;
+
+  // ── Skeleton ────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6 animate-pulse">
+        <div>
+          <div className="h-7 w-48 rounded-xl bg-slate-200 mb-1.5" />
+          <div className="h-4 w-64 rounded bg-slate-200" />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="h-24 rounded-2xl bg-slate-200" />
+          <div className="h-24 rounded-2xl bg-slate-200" />
+          <div className="h-24 rounded-2xl bg-slate-200" />
+        </div>
+        <div className="h-16 rounded-2xl bg-slate-200" />
+        <div className="h-72 rounded-2xl bg-slate-200" />
+      </div>
+    );
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Estado de Pagos</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Año escolar 2025 · Mensualidad S/ 350.00</p>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Año escolar {anio} · Mensualidad S/ {montoPrimero.toFixed(2)}
+        </p>
       </div>
 
       {/* ── Error banner ── */}
@@ -209,27 +210,27 @@ export default function AlumnoPagos() {
         </div>
       )}
 
-      {/* Rejection notification banner */}
-      {rejectedWithObs.length > 0 && (
+      {/* ── Rejection notification banner ── */}
+      {rechazadosConObs.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
           <div className="flex items-center gap-2">
             <Bell className="size-4 text-red-600 shrink-0" />
             <p className="text-sm font-semibold text-red-800">
-              {rejectedWithObs.length === 1
+              {rechazadosConObs.length === 1
                 ? 'Un voucher fue rechazado con observación'
-                : `${rejectedWithObs.length} vouchers fueron rechazados con observaciones`}
+                : `${rechazadosConObs.length} vouchers fueron rechazados con observaciones`}
             </p>
           </div>
-          {rejectedWithObs.map(v => (
-            <div key={v.paymentId} className="ml-6 bg-white border border-red-200 rounded-xl px-3 py-2">
-              <p className="text-xs font-medium text-red-700">{v.month}:</p>
-              <p className="text-xs text-red-600 mt-0.5">{v.observation}</p>
+          {rechazadosConObs.map(p => (
+            <div key={p.pago_id} className="ml-6 bg-white border border-red-200 rounded-xl px-3 py-2">
+              <p className="text-xs font-medium text-red-700">{getNombreMes(p)} {getAnio(p)}:</p>
+              <p className="text-xs text-red-600 mt-0.5">{p.observacion_rechazo}</p>
             </div>
           ))}
         </div>
       )}
 
-      {/* Summary */}
+      {/* ── Summary cards ── */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -238,8 +239,8 @@ export default function AlumnoPagos() {
             </div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pagado</p>
           </div>
-          <p className="text-xl font-bold text-slate-900">S/ {totalPaid.toLocaleString()}</p>
-          <p className="text-xs text-slate-400 mt-0.5">{paid.length} de 12 cuotas</p>
+          <p className="text-xl font-bold text-slate-900">S/ {totalPagado.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{pagados.length} de {pagos.length} cuotas</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -248,8 +249,8 @@ export default function AlumnoPagos() {
             </div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pendiente</p>
           </div>
-          <p className="text-xl font-bold text-slate-900">S/ {totalPending.toLocaleString()}</p>
-          <p className="text-xs text-slate-400 mt-0.5">{pending.length} cuotas restantes</p>
+          <p className="text-xl font-bold text-slate-900">S/ {totalPendiente.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{pendientes.length} cuotas restantes</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -258,39 +259,51 @@ export default function AlumnoPagos() {
             </div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total anual</p>
           </div>
-          <p className="text-xl font-bold text-slate-900">S/ 4,200</p>
-          <p className="text-xs text-slate-400 mt-0.5">12 cuotas × S/ 350</p>
+          <p className="text-xl font-bold text-slate-900">S/ {totalAnual.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{pagos.length} cuotas × S/ {montoPrimero}</p>
         </div>
       </div>
 
-      {/* Payment info */}
+      {/* ── Bank info ── */}
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
         <CreditCard className="size-5 text-blue-600 shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-semibold text-blue-800">Información bancaria</p>
           <p className="text-sm text-blue-700 mt-0.5">
-            Banco de la Nación · CTA: <strong>00 0000 00000000</strong> · A nombre de: I.E. San José de Calasanz
+            Banco de la Nación · CTA: <strong>00 0000 00000000</strong> · A nombre de: {institucionNombre}
           </p>
           <p className="text-xs text-blue-600 mt-1">Sube tu voucher de pago para que Secretaría lo verifique en el sistema.</p>
         </div>
       </div>
 
-      {/* Payments list */}
+      {/* ── Payments list ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-          <h2 className="text-sm font-semibold text-slate-700">Historial de pagos 2025</h2>
+          <h2 className="text-sm font-semibold text-slate-700">Historial de pagos {anio}</h2>
         </div>
         <div className="divide-y divide-slate-50">
-          {sortedPayments.map(payment => {
-            const pst     = PAY_STATUS[payment.status];
-            const PayIcon = pst.icon;
-            const voucher = voucherData[payment.id];
-            const vst     = voucher ? VOUCHER_STATUS[voucher.status] : null;
-            const VIcon   = vst?.icon;
-            const isRejected = voucher?.status === 'rejected';
+          {sortedPagos.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-slate-400 text-sm">No hay pagos registrados.</p>
+            </div>
+          ) : sortedPagos.map(row => {
+            const payStatus = toPaymentStatus(row.estado);
+            const pst       = PAY_STATUS[payStatus];
+            const PayIcon   = pst.icon;
+
+            let voucherKey: string | null = null;
+            if      (row.estado_boleta === 'En_Revision') voucherKey = 'submitted';
+            else if (row.estado_boleta === 'Aprobada')    voucherKey = 'approved';
+            else if (row.estado_boleta === 'Rechazada')   voucherKey = 'rejected';
+            const vst   = voucherKey ? VOUCHER_STATUS[voucherKey] : null;
+            const VIcon = vst?.icon;
+
+            const isRejected = row.estado_boleta === 'Rechazada';
+            const hasVoucher = row.estado_boleta !== null;
+            const mesLabel   = `${getNombreMes(row)} ${getAnio(row)}`;
 
             return (
-              <div key={payment.id} className="px-5 py-4 hover:bg-slate-50 transition-colors">
+              <div key={row.pago_id} className="px-5 py-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-3 flex-wrap">
                   {/* Icon */}
                   <div className={`flex size-10 items-center justify-center rounded-xl shrink-0 ${
@@ -301,25 +314,27 @@ export default function AlumnoPagos() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{payment.month} {payment.year}</p>
-                    {payment.paidDate && (
-                      <p className="text-xs text-slate-400">Pagado el {payment.paidDate}</p>
+                    <p className="text-sm font-semibold text-slate-800">{mesLabel}</p>
+                    {row.fecha_pago && (
+                      <p className="text-xs text-slate-400">Pagado el {formatFecha(row.fecha_pago)}</p>
                     )}
-                    {voucher && (
+                    {hasVoucher && (
                       <p className={`text-xs mt-0.5 ${
-                        voucher.status === 'approved' ? 'text-emerald-600' :
-                        voucher.status === 'rejected' ? 'text-red-600' :
+                        row.estado_boleta === 'Aprobada'  ? 'text-emerald-600' :
+                        row.estado_boleta === 'Rechazada' ? 'text-red-600' :
                         'text-blue-600'
                       }`}>
-                        {voucher.status === 'approved' ? `Aprobado el ${voucher.submittedAt}` :
-                         voucher.status === 'rejected' ? 'Voucher rechazado por Secretaría' :
-                         `Voucher enviado el ${voucher.submittedAt} — en revisión`}
+                        {row.estado_boleta === 'Aprobada'
+                          ? 'Voucher aprobado por Secretaría'
+                          : row.estado_boleta === 'Rechazada'
+                            ? 'Voucher rechazado por Secretaría'
+                            : 'Voucher enviado — en revisión'}
                       </p>
                     )}
                   </div>
 
                   {/* Amount */}
-                  <p className="text-sm font-bold text-slate-800">S/ {payment.amount}</p>
+                  <p className="text-sm font-bold text-slate-800">S/ {row.monto}</p>
 
                   {/* Payment status badge */}
                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${pst.cls}`}>
@@ -335,32 +350,32 @@ export default function AlumnoPagos() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    {payment.status !== 'paid' && !voucher && (
+                    {puedeSubirVoucher(row) && !puedeReenviar(row) && (
                       <button
-                        onClick={() => { setUploadModal(payment.id); setSelectedFile(null); }}
+                        onClick={() => { setUploadModal(row.pago_id); setSelectedFile(null); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-medium transition-colors"
                       >
                         <Upload className="size-3.5" /> Subir voucher
                       </button>
                     )}
 
-                    {isRejected && (
+                    {puedeReenviar(row) && (
                       <button
-                        onClick={() => setReuploadModal(payment.id)}
+                        onClick={() => setReuploadModal(row.pago_id)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium transition-colors"
                       >
                         <RefreshCw className="size-3.5" /> Volver a enviar
                       </button>
                     )}
 
-                    {voucher && (
+                    {hasVoucher && (
                       <button
-                        onClick={() => setObsModal({ id: payment.id, month: `${payment.month} ${payment.year}` })}
+                        onClick={() => setObsModal({ id: row.pago_id, month: mesLabel })}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200"
                       >
                         <MessageSquare className="size-3.5" />
-                        {voucher.observation ? 'Ver observación' : 'Sin observaciones'}
-                        {voucher.observation && isRejected && (
+                        {row.observacion_rechazo ? 'Ver observación' : 'Sin observaciones'}
+                        {row.observacion_rechazo && isRejected && (
                           <span className="size-2 rounded-full bg-red-500 ml-0.5" />
                         )}
                       </button>
@@ -368,10 +383,10 @@ export default function AlumnoPagos() {
                   </div>
                 </div>
 
-                {isRejected && voucher.observation && (
+                {isRejected && row.observacion_rechazo && (
                   <div className="mt-3 ml-13 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
                     <Bell className="size-3.5 text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-red-700">{voucher.observation}</p>
+                    <p className="text-xs text-red-700">{row.observacion_rechazo}</p>
                   </div>
                 )}
               </div>
@@ -386,7 +401,10 @@ export default function AlumnoPagos() {
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-semibold text-slate-800">Subir comprobante de pago</h3>
-              <button onClick={() => { setUploadModal(null); setSelectedFile(null); }} className="p-1.5 rounded-lg hover:bg-slate-100">
+              <button
+                onClick={() => { setUploadModal(null); setSelectedFile(null); }}
+                className="p-1.5 rounded-lg hover:bg-slate-100"
+              >
                 <X className="size-4 text-slate-500" />
               </button>
             </div>
@@ -399,7 +417,10 @@ export default function AlumnoPagos() {
                 type="file"
                 accept="image/*,application/pdf"
                 className="hidden"
-                onChange={e => handleFileChange(e.target.files)}
+                onChange={e => {
+                  if (!e.target.files || e.target.files.length === 0) return;
+                  setSelectedFile(e.target.files[0]!);
+                }}
               />
               {selectedFile ? (
                 <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
@@ -435,7 +456,13 @@ export default function AlumnoPagos() {
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium transition-colors"
                 >
                   {uploading ? (
-                    <><svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Enviando…</>
+                    <>
+                      <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Enviando…
+                    </>
                   ) : (
                     <><Upload className="size-4" />Enviar voucher</>
                   )}
@@ -457,14 +484,14 @@ export default function AlumnoPagos() {
               </button>
             </div>
             <div className="p-6">
-              {voucherData[obsModal.id]?.observation ? (
+              {obsRow?.observacion_rechazo ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <MessageSquare className="size-4 text-amber-600" />
                     <p className="text-sm font-semibold text-amber-800">Observación de Secretaría:</p>
                   </div>
                   <p className="text-sm text-amber-800 leading-relaxed">
-                    {voucherData[obsModal.id].observation}
+                    {obsRow.observacion_rechazo}
                   </p>
                 </div>
               ) : (
@@ -507,7 +534,7 @@ export default function AlumnoPagos() {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => handleReupload(reuploadModal)}
+                  onClick={handleConfirmarReenvio}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
                 >
                   Confirmar reenvío

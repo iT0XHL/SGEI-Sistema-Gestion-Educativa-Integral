@@ -52,8 +52,8 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const session = await authApi.login({ email: email.trim(), password, rol: selected });
-      navigate(session.redirectTo || ROLE_ROUTE[selected]);
+      const { redirectTo } = await authApi.login({ email: email.trim(), password, rol: selected });
+      navigate(redirectTo || ROLE_ROUTE[selected]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Credenciales incorrectas.');
     } finally {
