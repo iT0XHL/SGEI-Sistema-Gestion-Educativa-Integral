@@ -1,379 +1,359 @@
 # SGEI — Sistema de Gestión Educativa Integral
 
-Full-stack **school management system** para instituciones educativas secundarias. Frontend Vite + React, Backend Next.js 14, Base de datos PostgreSQL 15, todo orquestado con Docker Compose.
+Sistema de gestión escolar full-stack para instituciones de educación secundaria.
+UI, identificadores y términos de dominio en **español**.
 
-> **Lenguaje:** Toda la UI, identificadores y términos de dominio están en **español**. Mantenerlo así.
+---
 
-## 🏗️ Stack Técnico
+## Stack técnico
 
-### Frontend
-- **Vite 6** + **React 18** + **TypeScript**
-- **React Router 7** — enrutamiento SPA
-- **Tailwind CSS 4** — estilos utility-first
-- **shadcn/ui** — componentes Radix-based
-- Exportado desde Figma (Vite React + Tailwind plugins, ver `vite.config.ts`)
+| Capa | Tecnología |
+|---|---|
+| Frontend | React 18 + Vite 6 + TypeScript + React Router 7 + Tailwind CSS 4 |
+| Backend | Next.js 14 Route Handlers + Prisma ORM + Zod |
+| Base de datos | PostgreSQL 15 (29 tablas, triggers, RLS, auditoría) |
+| Auth | JWT en cookie HttpOnly — roles: Admin, Secretaria, Docente, Alumno |
+| Orquestación | Docker Compose |
 
-### Backend
-- **Next.js 14** — Route Handlers (`app/api/**`)
-- **Prisma ORM** — multiSchema (4 schemas: `auth_schema`, `academic_schema`, `financial_schema`, `audit_schema`)
-- **Node.js 20** 
-- **JWT + HttpOnly Cookies** — autenticación propia (sin Supabase Auth)
-- **bcryptjs** — hashing de contraseñas (salt rounds: 12)
-- **Zod** — validación
-- **RBAC** — roles: Admin, Secretaria, Docente, Alumno
+---
 
-### Base de Datos
-- **PostgreSQL 15**
-- **29 tablas** + **14 ENUMs** + **triggers**, **funciones**, **stored procedures**, **RLS policies**
-- Fuente de verdad: `SQL/sgei_ddl_v2.1_auditado (1).sql`
-- **Auditoría integrada** vía `app.current_user_id` (trigger context)
+## Inicio rápido con Docker
 
-## 📦 Estructura del Proyecto
+### Prerequisitos
 
-```
-.
-├── docker-compose.yml       ⭐ Orquestación: PostgreSQL + Backend + Frontend
-├── SQL/
-│   ├── 00-setup.sql         Prepara auth schema y uid() function
-│   └── sgei_ddl_v2.1_auditado (1).sql   DDL completo (tablas, triggers, RLS)
-│
-├── backend/
-│   ├── Dockerfile           Node.js 20 + Prisma
-│   ├── docker-entrypoint.sh Espera DB → prisma db pull → prisma generate → seed → dev
-│   ├── package.json         Next.js, Prisma, JWT, bcryptjs, Zod
-│   ├── tsconfig.json        Next.js + TypeScript
-│   ├── prisma/
-│   │   └── schema.prisma    Generado por "prisma db pull" (refleja DDL, NO migra)
-│   ├── app/api/             Route Handlers REST
-│   ├── config/              env.ts — validación de variables
-│   ├── lib/                 Prisma singleton, response helpers
-│   ├── modules/             Lógica de negocio (services + repositories)
-│   ├── middleware/          Auth, RBAC, audit context
-│   ├── schemas/             Zod validation schemas
-│   └── types/               TypeScript types (api, roles, etc.)
-│
-├── frontend/
-│   ├── Dockerfile           Node.js 22 + pnpm + Vite
-│   ├── package.json         Vite, React, React Router, Tailwind, shadcn/ui
-│   ├── vite.config.ts       Configuración Vite (Figma exports)
-│   ├── index.html           ⭐ Punto de entrada HTML
-│   ├── tsconfig.json        TypeScript
-│   ├── src/
-│   │   ├── main.tsx         React entry point
-│   │   ├── app/
-│   │   │   ├── App.tsx      RouterProvider
-│   │   │   ├── routes.tsx   Rutas: /alumno, /docente, /admin, /secretaria
-│   │   │   ├── pages/       Componentes de cada ruta
-│   │   │   ├── components/  Componentes reutilizables + layout AppShell
-│   │   │   └── data/        mockData.ts (datos mock, NO API)
-│   │   └── assets/          Imágenes, iconos
-│   └── pnpm-workspace.yaml  Monorepo config
-│
-└── .gitignore               Node modules, .env, build artifacts
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado y corriendo
+- Puertos **3000**, **3001** y **5432** libres en tu máquina
+
+### 1. Clonar el repositorio
+
+```bash
+git clone <url-del-repositorio>
+cd SGEI-Sistema-Gestion-Educativa-Integral
 ```
 
-## 🚀 Ejecución con Docker Compose
+### 2. Levantar todos los servicios
 
-**Opción recomendada:** Todo con un solo comando.
-
-### 1️⃣ Prerequisitos
-- **Docker** + **Docker Compose** instalados
-- Puerto **3000** (frontend), **3001** (backend), **5432** (DB) libres
-
-### 2️⃣ Levantar todo
 ```bash
 docker compose up --build
 ```
 
-**Qué ocurre:**
-1. PostgreSQL inicia y carga `00-setup.sql` + `sgei_ddl_v2.1_auditado (1).sql`
-2. Backend espera a que DB esté healthy
-3. Backend ejecuta `prisma db pull` para introspeccionar e inferir `schema.prisma` del DDL existente
-4. Backend ejecuta `prisma generate` para crear Prisma Client
-5. Backend ejecuta seed (crea usuario Admin: `director@sgei.edu.pe` / `Admin1234`)
-6. Backend inicia en puerto **3001**
-7. Frontend inicia en puerto **3000**
+Docker Compose levanta **tres servicios en orden**:
 
-### 3️⃣ Acceder a la aplicación
-- **Frontend:** http://localhost:3000
-- **Backend (API):** http://localhost:3001/api
-- **Health check:** `curl http://localhost:3001/api/health`
+```
+db (PostgreSQL 15)
+  └─► backend (Next.js 14, puerto 3001)
+        └─► frontend (Vite React, puerto 3000)
+```
 
-### 4️⃣ Ver logs
+**Secuencia de arranque del backend** (gestionada por `docker-entrypoint.sh`):
+
+1. Espera a que PostgreSQL esté disponible (`pg_isready`)
+2. Ejecuta `prisma db pull` → introspecciona el DDL y genera `schema.prisma`
+3. Ejecuta `prisma generate` → genera Prisma Client
+4. Ejecuta `prisma db seed` → crea datos de prueba
+5. Inicia el servidor Next.js en el puerto 3001
+
+> El primer arranque tarda ~2–3 minutos porque Docker construye las imágenes e instala dependencias.
+
+### 3. Verificar que todo esté corriendo
+
 ```bash
-# Todo
+docker compose ps
+```
+
+Deberías ver los tres servicios con estado `Up`:
+
+```
+sgei-db        Up (healthy)
+sgei-backend   Up (healthy)
+sgei-frontend  Up
+```
+
+### 4. Acceder a la aplicación
+
+| Servicio | URL |
+|---|---|
+| **Frontend** | http://localhost:3000 |
+| **API** | http://localhost:3001/api |
+| **Health check** | http://localhost:3001/api/health |
+
+---
+
+## Credenciales de prueba
+
+**Contraseña de todos los usuarios: `demo1234`**
+
+| Rol | Email |
+|---|---|
+| Admin | `director@sgei.edu.pe` |
+| Secretaria | `secretaria@sgei.edu.pe` |
+| Docente | `ana.garcia@sgei.edu.pe` |
+| Docente | `jose.ramos@sgei.edu.pe` |
+| Alumno | `carlos.mendoza@sgei.edu.pe` |
+| Alumno | `adriana.castillo@sgei.edu.pe` |
+
+---
+
+## Estructura del proyecto
+
+```
+.
+├── docker-compose.yml                          Orquesta PostgreSQL + Backend + Frontend
+├── SQL/
+│   ├── 00-setup.sql                            Crea schema auth y función uid()
+│   ├── sgei_ddl_v2.1_auditado (1).sql          DDL completo: tablas, triggers, RLS, ENUMs
+│   └── 02-seed.sql                             Datos de prueba (cargado automáticamente)
+│
+├── backend/
+│   ├── Dockerfile                              Node.js 20-slim + Prisma + curl
+│   ├── docker-entrypoint.sh                    Espera DB → pull → generate → seed → dev
+│   ├── package.json                            Next.js 14, Prisma 5.22, JWT, bcryptjs, Zod
+│   ├── prisma/schema.prisma                    Generado por "prisma db pull" (no editar)
+│   ├── app/api/                                Route Handlers REST
+│   ├── modules/                                Servicios y repositorios por dominio
+│   ├── lib/                                    Prisma singleton, JWT, helpers de respuesta
+│   └── schemas/                                Schemas Zod de validación
+│
+└── frontend/
+    ├── Dockerfile                              Node.js 22-slim + pnpm + Vite
+    ├── package.json                            React 18, React Router 7, Tailwind 4, shadcn/ui
+    ├── src/
+    │   ├── main.tsx                            Punto de entrada React
+    │   ├── app/routes.tsx                      Rutas: /alumno /docente /admin /secretaria
+    │   ├── app/pages/                          Componentes de cada portal
+    │   ├── lib/api/                            Clientes HTTP hacia el backend
+    │   └── types/                              Tipos TypeScript compartidos
+    └── pnpm-workspace.yaml
+```
+
+---
+
+## Comandos Docker
+
+```bash
+# Levantar todo (primera vez o tras cambios)
+docker compose up --build
+
+# Levantar en segundo plano
+docker compose up --build -d
+
+# Ver logs en tiempo real
 docker compose logs -f
 
-# Solo un servicio
+# Logs de un servicio específico
 docker compose logs -f backend
 docker compose logs -f frontend
 docker compose logs -f db
-```
 
-### 5️⃣ Detener
-```bash
+# Detener sin borrar datos
 docker compose down
+
+# Detener Y borrar volúmenes (BORRA la base de datos)
+docker compose down -v
+
+# Reconstruir solo un servicio
+docker compose up --build backend
+
+# Ejecutar comandos en un contenedor
+docker compose exec backend npx prisma studio          # GUI de base de datos (puerto 5555)
+docker compose exec backend npx prisma db seed         # Re-ejecutar seed
+docker compose exec db psql -U sgei -d sgei_db         # Consola PostgreSQL
 ```
 
-## 🛑 Desarrollo sin Docker (local)
+---
 
-Si prefieres ejecutar directamente en tu máquina:
+## Variables de entorno
 
-### Base de datos
+Todas las variables están definidas directamente en `docker-compose.yml`.
+Para desarrollo local sin Docker crea `backend/.env` con:
+
+```env
+DATABASE_URL="postgresql://sgei:sgei@localhost:5432/sgei_db"
+DIRECT_URL="postgresql://sgei:sgei@localhost:5432/sgei_db"
+NODE_ENV="development"
+JWT_SECRET="dev-secret-cambiar-en-produccion-minimo-64-caracteres-1234567890abcdef"
+JWT_EXPIRES_IN="8h"
+JWT_COOKIE_NAME="sgei_token"
+BCRYPT_SALT_ROUNDS="12"
+FRONTEND_ORIGIN="http://localhost:3000"
+MAX_FILE_SIZE_MB="5"
+WATCHPACK_POLLING="true"
+```
+
+El frontend no requiere `.env` — detecta el backend en `http://localhost:3001` por defecto
+(configurable con `VITE_API_URL`).
+
+---
+
+## Desarrollo local sin Docker
+
+### 1. Base de datos (solo PostgreSQL en Docker)
+
 ```bash
-# Iniciar PostgreSQL en Docker (solo DB, no toda la stack)
 docker run --name sgei-db \
   -e POSTGRES_USER=sgei \
   -e POSTGRES_PASSWORD=sgei \
   -e POSTGRES_DB=sgei_db \
   -p 5432:5432 \
-  -d postgres:15
+  -d postgres:15-alpine
 
-# Cargar DDL
+# Cargar DDL y datos
 docker exec -i sgei-db psql -U sgei -d sgei_db < SQL/00-setup.sql
 docker exec -i sgei-db psql -U sgei -d sgei_db < "SQL/sgei_ddl_v2.1_auditado (1).sql"
+docker exec -i sgei-db psql -U sgei -d sgei_db < SQL/02-seed.sql
 ```
 
-### Backend
+### 2. Backend
+
 ```bash
 cd backend
-cp .env.example .env  # Ajustar DATABASE_URL si es necesario
 npm install
-npm run dev  # Puerto 3001
+npx prisma db pull      # Introspecciona DB → genera schema.prisma
+npx prisma generate     # Genera Prisma Client
+npm run dev             # http://localhost:3001
 ```
 
-### Frontend
+### 3. Frontend
+
 ```bash
 cd frontend
 pnpm install
-pnpm dev  # Puerto 3000
+pnpm dev                # http://localhost:3000
 ```
-
-## ⚙️ Variables de Entorno
-
-### Backend (`backend/.env`)
-```env
-# PostgreSQL
-DATABASE_URL="postgresql://sgei:sgei@db:5432/sgei_db"
-DIRECT_URL="postgresql://sgei:sgei@db:5432/sgei_db"
-
-# Node
-NODE_ENV="development"
-
-# JWT
-JWT_SECRET="dev-secret-cambiar-en-produccion-minimo-64-caracteres-1234567890abcdef"
-JWT_EXPIRES_IN="8h"
-JWT_COOKIE_NAME="sgei_token"
-
-# Seguridad
-BCRYPT_SALT_ROUNDS="12"
-
-# CORS
-FRONTEND_ORIGIN="http://localhost:3000"
-
-# Almacenamiento (Phase 5+)
-MAX_FILE_SIZE_MB="5"
-```
-
-### Frontend (`.env` — NO requiere .env en Docker)
-```env
-# Auto-detecta backend en http://localhost:3001
-```
-
-## 🧪 Pruebas
-
-### Health Check
-```bash
-curl http://localhost:3001/api/health
-# Respuesta esperada:
-# {"success": true, "data": {"status": "ok", "database": "up"}}
-```
-
-### Login (Fase 2)
-```bash
-curl -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"director@sgei.edu.pe","password":"Admin1234"}' \
-  -v
-```
-
-### Acceder a recursos protegidos
-```bash
-# La cookie se envía automáticamente si usas el mismo cliente
-curl http://localhost:3001/api/usuarios \
-  -H "Cookie: sgei_token=<token-del-login>"
-```
-
-## 📋 Comandos Útiles
-
-### Backend
-```bash
-cd backend
-
-# Dev
-npm run dev                  # Inicio (puerto 3001)
-
-# Build
-npm run build               # Compilar para producción
-
-# Prisma
-npx prisma generate        # Generar cliente Prisma (ejecutado en docker-entrypoint)
-npx prisma db pull         # Introspeccionar DB → schema.prisma
-npx prisma validate        # Validar schema.prisma
-npx prisma db seed         # Ejecutar seed.ts (crear datos iniciales)
-npx prisma studio          # GUI interactiva de BD (localhost:5555)
-
-# TypeScript
-npm run type-check         # (No configurado, requiere agregar script)
-```
-
-### Frontend
-```bash
-cd frontend
-
-# Dev
-pnpm dev                    # Inicio (puerto 3000, con HMR)
-
-# Build
-pnpm build                  # Generar dist/
-
-# Preview
-pnpm preview               # Servir dist/ localmente
-```
-
-### Docker
-```bash
-# Rebuild todo
-docker compose up --build
-
-# Rebuild solo un servicio
-docker compose up --build backend
-
-# Ejecutar comando ad-hoc en un contenedor
-docker compose exec backend npm run prisma:generate
-docker compose exec db psql -U sgei -d sgei_db -c "SELECT version();"
-
-# Limpiar volúmenes (BORRA datos de DB)
-docker compose down -v
-```
-
-## 🔐 Autenticación
-
-### Flujo
-1. Usuario entra en `/` (Login)
-2. POST `/api/auth/login` con email + password
-3. Backend valida contra `credencial` → genera JWT
-4. JWT se almacena en cookie HttpOnly (SameSite=Strict)
-5. Rutas protegidas usan middleware `withAuth()` / `withRole()`
-
-### Bloqueo de cuenta
-- Tras **5 intentos fallidos** → cuenta bloqueada por **30 minutos**
-- Trigger `tg_bloqueo_cuenta` gestiona las fechas
-
-### Roles (RBAC)
-- **Admin** — acceso total
-- **Secretaria** — gestión de estudiantes, institucional
-- **Docente** — notas, asistencia, materiales
-- **Alumno** — consulta de notas, horarios, comunicados
-
-## 🎨 Frontend — Estructura de Rutas
-
-```
-/                        Login (público)
-/alumno/...             Portal Alumno
-/docente/...            Portal Docente
-/admin/...              Portal Admin
-/secretaria/...         Portal Secretaria
-```
-
-**Nota:** El rol se deriva de la URL. No hay persistencia — la navegación es local (`useState`), todos los datos son mock.
-
-## 🗄️ Base de Datos
-
-### Esquemas Prisma (multiSchema)
-- `auth_schema` — credenciales, usuarios, roles
-- `academic_schema` — períodos, grados, cursos, notas
-- `financial_schema` — pagos, vouchers, mora
-- `audit_schema` — logs de auditoría
-
-### Auditoría
-- Todo cambio INSERT/UPDATE/DELETE se registra automáticamente
-- Triggers capturan user_id vía `app.current_user_id` (setting de PostgreSQL)
-- Middleware backend configura este setting antes de ejecutar queries
-
-### Row-Level Security (RLS)
-- Políticas garantizan que usuarios solo ven sus propios datos
-- Ejemplo: Alumno solo ve sus notas, no las de otros
-
-## 📊 Estado de Implementación
-
-| Fase | Descripción | Estado |
-|------|-------------|--------|
-| 1 | Base: estructura, schema.prisma, health check | ✅ |
-| 2 | Auth: JWT, HttpOnly cookies, bcryptjs, RBAC, auditoría | ✅ |
-| 3 | Académico: períodos, grados, cursos, competencias | ✅ |
-| 4 | Alumnos/Docentes: CRUD, asignaciones, horarios | ✅ |
-| 5 | Asistencias, materiales, actividades | ⏳ |
-| 6 | Notas y libretas (PDF) | ⏳ |
-| 7 | Pagos y vouchers (SP revisar_boleta) | ⏳ |
-| 8 | SIAGIE (ExcelJS), dashboards, situación final | ⏳ |
-| 9 | Testing, seguridad, despliegue Railway | ⏳ |
-
-## 🚨 Importante
-
-⚠️ **Nunca modificar el DDL desde Prisma (NO usar `prisma migrate`):**
-- El DDL es el archivo `SQL/sgei_ddl_v2.1_auditado (1).sql`
-- Prisma SOLO refleja la estructura (multiSchema) vía `prisma db pull`
-- Cambios en tablas/triggers se hacen DIRECTAMENTE en PostgreSQL
-- Luego se ejecuta `prisma db pull` para regenerar `schema.prisma`
-
-## 📝 Archivos de Configuración
-
-- `.gitignore` — Node modules, .env, artifacts de build
-- `docker-compose.yml` — Orquestación de servicios
-- `CLAUDE.md` — Instrucciones para Claude Code
-- `.dockerignore` — Optimiza contexto de build
-
-## 🆘 Troubleshooting
-
-### Frontend muestra página en blanco
-1. Verifica que `frontend/index.html` existe
-2. Abre DevTools (F12) → Console → ¿hay errores rojo?
-3. Revisa logs del frontend: `docker compose logs frontend`
-
-### Backend no puede conectar a DB
-1. Verifica que PostgreSQL está healthy: `docker compose ps`
-2. Revisa logs: `docker compose logs db`
-3. Intenta conectar manualmente: `docker compose exec db psql -U sgei -d sgei_db -c "SELECT 1;"`
-
-### JWT/Auth fallando
-1. Verifica que `JWT_SECRET` está configurada
-2. Comprueba que la cookie se envía: DevTools → Network → Headers → Cookie
-3. Revisa logs del backend: `docker compose logs backend`
-
-### Puertos ya en uso
-```bash
-# Encontrar qué está usando puerto X
-# En Windows PowerShell:
-Get-NetTCPConnection -LocalPort 3000 | Get-Process
-
-# En Linux/Mac:
-lsof -i :3000
-```
-
-## 📚 Documentación Adicional
-
-- `CLAUDE.md` — Guía para desarrolladores y Claude Code
-- `backend/.env.example` — Variables de entorno del backend
-- `SQL/sgei_ddl_v2.1_auditado (1).sql` — DDL completo con comentarios
-
-## 🤝 Contribuir
-
-1. Crea una rama: `git checkout -b feature/mi-feature`
-2. Haz commit: `git commit -m "feat: descripción"`
-3. Push y abre PR: `git push origin feature/mi-feature`
 
 ---
 
-**Última actualización:** Mayo 2026  
-**Equipo:** SGEI Development Team
+## Verificación del sistema
+
+```bash
+# Health check de la API
+curl http://localhost:3001/api/health
+# {"success":true,"data":{"status":"ok","database":"up"}}
+
+# Login
+curl -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"director@sgei.edu.pe","password":"demo1234"}' \
+  -c cookies.txt -v
+
+# Endpoint protegido (usando la cookie del login)
+curl http://localhost:3001/api/asignaciones \
+  -b cookies.txt
+```
+
+---
+
+## Base de datos
+
+### Arquitectura multi-schema
+
+| Schema | Contenido |
+|---|---|
+| `auth_schema` | credenciales, perfiles de usuario, roles |
+| `academic_schema` | períodos, grados, cursos, competencias, notas, asistencia, horarios |
+| `financial_schema` | pagos, vouchers, mora |
+| `audit_schema` | logs de auditoría automática |
+
+### Reglas importantes
+
+> **Nunca usar `prisma migrate`.**
+> El DDL es la fuente de verdad — se modifica directamente en PostgreSQL.
+> Después de cualquier cambio en el esquema, ejecutar `prisma db pull` para
+> sincronizar `schema.prisma`.
+
+### Auditoría automática
+
+Todos los cambios INSERT/UPDATE/DELETE se registran mediante triggers.
+El middleware del backend configura `app.current_user_id` antes de cada query
+para que los triggers capturen el usuario responsable.
+
+---
+
+## Rutas del frontend
+
+```
+/                   Login (público)
+/alumno/...         Portal Alumno   — notas, asistencia, pagos, libreta, cursos
+/docente/...        Portal Docente  — registro de notas, asistencia, tareas
+/admin/...          Portal Admin    — configuración general
+/secretaria/...     Portal Secretaria — alumnos, pagos, SIAGIE
+```
+
+El rol se deriva del primer segmento de la URL.
+La autenticación real usa JWT HttpOnly cookie — el Login navega al portal correspondiente
+según el `rol` devuelto por `GET /api/auth/me`.
+
+---
+
+## Solución de problemas
+
+### El backend no arranca o dice "DB no disponible"
+
+```bash
+# Ver estado de la base de datos
+docker compose logs db
+
+# Verificar que el healthcheck pasó
+docker compose ps
+# sgei-db debe mostrar "(healthy)"
+
+# Reiniciar solo el backend tras que la DB esté lista
+docker compose restart backend
+```
+
+### Error "port already in use"
+
+```powershell
+# Windows PowerShell — encontrar qué usa el puerto
+Get-NetTCPConnection -LocalPort 3000 | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Get-Process -Id $_ }
+Get-NetTCPConnection -LocalPort 3001 | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Get-Process -Id $_ }
+Get-NetTCPConnection -LocalPort 5432 | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Get-Process -Id $_ }
+```
+
+```bash
+# Linux / macOS
+lsof -i :3000
+lsof -i :3001
+lsof -i :5432
+```
+
+### Quiero limpiar todo y empezar desde cero
+
+```bash
+# Detiene, borra contenedores Y el volumen de la base de datos
+docker compose down -v
+
+# Volver a levantar limpio
+docker compose up --build
+```
+
+### El frontend muestra pantalla en blanco
+
+1. Abre DevTools → Console → revisa errores en rojo
+2. Verifica que el backend esté respondiendo: `curl http://localhost:3001/api/health`
+3. Comprueba los logs: `docker compose logs frontend`
+
+### `prisma db pull` falla en el entrypoint
+
+Ocurre si el DDL tardó más de lo esperado en cargar. Solución:
+
+```bash
+docker compose restart backend
+```
+
+---
+
+## Comandos Prisma útiles
+
+```bash
+# Desde el contenedor del backend
+docker compose exec backend npx prisma db pull      # Regenera schema.prisma desde la BD
+docker compose exec backend npx prisma generate     # Regenera Prisma Client
+docker compose exec backend npx prisma studio       # GUI interactiva (localhost:5555)
+docker compose exec backend npx prisma db seed      # Re-ejecuta el seed
+docker compose exec backend npx prisma validate     # Valida schema.prisma
+```
+
+---
+
+**Última actualización:** Mayo 2026

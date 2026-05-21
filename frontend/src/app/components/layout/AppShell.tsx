@@ -8,7 +8,12 @@ import {
   CalendarRange, BookMarked, Sliders, School, ListChecks,
 } from 'lucide-react';
 import type { Role } from '../../data/mockData';
-import { USERS, NOTIFICATIONS } from '../../data/mockData';
+import { NOTIFICATIONS } from '../../data/mockData';
+import { useSession } from '../../../lib/hooks/useSession';
+
+function getInitials(nombre: string): string {
+  return nombre.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+}
 
 interface NavItem { label: string; path: string; icon: React.ElementType; badge?: number }
 
@@ -96,8 +101,25 @@ export function AppShell() {
   // 🔄 Corrección #12 — normalizeRole convierte 'alumno' (URL) → 'Alumno' (ENUM PascalCase)
   const role = normalizeRole(location.pathname.split('/')[1]);
   const navItems = NAV_CONFIG[role] || [];
-  const user = USERS[role];
+  const { session } = useSession();
+  const displayName = session?.nombre ?? '…';
+  const initials = session ? getInitials(session.nombre) : '…';
   const unread = notifications.filter(n => !n.read).length;
+
+  // Guard: redirige al portal correcto si el rol del JWT no coincide con la URL
+  useEffect(() => {
+    if (!session) return;
+    const sessionRole = normalizeRole(session.rol);
+    if (sessionRole !== role) {
+      const portalInicio: Record<Role, string> = {
+        Alumno:     '/alumno/inicio',
+        Docente:    '/docente/inicio',
+        Admin:      '/admin/inicio',
+        Secretaria: '/secretaria/inicio',
+      };
+      navigate(portalInicio[sessionRole] ?? '/', { replace: true });
+    }
+  }, [session, role, navigate]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -156,15 +178,11 @@ export function AppShell() {
         <div className="px-4 py-4 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-full bg-white/20 text-white text-sm font-semibold shrink-0">
-              {user?.initials}
+              {initials}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-              {'grade' in (user || {}) && (user as typeof USERS.Alumno).grade ? (
-                <p className="text-xs text-white/60">{(user as typeof USERS.Alumno).grade}° {(user as typeof USERS.Alumno).section} · {(user as typeof USERS.Alumno).level}</p>
-              ) : (
-                <p className="text-xs text-white/60 capitalize">{role}</p>
-              )}
+              <p className="text-sm font-medium text-white truncate">{displayName}</p>
+              <p className="text-xs text-white/60 capitalize">{role}</p>
             </div>
           </div>
         </div>
@@ -290,7 +308,7 @@ export function AppShell() {
 
           {/* User avatar */}
           <div className={`flex size-8 items-center justify-center rounded-full bg-gradient-to-br ${ROLE_COLORS[role]} text-white text-xs font-semibold shrink-0`}>
-            {user?.initials}
+            {initials}
           </div>
         </header>
 
