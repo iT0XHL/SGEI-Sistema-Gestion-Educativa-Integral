@@ -62,6 +62,88 @@ const ESPECIALIDADES = [
   'DPCC', 'Formación Religiosa', 'Tutoría', 'Computación e Informática',
 ];
 
+function InputField(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+  error?: string;
+  maxLength?: number;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const { label, value, onChange, placeholder, type = 'text', required, error: fieldError, maxLength, className, disabled } = props;
+  return (
+    <div className={className}>
+      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <input
+        type={type}
+        maxLength={maxLength}
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all ${
+          fieldError
+            ? 'border-red-400 bg-red-50 focus:ring-red-400'
+            : 'border-slate-200 bg-slate-50 focus:ring-slate-400'
+        }`}
+      />
+      {fieldError && <p className="mt-1 text-xs text-red-500">{fieldError}</p>}
+    </div>
+  );
+}
+
+function SelectField(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  required?: boolean;
+  error?: string;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const { label, value, onChange, options, placeholder, required, error: fieldError, className, disabled } = props;
+  return (
+    <div className={className}>
+      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="relative">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={e => onChange(e.target.value)}
+          className={`w-full appearance-none border text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 transition-all disabled:opacity-60 ${
+            fieldError
+              ? 'border-red-400 bg-red-50 focus:ring-red-400'
+              : value ? 'border-slate-200 bg-slate-50 text-slate-700 focus:ring-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500 focus:ring-slate-400'
+          }`}
+        >
+          {placeholder && <option value="">{placeholder}</option>}
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+      </div>
+      {fieldError && <p className="mt-1 text-xs text-red-500">{fieldError}</p>}
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <div className="col-span-full border-b border-slate-100 pb-1.5 mb-1">
+      <h4 className="text-sm font-semibold text-slate-600">{children}</h4>
+    </div>
+  );
+}
+
 function emptyFormData(rol: FormRol): UserFormData {
   return {
     usuario_login: '',
@@ -292,87 +374,6 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
     }
   }
 
-  function InputField(props: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-    type?: string;
-    required?: boolean;
-    error?: string;
-    maxLength?: number;
-    className?: string;
-    disabled?: boolean;
-  }) {
-    const { label, value, onChange, placeholder, type = 'text', required, error: fieldError, maxLength, className, disabled } = props;
-    return (
-      <div className={className}>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
-        <input
-          type={type}
-          maxLength={maxLength}
-          value={value}
-          disabled={disabled}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all ${
-            fieldError
-              ? 'border-red-400 bg-red-50 focus:ring-red-400'
-              : 'border-slate-200 bg-slate-50 focus:ring-slate-400'
-          }`}
-        />
-        {fieldError && <p className="mt-1 text-xs text-red-500">{fieldError}</p>}
-      </div>
-    );
-  }
-
-  function SelectField(props: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    options: { value: string; label: string }[];
-    placeholder?: string;
-    required?: boolean;
-    error?: string;
-    className?: string;
-    disabled?: boolean;
-  }) {
-    const { label, value, onChange, options, placeholder, required, error: fieldError, className, disabled } = props;
-    return (
-      <div className={className}>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
-        <div className="relative">
-          <select
-            value={value}
-            disabled={disabled}
-            onChange={e => onChange(e.target.value)}
-            className={`w-full appearance-none border text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 transition-all disabled:opacity-60 ${
-              fieldError
-                ? 'border-red-400 bg-red-50 focus:ring-red-400'
-                : value ? 'border-slate-200 bg-slate-50 text-slate-700 focus:ring-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500 focus:ring-slate-400'
-            }`}
-          >
-            {placeholder && <option value="">{placeholder}</option>}
-            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-        </div>
-        {fieldError && <p className="mt-1 text-xs text-red-500">{fieldError}</p>}
-      </div>
-    );
-  }
-
-  function SectionTitle({ children }: { children: string }) {
-    return (
-      <div className="col-span-full border-b border-slate-100 pb-1.5 mb-1">
-        <h4 className="text-sm font-semibold text-slate-600">{children}</h4>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
