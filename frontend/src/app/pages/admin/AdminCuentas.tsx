@@ -28,7 +28,10 @@ interface RowCuenta {
 }
 
 function fromDocente(d: DocenteDTO): RowCuenta {
-  const displayName = `${d.nombres} ${d.apellido_paterno} ${d.apellido_materno}`.trim();
+  let displayName = `${d.nombres} ${d.apellido_paterno} ${d.apellido_materno}`.trim();
+  if (!displayName) {
+    displayName = d.usuario_login ?? d.email_institucional ?? 'Sin nombre';
+  }
   const parts = displayName.split(' ');
   return {
     id:           d.id,
@@ -62,7 +65,10 @@ function fromUsuario(u: UsuarioDTO): RowCuenta {
 }
 
 function fromAlumno(a: AlumnoResumenDTO): RowCuenta {
-  const displayName = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`.trim();
+  let displayName = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`.trim();
+  if (!displayName) {
+    displayName = a.usuario_login || 'Sin nombre';
+  }
   const parts = displayName.split(' ');
   return {
     id:           a.id,
