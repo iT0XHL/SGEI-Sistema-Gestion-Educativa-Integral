@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  PlusCircle, Search, UserCheck, UserX, Pencil, Lock, Loader2, AlertTriangle,
-  Eye, EyeOff, X,
+  PlusCircle, Search, UserCheck, UserX, Pencil, Loader2, AlertTriangle,
 } from 'lucide-react';
 import {
   usuariosApi, docentesAdminApi, alumnosAdminApi,
@@ -101,16 +100,10 @@ export default function AdminCuentas() {
   // Modal states
   const [formModal, setFormModal] = useState<{
     mode: 'create' | 'edit';
-    rol: FormRol;
+    rol?: FormRol;
     initialData?: UserFormData & { id: string };
   } | null>(null);
 
-  const [passwordTarget, setPasswordTarget] = useState<RowCuenta | null>(null);
-  const [passForm, setPassForm] = useState({ newPass: '', confirmPass: '' });
-  const [showNewPass, setShowNewPass] = useState(false);
-  const [showConfirmPass, setShowConfirmPass] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [passError, setPassError] = useState('');
 
   const [confirmDelete, setConfirmDelete] = useState<RowCuenta | null>(null);
 
@@ -143,9 +136,22 @@ export default function AdminCuentas() {
       ...docenteRows.map(fromDocente),
       ...staffRows.map(fromUsuario),
       ...alumnoRows.map(fromAlumno),
-    ].sort((a, b) => a.displayName.localeCompare(b.displayName, 'es'));
+    ];
 
-    let filtered = merged;
+    // Eliminar duplicados por (tipo, id)
+    const seen = new Set<string>();
+    const deduplicated: RowCuenta[] = [];
+    for (const account of merged) {
+      const key = `${account.tipo}:${account.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(account);
+      }
+    }
+
+    deduplicated.sort((a, b) => a.displayName.localeCompare(b.displayName, 'es'));
+
+    let filtered = deduplicated;
     if (rolTab) {
       filtered = filtered.filter(a => a.rol === rolTab);
     }
@@ -166,8 +172,8 @@ export default function AdminCuentas() {
   }, [docenteRows, staffRows, alumnoRows]);
 
   // ── Handlers ─────────────────────────────────────────────────
-  function openCreate(rol: FormRol) {
-    setFormModal({ mode: 'create', rol });
+  function openCreate() {
+    setFormModal({ mode: 'create' });
   }
 
   async function openEdit(row: RowCuenta) {
@@ -250,42 +256,6 @@ export default function AdminCuentas() {
     }).catch(() => showToast('Error al recargar datos.', 'error'));
   }
 
-  function openPasswordModal(row: RowCuenta) {
-    setPasswordTarget(row);
-    setPassForm({ newPass: '', confirmPass: '' });
-    setShowNewPass(false);
-    setShowConfirmPass(false);
-    setPassError('');
-  }
-
-  function resetPasswordModal() {
-    setPasswordTarget(null);
-    setPassForm({ newPass: '', confirmPass: '' });
-    setPassError('');
-    setSavingPassword(false);
-  }
-
-  async function handlePasswordChange(e: React.FormEvent) {
-    e.preventDefault();
-    if (!passwordTarget) return;
-    setPassError('');
-    if (passForm.newPass.length < 8) { setPassError('Mínimo 8 caracteres.'); return; }
-    if (passForm.newPass !== passForm.confirmPass) { setPassError('No coinciden.'); return; }
-
-    setSavingPassword(true);
-    try {
-      const payload = { password_nueva: passForm.newPass, confirmacion: passForm.confirmPass };
-      if (passwordTarget.tipo === 'docente') await docentesAdminApi.resetContrasena(passwordTarget.id, payload);
-      else if (passwordTarget.tipo === 'alumno') await alumnosAdminApi.resetContrasena(passwordTarget.id, payload);
-      else await usuariosApi.resetContrasena(passwordTarget.id, payload);
-      resetPasswordModal();
-      showToast('Contraseña actualizada correctamente.');
-    } catch (err) {
-      setPassError(err instanceof Error ? err.message : 'Error al cambiar la contraseña.');
-    } finally {
-      setSavingPassword(false);
-    }
-  }
 
   // ── Toggle (desactivar / reactivar) ─────────────────────────
   function handleToggleClick(row: RowCuenta) {
@@ -387,7 +357,7 @@ export default function AdminCuentas() {
         ))}
         <div className="ml-auto">
           <button
-            onClick={() => openCreate('Docente')}
+            onClick={() => openCreate()}
             className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-medium transition-colors shadow-sm"
           >
             <PlusCircle className="size-3.5" /> Nuevo
@@ -440,10 +410,6 @@ export default function AdminCuentas() {
                       className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
                       <Pencil className="size-4" />
                     </button>
-                    <button onClick={() => openPasswordModal(acc)} disabled={toggling !== null} title="Cambiar contraseña"
-                      className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
-                      <Lock className="size-4" />
-                    </button>
                     <button onClick={() => handleToggleClick(acc)} disabled={toggling !== null}
                       className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors border disabled:opacity-50 ${
                         acc.activo ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
@@ -472,61 +438,6 @@ export default function AdminCuentas() {
           onClose={() => setFormModal(null)}
           onSuccess={handleFormSuccess}
         />
-      )}
-
-      {/* ── Modal cambio de contraseña ─────────────────────────── */}
-      {passwordTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-base font-semibold text-slate-800">Cambiar contraseña</h3>
-              <button onClick={resetPasswordModal} className="p-1.5 rounded-lg hover:bg-slate-100">
-                <X className="size-4 text-slate-500" />
-              </button>
-            </div>
-            <form onSubmit={handlePasswordChange} className="p-6 space-y-4">
-              {passError && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
-                  <AlertTriangle className="size-4 text-red-500 shrink-0" />
-                  <p className="text-xs text-red-700">{passError}</p>
-                </div>
-              )}
-              <div className="bg-slate-50 rounded-xl px-4 py-3 text-sm text-slate-600">
-                Nueva contraseña para: <strong>{passwordTarget.displayName}</strong>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Nueva contraseña</label>
-                <div className="relative">
-                  <input type={showNewPass ? 'text' : 'password'} value={passForm.newPass} onChange={e => setPassForm(f => ({ ...f, newPass: e.target.value }))}
-                    placeholder="Mínimo 8 caracteres"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-slate-400" />
-                  <button type="button" onClick={() => setShowNewPass(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    {showNewPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Confirmar contraseña</label>
-                <div className="relative">
-                  <input type={showConfirmPass ? 'text' : 'password'} value={passForm.confirmPass} onChange={e => setPassForm(f => ({ ...f, confirmPass: e.target.value }))}
-                    placeholder="Repite la contraseña"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-slate-400" />
-                  <button type="button" onClick={() => setShowConfirmPass(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    {showConfirmPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
-              </div>
-              <div className="flex gap-3 pb-2">
-                <button type="button" onClick={resetPasswordModal}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
-                <button type="submit" disabled={savingPassword}
-                  className="flex-1 bg-slate-800 hover:bg-slate-900 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                  {savingPassword ? <><Loader2 className="size-4 animate-spin" /> Guardando…</> : 'Cambiar contraseña'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
 
       {/* ── Modal confirmar desactivación ──────────────────────── */}

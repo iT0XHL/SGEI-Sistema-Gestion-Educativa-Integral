@@ -47,7 +47,7 @@ export interface UserFormData {
 
 interface Props {
   mode: 'create' | 'edit';
-  rol: FormRol;
+  rol?: FormRol;
   initialData?: Partial<UserFormData> & { id?: string };
   onClose: () => void;
   onSuccess: (message: string) => void;
@@ -91,7 +91,11 @@ function emptyFormData(rol: FormRol): UserFormData {
   };
 }
 
-export default function UserFormModal({ mode, rol, initialData, onClose, onSuccess }: Props) {
+export default function UserFormModal({ mode, rol: initialRol, initialData, onClose, onSuccess }: Props) {
+  const [selectedRol, setSelectedRol] = useState<FormRol>(initialRol || 'Docente');
+
+  const rol = selectedRol;
+
   const [form, setForm] = useState<UserFormData>(() => {
     const base = emptyFormData(rol);
     if (mode === 'edit' && initialData) {
@@ -119,6 +123,14 @@ export default function UserFormModal({ mode, rol, initialData, onClose, onSucce
     if (rol !== 'Alumno' || !form.periodo_id) return;
     estructuraApi.secciones({ periodoId: form.periodo_id }).then(setSecciones).catch(() => {});
   }, [rol, form.periodo_id]);
+
+  useEffect(() => {
+    if (mode !== 'create') return;
+    const base = emptyFormData(rol);
+    if (rol === 'Admin' || rol === 'Secretaria') base.rol = rol;
+    setForm(base);
+    setSubmitAttempted(false);
+  }, [selectedRol, mode]);
 
   function set<K extends keyof UserFormData>(key: K, value: UserFormData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -385,6 +397,26 @@ export default function UserFormModal({ mode, rol, initialData, onClose, onSucce
             </div>
           )}
 
+          {/* ─── Seleccionar Rol (solo en modo crear) ─── */}
+          {mode === 'create' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SectionTitle>Tipo de usuario</SectionTitle>
+              <SelectField
+                label="Seleccionar rol"
+                value={selectedRol}
+                onChange={v => setSelectedRol(v as FormRol)}
+                options={[
+                  { value: 'Docente', label: 'Docente' },
+                  { value: 'Alumno', label: 'Alumno' },
+                  { value: 'Admin', label: 'Administrador' },
+                  { value: 'Secretaria', label: 'Secretaría' },
+                ]}
+                required
+                className="sm:col-span-2"
+              />
+            </div>
+          )}
+
           {/* ─── Credenciales ─── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <SectionTitle>Credenciales de acceso</SectionTitle>
@@ -435,23 +467,6 @@ export default function UserFormModal({ mode, rol, initialData, onClose, onSucce
               </div>
             )}
           </div>
-
-          {/* ─── Staff: Rol ─── */}
-          {(rol === 'Admin' || rol === 'Secretaria') && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SectionTitle>Rol</SectionTitle>
-              <SelectField
-                label="Rol"
-                value={form.rol}
-                onChange={v => set('rol', v as 'Admin' | 'Secretaria')}
-                options={[
-                  { value: 'Admin', label: 'Administrador' },
-                  { value: 'Secretaria', label: 'Secretaría' },
-                ]}
-                required
-              />
-            </div>
-          )}
 
           {/* ─── Datos personales ─── */}
           {(rol === 'Docente' || rol === 'Alumno') && (
