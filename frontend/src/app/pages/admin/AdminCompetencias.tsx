@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { PlusCircle, X, Trash2, PenLine, Save, ChevronDown, ArrowUp, ArrowDown, ListChecks } from 'lucide-react';
-import { COURSES, COMPETENCIES } from '../../data/mockData';
+import { useState, useMemo, useEffect } from 'react';
+import { PlusCircle, X, Trash2, PenLine, Save, ChevronDown, ArrowUp, ArrowDown, ListChecks, Loader2, AlertTriangle } from 'lucide-react';
+import { estructuraApi, competenciasApi, type CompetenciaDTO, type CursoDTO } from '../../../lib/api/admin.api';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -8,28 +8,7 @@ import {
 
 type TipoCompetencia = 'regular' | 'transversal';
 
-interface Competencia {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  tipo: TipoCompetencia;
-  orden: number;
-  cursoId: string;
-}
-
-// Construir estado inicial a partir de COMPETENCIES del mockData
-function buildInitial(): Competencia[] {
-  return Object.entries(COMPETENCIES).flatMap(([cursoId, names]) =>
-    names.map((nombre, i) => ({
-      id: `comp-${cursoId}-${i}`,
-      nombre,
-      descripcion: '',
-      tipo: 'regular' as TipoCompetencia,
-      orden: i + 1,
-      cursoId,
-    }))
-  );
-}
+interface Competencia extends CompetenciaDTO {}
 
 const TIPO_COLORS: Record<TipoCompetencia, string> = {
   regular:      'bg-blue-100 text-blue-700',
@@ -39,91 +18,157 @@ const TIPO_COLORS: Record<TipoCompetencia, string> = {
 const EMPTY_FORM = { nombre: '', descripcion: '', tipo: 'regular' as TipoCompetencia };
 
 export default function AdminCompetencias() {
-  const [competencias, setCompetencias] = useState<Competencia[]>(buildInitial());
+  const [cursos, setCursos] = useState<CursoDTO[]>([]);
+  const [competencias, setCompetencias] = useState<Competencia[]>([]);
   const [filterNivel,  setFilterNivel]  = useState('Secundaria');
-  const [filterCurso,  setFilterCurso]  = useState('c1');
+  const [filterCurso,  setFilterCurso]  = useState('');
   const [modal, setModal]     = useState(false);
   const [form, setForm]       = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   // Edición inline
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm]   = useState(EMPTY_FORM);
 
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
+    try {
+      setLoading(true);
+      setError('');
+      const cursosData = await estructuraApi.cursos();
+      setCursos(cursosData);
+      if (cursosData.length > 0) {
+        setFilterCurso(cursosData[0].id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cargando cursos');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!filterCurso) return;
+    loadCompetencias();
+  }, [filterCurso]);
+
+  async function loadCompetencias() {
+    try {
+      const data = await competenciasApi.listar(filterCurso);
+      setCompetencias(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cargando competencias');
+    }
+  }
+
   const cursosNivel = useMemo(() =>
-    COURSES.filter(c => c.level === filterNivel),
-  [filterNivel]);
+    cursos.filter(c => c.nivel_id === (filterNivel === 'Secundaria' ? 'nivel-secundaria' : 'nivel-primaria') || cursos.length > 0),
+  [cursos, filterNivel]);
 
   const filtered = useMemo(() =>
-    competencias
-      .filter(c => c.cursoId === filterCurso)
-      .sort((a, b) => a.orden - b.orden),
-  [competencias, filterCurso]);
+    competencias.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)),
+  [competencias]);
 
-  // Mover competencia
-  function moveUp(id: string) {
+  async function moveUp(id: string) {
     const arr = [...filtered];
     const idx = arr.findIndex(c => c.id === id);
     if (idx <= 0) return;
-    const newOrden = arr[idx].orden;
-    const prevOrden = arr[idx - 1].orden;
-    setCompetencias(prev => prev.map(c => {
-      if (c.id === arr[idx].id)     return { ...c, orden: prevOrden };
-      if (c.id === arr[idx - 1].id) return { ...c, orden: newOrden };
-      return c;
-    }));
+    const newOrden = arr[idx].orden ?? 0;
+    const prevOrden = arr[idx - 1].orden ?? 0;
+    try {
+      await competenciasApi.reordenar([
+        { id: arr[idx].id, orden: prevOrden },
+        { id: arr[idx - 1].id, orden: newOrden },
+      ]);
+      await loadCompetencias();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error reordenando competencias');
+    }
   }
 
-  function moveDown(id: string) {
+  async function moveDown(id: string) {
     const arr = [...filtered];
     const idx = arr.findIndex(c => c.id === id);
     if (idx >= arr.length - 1) return;
-    const newOrden = arr[idx].orden;
-    const nextOrden = arr[idx + 1].orden;
-    setCompetencias(prev => prev.map(c => {
-      if (c.id === arr[idx].id)     return { ...c, orden: nextOrden };
-      if (c.id === arr[idx + 1].id) return { ...c, orden: newOrden };
-      return c;
-    }));
+    const newOrden = arr[idx].orden ?? 0;
+    const nextOrden = arr[idx + 1].orden ?? 0;
+    try {
+      await competenciasApi.reordenar([
+        { id: arr[idx].id, orden: nextOrden },
+        { id: arr[idx + 1].id, orden: newOrden },
+      ]);
+      await loadCompetencias();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error reordenando competencias');
+    }
   }
 
-  function handleDelete(id: string) {
-    // En producción: await fetch(`/api/competencias/${id}`, { method: 'DELETE' });
-    setCompetencias(prev => prev.filter(c => c.id !== id));
+  async function handleDelete(id: string) {
+    try {
+      await competenciasApi.eliminar(id);
+      await loadCompetencias();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error eliminando competencia');
+    }
   }
 
   function startEdit(comp: Competencia) {
     setEditingId(comp.id);
-    setEditForm({ nombre: comp.nombre, descripcion: comp.descripcion, tipo: comp.tipo });
+    setEditForm({ nombre: comp.nombre, descripcion: comp.descripcion || '', tipo: comp.tipo });
   }
 
-  function saveEdit(id: string) {
+  async function saveEdit(id: string) {
     if (!editForm.nombre.trim()) return;
-    // En producción: await fetch(`/api/competencias/${id}`, { method: 'PUT', body: JSON.stringify(editForm) });
-    setCompetencias(prev => prev.map(c => c.id === id ? { ...c, ...editForm } : c));
-    setEditingId(null);
+    try {
+      setSaving(true);
+      await competenciasApi.actualizar(id, editForm);
+      await loadCompetencias();
+      setEditingId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error guardando competencia');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleCreate(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
     if (!form.nombre.trim()) { setFormError('El nombre es obligatorio.'); return; }
-    const maxOrden = filtered.length > 0 ? Math.max(...filtered.map(c => c.orden)) + 1 : 1;
-    const nueva: Competencia = {
-      id: `comp-${filterCurso}-${Date.now()}`,
-      nombre: form.nombre.trim(),
-      descripcion: form.descripcion.trim(),
-      tipo: form.tipo,
-      orden: maxOrden,
-      cursoId: filterCurso,
-    };
-    // En producción: await fetch('/api/competencias', { method: 'POST', body: JSON.stringify(nueva) });
-    setCompetencias(prev => [...prev, nueva]);
-    setForm(EMPTY_FORM);
-    setModal(false);
+    if (!filterCurso) { setFormError('Selecciona un curso primero.'); return; }
+    try {
+      setSaving(true);
+      await competenciasApi.crear({
+        curso_id: filterCurso,
+        nombre: form.nombre.trim(),
+        descripcion: form.descripcion.trim() || undefined,
+        tipo: form.tipo,
+      });
+      await loadCompetencias();
+      setForm(EMPTY_FORM);
+      setModal(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Error creando competencia');
+    } finally {
+      setSaving(false);
+    }
   }
 
   const inputCls = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400';
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
@@ -142,24 +187,21 @@ export default function AdminCompetencias() {
         </button>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+          <AlertTriangle className="size-5 text-red-600 shrink-0" />
+          <p className="text-sm font-medium text-red-800">{error}</p>
+        </div>
+      )}
+
       {/* Filtros de curso */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-4 items-end">
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Nivel</label>
-          <div className="relative">
-            <select value={filterNivel} onChange={e => { setFilterNivel(e.target.value); setFilterCurso(COURSES.find(c => c.level === e.target.value)?.id ?? 'c1'); }}
-              className="appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-slate-400">
-              {['Primaria', 'Secundaria'].map(n => <option key={n}>{n}</option>)}
-            </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-          </div>
-        </div>
         <div className="flex-1 min-w-[200px]">
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Curso</label>
           <div className="relative">
             <select value={filterCurso} onChange={e => setFilterCurso(e.target.value)}
               className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-slate-400">
-              {cursosNivel.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {cursos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
           </div>
@@ -172,7 +214,7 @@ export default function AdminCompetencias() {
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
           <ListChecks className="size-4 text-slate-500" />
           <h2 className="text-sm font-semibold text-slate-700">
-            {COURSES.find(c => c.id === filterCurso)?.name ?? 'Curso'}
+            {cursos.find(c => c.id === filterCurso)?.nombre ?? 'Curso'}
           </h2>
         </div>
         {filtered.length === 0 ? (
@@ -248,10 +290,11 @@ export default function AdminCompetencias() {
                         <div className="flex items-center justify-end gap-2">
                           {isEditing ? (
                             <>
-                              <button onClick={() => saveEdit(comp.id)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium">
-                                <Save className="size-3" /> Guardar
+                              <button onClick={() => saveEdit(comp.id)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                                {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                                Guardar
                               </button>
-                              <button onClick={() => setEditingId(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                              <button onClick={() => setEditingId(null)} disabled={saving} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 disabled:opacity-50">
                                 <X className="size-3.5" />
                               </button>
                             </>
@@ -328,11 +371,12 @@ export default function AdminCompetencias() {
                 </select>
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={() => setModal(false)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors">
-                  Agregar competencia
+                <button type="submit" disabled={saving} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {saving ? 'Agregando...' : 'Agregar competencia'}
                 </button>
               </div>
             </form>

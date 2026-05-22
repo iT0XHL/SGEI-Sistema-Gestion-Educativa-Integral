@@ -33,12 +33,23 @@ export const UpdateUsuarioSchema = z
       .email('Debe ser un correo válido')
       .max(50)
       .optional(),
+    nombres: z.string().trim().min(2).max(100).optional(),
+    apellido_paterno: z.string().trim().min(2).max(60).optional(),
+    apellido_materno: z.string().trim().min(2).max(60).optional(),
     rol: z.enum(ROLES).optional(),
     activo: z.boolean().optional(),
   })
-  .refine((d) => d.usuario_login !== undefined || d.rol !== undefined || d.activo !== undefined, {
-    message: 'Debes enviar al menos un campo a actualizar',
-  });
+  .refine((d) =>
+    d.usuario_login !== undefined ||
+    d.nombres !== undefined ||
+    d.apellido_paterno !== undefined ||
+    d.apellido_materno !== undefined ||
+    d.rol !== undefined ||
+    d.activo !== undefined,
+    {
+      message: 'Debes enviar al menos un campo a actualizar',
+    }
+  );
 export type UpdateUsuarioInput = z.infer<typeof UpdateUsuarioSchema>;
 
 export const ListUsuariosQuerySchema = z.object({

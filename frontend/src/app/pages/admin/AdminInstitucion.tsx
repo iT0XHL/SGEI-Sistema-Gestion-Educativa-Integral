@@ -1,48 +1,42 @@
-import { useState } from 'react';
-import { School, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
-
-interface InstitucionEducativa {
-  codigo_modular: string;
-  codigo_ugel: string;
-  nombre_ugel: string;
-  nombre: string;
-  modalidad: string;
-  gestion: string;
-  departamento: string;
-  provincia: string;
-  distrito: string;
-  direccion: string;
-  activo: boolean;
-}
-
-const MOCK_INSTITUCION: InstitucionEducativa = {
-  codigo_modular: '0563801',
-  codigo_ugel:    '01',
-  nombre_ugel:    'UGEL 01 San Juan de Miraflores',
-  nombre:         'I.E. San José de Calasanz',
-  modalidad:      'EBR',
-  gestion:        'Privada',
-  departamento:   'Lima',
-  provincia:      'Lima',
-  distrito:       'San Juan de Miraflores',
-  direccion:      'Jr. Las Flores 123, Urb. Los Jardines',
-  activo:         true,
-};
+import { useState, useEffect } from 'react';
+import { School, CheckCircle2, AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
+import { institucionApi, type InstitucionDTO } from '../../../lib/api/admin.api';
 
 export default function AdminInstitucion() {
-  const [form, setForm] = useState<InstitucionEducativa>(MOCK_INSTITUCION);
+  const [form, setForm] = useState<InstitucionDTO | null>(null);
   const [error, setError]   = useState('');
   const [saved, setSaved]   = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  function setField<K extends keyof InstitucionEducativa>(k: K, v: InstitucionEducativa[K]) {
-    setForm(f => ({ ...f, [k]: v }));
-    setSaved(false);
-    setError('');
+  useEffect(() => {
+    loadInstitucion();
+  }, []);
+
+  async function loadInstitucion() {
+    try {
+      setLoading(true);
+      setError('');
+      const data = await institucionApi.obtener();
+      setForm(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cargando institución');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setField<K extends keyof InstitucionDTO>(k: K, v: InstitucionDTO[K]) {
+    if (form) {
+      setForm(f => f ? { ...f, [k]: v } : null);
+      setSaved(false);
+      setError('');
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!form) return;
     setError('');
     if (!/^\d{7}$/.test(form.codigo_modular)) {
       setError('El código modular debe tener exactamente 7 dígitos numéricos.');
@@ -52,16 +46,44 @@ export default function AdminInstitucion() {
       setError('El nombre de la institución y el nombre de la UGEL son obligatorios.');
       return;
     }
-    setSaving(true);
-    // En producción: await fetch('/api/institucion', { method: 'PUT', body: JSON.stringify(form) });
-    await new Promise(r => setTimeout(r, 800));
-    setSaving(false);
-    setSaved(true);
+    try {
+      setSaving(true);
+      await institucionApi.actualizar(form.id, {
+        nombre: form.nombre,
+        codigo_modular: form.codigo_modular,
+        codigo_ugel: form.codigo_ugel,
+        nombre_ugel: form.nombre_ugel,
+        modalidad: form.modalidad,
+        gestion: form.gestion,
+        departamento: form.departamento,
+        provincia: form.provincia,
+        distrito: form.distrito,
+        resolucion_creacion: form.resolucion_creacion || undefined,
+        centro_poblado: form.centro_poblado || undefined,
+        direccion: form.direccion || undefined,
+        telefono: form.telefono || undefined,
+        email_institucional: form.email_institucional || undefined,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error guardando institución');
+    } finally {
+      setSaving(false);
+    }
   }
 
   const inputCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition-all';
   const selectCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400';
   const labelCls = 'block text-xs font-medium text-slate-600 mb-1.5';
+
+  if (loading || !form) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
@@ -237,9 +259,9 @@ export default function AdminInstitucion() {
             className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 disabled:opacity-60 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm"
           >
             {saving ? (
-              <><svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Guardando…</>
+              <><Loader2 className="size-4 animate-spin" /> Guardando…</>
             ) : saved ? (
-              <><CheckCircle2 className="size-4" />Configuración guardada</>
+              <><CheckCircle2 className="size-4" /> Configuración guardada</>
             ) : (
               'Guardar configuración'
             )}

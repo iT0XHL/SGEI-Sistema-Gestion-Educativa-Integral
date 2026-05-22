@@ -328,18 +328,10 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
       await alumnosAdminApi.crear(payload);
       onSuccess('Alumno creado correctamente.');
     } else {
-      // For Admin/Secretaria without names, assign generic defaults
-      const nombres = form.nombres.trim() || form.rol;
-      const apellido_paterno = form.apellido_paterno.trim() || '(vacío)';
-      const apellido_materno = form.apellido_materno.trim() || '';
-
       const payload: CreateUsuarioPayload = {
         usuario_login: form.usuario_login.trim(),
         password: form.password,
         rol: form.rol,
-        nombres,
-        apellido_paterno,
-        apellido_materno,
       };
       await usuariosApi.crear(payload);
       onSuccess(`Cuenta de ${form.rol === 'Admin' ? 'Administrador' : 'Secretaría'} creada correctamente.`);
@@ -393,9 +385,16 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
     } else {
       const payload: UpdateUsuarioPayload = {};
       if (form.usuario_login !== initialData.usuario_login) payload.usuario_login = form.usuario_login;
-      if (form.nombres !== (initialData.nombres || '')) payload.nombres = form.nombres;
-      if (form.apellido_paterno !== (initialData.apellido_paterno || '')) payload.apellido_paterno = form.apellido_paterno;
-      if (form.apellido_materno !== (initialData.apellido_materno || '')) payload.apellido_materno = form.apellido_materno;
+      // Only include name fields if they have changed and have content
+      if (form.nombres.trim() !== (initialData.nombres?.trim() || '')) {
+        if (form.nombres.trim()) payload.nombres = form.nombres.trim();
+      }
+      if (form.apellido_paterno.trim() !== (initialData.apellido_paterno?.trim() || '')) {
+        if (form.apellido_paterno.trim()) payload.apellido_paterno = form.apellido_paterno.trim();
+      }
+      if (form.apellido_materno.trim() !== (initialData.apellido_materno?.trim() || '')) {
+        if (form.apellido_materno.trim()) payload.apellido_materno = form.apellido_materno.trim();
+      }
       if (Object.keys(payload).length > 0) {
         await usuariosApi.actualizar(id, payload);
       }

@@ -17,6 +17,9 @@ import type { RolUsuario } from '@/types/roles';
 export interface UsuarioDTO {
   id: string; // perfil_usuario.id
   usuario_login: string;
+  nombres: string | null;
+  apellido_paterno: string | null;
+  apellido_materno: string | null;
   rol: RolUsuario;
   entidad_tipo: string;
   entidad_id: string;
@@ -33,6 +36,9 @@ function toDTO(row: PerfilRow): UsuarioDTO {
   return {
     id: row.id,
     usuario_login: row.credencial.usuario_login,
+    nombres: row.credencial.nombres,
+    apellido_paterno: row.credencial.apellido_paterno,
+    apellido_materno: row.credencial.apellido_materno,
     rol: row.rol,
     entidad_tipo: row.entidad_tipo,
     entidad_id: row.entidad_id,
@@ -97,6 +103,20 @@ export const UsersService = {
       const existing = await UsersRepository.findByLogin(input.usuario_login);
       if (existing) throw new ConflictError('Ya existe una cuenta con ese correo.');
       await UsersRepository.updateLogin(current.credencial.id, input.usuario_login);
+    }
+
+    // Actualizar nombres (para Admin/Secretaria)
+    if (input.nombres !== undefined || input.apellido_paterno !== undefined || input.apellido_materno !== undefined) {
+      await withAuditContext(adminPerfilId, (tx) =>
+        tx.credencial.update({
+          where: { id: current.credencial.id },
+          data: {
+            ...(input.nombres !== undefined && { nombres: input.nombres }),
+            ...(input.apellido_paterno !== undefined && { apellido_paterno: input.apellido_paterno }),
+            ...(input.apellido_materno !== undefined && { apellido_materno: input.apellido_materno }),
+          },
+        }),
+      );
     }
 
     if (input.rol && input.rol !== current.rol) {

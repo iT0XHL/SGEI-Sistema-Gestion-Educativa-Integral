@@ -60,6 +60,20 @@ export const HorarioService = {
     };
   },
 
+  async update(id: string, input: { dia_semana?: number; hora_inicio?: string; hora_fin?: string; aula?: string | null }) {
+    try {
+      await HorarioRepo.update(id, {
+        diaSemana: input.dia_semana,
+        horaInicio: input.hora_inicio,
+        horaFin: input.hora_fin,
+        aula: input.aula,
+      });
+    } catch {
+      throw new NotFoundError('Bloque de horario');
+    }
+    return { id, actualizado: true };
+  },
+
   async remove(id: string) {
     try {
       await HorarioRepo.delete(id);

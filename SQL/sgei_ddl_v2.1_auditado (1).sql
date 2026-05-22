@@ -152,6 +152,9 @@ CREATE TABLE auth_schema.credencial (
     id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_login     VARCHAR(50)  NOT NULL UNIQUE,
     password_hash     VARCHAR(255) NOT NULL,
+    nombres           VARCHAR(100),
+    apellido_paterno  VARCHAR(60),
+    apellido_materno  VARCHAR(60),
     activo            BOOLEAN      NOT NULL DEFAULT TRUE,
     intentos_fallidos SMALLINT     NOT NULL DEFAULT 0 CHECK (intentos_fallidos >= 0),
     bloqueado_hasta   TIMESTAMPTZ,
@@ -162,6 +165,9 @@ CREATE TABLE auth_schema.credencial (
 
 COMMENT ON TABLE  auth_schema.credencial IS 'Credenciales de autenticación. Separada del perfil para RLS.';
 COMMENT ON COLUMN auth_schema.credencial.password_hash     IS 'bcrypt cost 12. Nunca texto plano.';
+COMMENT ON COLUMN auth_schema.credencial.nombres           IS 'Nombres del usuario (usado para Admin/Secretaria).';
+COMMENT ON COLUMN auth_schema.credencial.apellido_paterno  IS 'Apellido paterno del usuario (usado para Admin/Secretaria).';
+COMMENT ON COLUMN auth_schema.credencial.apellido_materno  IS 'Apellido materno del usuario (usado para Admin/Secretaria).';
 COMMENT ON COLUMN auth_schema.credencial.intentos_fallidos IS 'Se bloquea la cuenta al llegar a 5 intentos consecutivos.';
 COMMENT ON COLUMN auth_schema.credencial.bloqueado_hasta   IS 'NULL = cuenta activa. Fecha futura = bloqueada temporalmente.';
 

@@ -10,6 +10,9 @@ import type { RolUsuario } from '@/types/roles';
 const credencialSafeSelect = {
   id: true,
   usuario_login: true,
+  nombres: true,
+  apellido_paterno: true,
+  apellido_materno: true,
   activo: true,
   intentos_fallidos: true,
   bloqueado_hasta: true,
@@ -37,6 +40,8 @@ export interface ListFilters {
 export const UsersRepository = {
   buildWhere(filters: ListFilters): Prisma.PerfilUsuarioWhereInput {
     const where: Prisma.PerfilUsuarioWhereInput = {};
+    // Solo Admin y Secretaria en lista de usuarios (staff)
+    where.rol = { in: ['Admin', 'Secretaria'] };
     if (filters.rol) where.rol = filters.rol;
     if (filters.q || filters.activo !== undefined) {
       where.credencial = {};

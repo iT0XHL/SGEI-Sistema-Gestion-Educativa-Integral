@@ -1,124 +1,246 @@
-import { useState } from 'react';
-import { CheckCircle2, XCircle, Clock, Save, ChevronDown } from 'lucide-react';
-import { TEACHER_ATTENDANCE } from '../../data/mockData';
+import { useState, useEffect } from 'react';
+import { CheckCircle2, XCircle, Clock, Save, ChevronDown, Loader2, AlertTriangle } from 'lucide-react';
+import { asistenciaDocentesApi, getEstadoColor, getEstadoLabel, cargarDocentes } from '../../../lib/api/asistencias.api';
+import type { AsistenciaDocenteRow, DocenteRow } from '../../../lib/api/asistencias.api';
 
-type Status = 'present' | 'absent' | 'late' | null;
+
+type Estado = 'P' | 'F' | 'T' | 'J' | null;
+
+const toLocalDate = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseLocalDate = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 export default function AdminAsistenciaDocente() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [attendance, setAttendance] = useState<Record<string, Status>>(
-    Object.fromEntries(TEACHER_ATTENDANCE.map(t => [t.id, t.status]))
-  );
-  const [saved, setSaved] = useState(false);
+  const [date, setDate] = useState(toLocalDate(new Date()));
+  const [docentes, setDocentes] = useState<DocenteRow[]>([]);
+  const [attendance, setAttendance] = useState<Record<string, Estado>>({});
+  const [historial, setHistorial] = useState<AsistenciaDocenteRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
 
-  const present = Object.values(attendance).filter(v => v === 'present').length;
-  const absent  = Object.values(attendance).filter(v => v === 'absent').length;
-  const late    = Object.values(attendance).filter(v => v === 'late').length;
-  const total   = TEACHER_ATTENDANCE.length;
+  // Cargar docentes al montar
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const docentesList = await cargarDocentes();
+        setDocentes(docentesList);
 
-  function mark(id: string, s: Status) {
+        // Cargar asistencias del día actual
+        const asisRes = await asistenciaDocentesApi.listar({
+          fecha_inicio: date,
+          fecha_fin: date,
+          limit: 500
+        });
+        const asisMap: Record<string, Estado> = {};
+        (asisRes.items || []).forEach(a => {
+          asisMap[a.docente_id] = a.estado;
+        });
+        setAttendance(asisMap);
+
+        // Cargar historial del mes
+        const [year, month] = date.split('-');
+        const firstDay = `${year}-${month}-01`;
+        const lastDayObj = new Date(parseInt(year), parseInt(month), 0);
+        const lastDay = toLocalDate(lastDayObj);
+        const histRes = await asistenciaDocentesApi.listar({
+          fecha_inicio: firstDay,
+          fecha_fin: lastDay,
+          limit: 500
+        });
+        setHistorial(histRes.items || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error cargando datos');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [date]);
+
+  const present = Object.values(attendance).filter(v => v === 'P').length;
+  const absent = Object.values(attendance).filter(v => v === 'F').length;
+  const late = Object.values(attendance).filter(v => v === 'T').length;
+  const justified = Object.values(attendance).filter(v => v === 'J').length;
+  const total = docentes.length;
+
+  async function mark(id: string, s: Estado) {
     setSaved(false);
     setAttendance(prev => ({ ...prev, [id]: prev[id] === s ? null : s }));
   }
 
-  function handleSave() {
+  async function handleSave() {
     setSaving(true);
-    setTimeout(() => { setSaving(false); setSaved(true); }, 900);
+    setError('');
+    try {
+      for (const [docenteId, estado] of Object.entries(attendance)) {
+        if (estado === null) continue;
+
+        const existing = historial.find(
+          a => a.docente_id === docenteId && a.fecha.split('T')[0] === date
+        );
+
+        if (existing) {
+          await asistenciaDocentesApi.actualizar(existing.id, { estado });
+        } else {
+          await asistenciaDocentesApi.crear({
+            docente_id: docenteId,
+            fecha: date,
+            estado,
+            justificacion: null,
+          });
+        }
+      }
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error guardando asistencia');
+    } finally {
+      setSaving(false);
+    }
   }
 
+  // Resumen mensual
   const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
-  const historyData = MONTHS.slice(0, 5).map(m => ({
-    month: m,
-    present: Math.floor(Math.random() * 3 + 5),
-    absent: Math.floor(Math.random() * 2),
-    late: Math.floor(Math.random() * 2),
-  }));
+  const currentMonth = MONTHS[parseInt(date.split('-')[1]) - 1];
+
+  const monthData = historial.reduce((acc, a) => {
+    const key = a.docente_id;
+    if (!acc[key]) acc[key] = { present: 0, absent: 0, late: 0, justified: 0 };
+    if (a.estado === 'P') acc[key].present++;
+    if (a.estado === 'F') acc[key].absent++;
+    if (a.estado === 'T') acc[key].late++;
+    if (a.estado === 'J') acc[key].justified++;
+    return acc;
+  }, {} as Record<string, any>);
+
+  const monthSummary = Object.values(monthData).reduce(
+    (acc, data) => ({
+      present: acc.present + data.present,
+      absent: acc.absent + data.absent,
+      late: acc.late + data.late,
+      justified: acc.justified + data.justified,
+    }),
+    { present: 0, absent: 0, late: 0, justified: 0 }
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Asistencia Docente</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Control de puntualidad del personal docente</p>
+          <h1 className="text-3xl font-bold text-slate-900">Asistencia Docente</h1>
+          <p className="text-slate-600 mt-1">Registra y gestiona la asistencia del personal docente</p>
         </div>
         <div className="flex gap-3 items-center">
           <input
             type="date"
             value={date}
-            onChange={e => { setDate(e.target.value); setSaved(false); }}
-            className="bg-white border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            onChange={e => setDate(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
             onClick={handleSave}
             disabled={saving || saved}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              saved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-slate-800 hover:bg-slate-900 text-white shadow-sm'
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              saved ? 'bg-green-50 text-green-700 border border-green-200'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
             }`}
           >
-            {saving ? (
-              <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            ) : saved ? <CheckCircle2 className="size-4" /> : <Save className="size-4" />}
-            {saving ? 'Guardando…' : saved ? 'Registrado' : 'Guardar'}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Guardando…' : saved ? 'Guardado' : 'Guardar'}
           </button>
         </div>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="text-red-800 text-sm">{error}</div>
+        </div>
+      )}
+
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
-          <p className="text-2xl font-bold text-emerald-700">{present}</p>
-          <p className="text-sm font-medium text-emerald-600">Presentes</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+          <p className="text-2xl font-bold text-green-700">{present}</p>
+          <p className="text-xs text-green-600 font-medium">Presentes</p>
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+          <p className="text-2xl font-bold text-blue-700">{justified}</p>
+          <p className="text-xs text-blue-600 font-medium">Justificados</p>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
           <p className="text-2xl font-bold text-amber-700">{late}</p>
-          <p className="text-sm font-medium text-amber-600">Tardanzas</p>
+          <p className="text-xs text-amber-600 font-medium">Tardanzas</p>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
           <p className="text-2xl font-bold text-red-700">{absent}</p>
-          <p className="text-sm font-medium text-red-600">Inasistencias</p>
+          <p className="text-xs text-red-600 font-medium">Faltas</p>
         </div>
       </div>
 
       {/* Teacher list */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">{total} docentes · {new Date(date).toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <p className="text-sm font-semibold text-slate-700">{total} docentes · {parseLocalDate(date).toLocaleDateString('es-PE', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
-        <div className="divide-y divide-slate-50">
-          {TEACHER_ATTENDANCE.map(teacher => {
-            const status = attendance[teacher.id];
+        <div className="divide-y divide-slate-200">
+          {docentes.map(docente => {
+            const estado = attendance[docente.id];
+            const initials = `${docente.nombres?.charAt(0) || '?'}${docente.apellido_paterno?.charAt(0) || '?'}`.toUpperCase();
             return (
-              <div key={teacher.id} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors">
-                <div className="flex size-10 items-center justify-center rounded-full bg-slate-200 text-slate-700 text-sm font-semibold shrink-0">
-                  {teacher.initials}
+              <div key={docente.id} className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition">
+                <div className="flex w-10 h-10 items-center justify-center rounded-full bg-slate-200 text-slate-700 text-sm font-bold shrink-0">
+                  {initials}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">{teacher.name}</p>
-                  <p className="text-xs text-slate-400">{teacher.subject}</p>
+                  <p className="text-sm font-semibold text-slate-800">{docente.nombres} {docente.apellido_paterno}</p>
+                  <p className="text-xs text-slate-400">{docente.dni}</p>
                 </div>
                 <div className={`hidden sm:block text-xs font-medium ${
-                  status === 'present' ? 'text-emerald-600' :
-                  status === 'absent'  ? 'text-red-600' :
-                  status === 'late'    ? 'text-amber-600' : 'text-slate-300'
+                  estado === 'P' ? 'text-green-600' :
+                  estado === 'F' ? 'text-red-600' :
+                  estado === 'T' ? 'text-amber-600' :
+                  estado === 'J' ? 'text-blue-600' :
+                  'text-slate-400'
                 }`}>
-                  {status === 'present' ? 'Presente' : status === 'absent' ? 'Falta' : status === 'late' ? 'Tardanza' : 'Sin marcar'}
+                  {estado ? getEstadoLabel(estado) : 'Sin marcar'}
                 </div>
-                <div className="flex gap-1.5 shrink-0">
-                  {(['present', 'absent', 'late'] as const).map(s => (
+                <div className="flex gap-2 shrink-0">
+                  {(['P', 'J', 'T', 'F'] as const).map(s => (
                     <button
                       key={s}
-                      onClick={() => mark(teacher.id, s)}
-                      className={`flex size-9 items-center justify-center rounded-xl text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-offset-1
-                        ${s === 'present' ?
-                          (status === 'present' ? 'bg-emerald-500 text-white ring-emerald-200' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100') :
-                        s === 'absent' ?
-                          (status === 'absent'  ? 'bg-red-500 text-white ring-red-200'          : 'bg-red-50 text-red-600 hover:bg-red-100') :
-                          (status === 'late'    ? 'bg-amber-400 text-white ring-amber-200'       : 'bg-amber-50 text-amber-600 hover:bg-amber-100')
-                        }`}
+                      onClick={() => mark(docente.id, s)}
+                      title={s === 'P' ? 'Presente' : s === 'F' ? 'Falta' : s === 'T' ? 'Tardanza' : 'Justificado'}
+                      className={`flex w-9 h-9 items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                        estado === s
+                          ? s === 'P' ? 'bg-green-500 text-white'
+                            : s === 'F' ? 'bg-red-500 text-white'
+                            : s === 'T' ? 'bg-amber-500 text-white'
+                            : 'bg-blue-500 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
                     >
-                      {s === 'present' ? 'P' : s === 'absent' ? 'F' : 'T'}
+                      {s}
                     </button>
                   ))}
                 </div>
@@ -128,38 +250,28 @@ export default function AdminAsistenciaDocente() {
         </div>
       </div>
 
-      {/* Monthly history table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-          <h2 className="text-sm font-semibold text-slate-700">Resumen mensual de asistencia docente — 2025</h2>
+      {/* Monthly summary */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h2 className="text-sm font-semibold text-slate-700">Resumen de {currentMonth}</h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500">Mes</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-emerald-600">Presentes (prom.)</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-amber-600">Tardanzas</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-red-600">Inasistencias</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500">% Asistencia</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {historyData.map(row => (
-                <tr key={row.month} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-5 py-3 font-medium text-slate-700">{row.month}</td>
-                  <td className="text-center px-4 py-3 text-emerald-700 font-semibold">{row.present}/{total}</td>
-                  <td className="text-center px-4 py-3 text-amber-700 font-semibold">{row.late}</td>
-                  <td className="text-center px-4 py-3 text-red-700 font-semibold">{row.absent}</td>
-                  <td className="text-center px-4 py-3">
-                    <span className={`font-semibold ${row.absent === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                      {Math.round(row.present/total*100)}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-green-600">{monthSummary.present}</p>
+            <p className="text-xs text-slate-600">Presentes</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-blue-600">{monthSummary.justified}</p>
+            <p className="text-xs text-slate-600">Justificados</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-amber-600">{monthSummary.late}</p>
+            <p className="text-xs text-slate-600">Tardanzas</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-red-600">{monthSummary.absent}</p>
+            <p className="text-xs text-slate-600">Faltas</p>
+          </div>
         </div>
       </div>
     </div>

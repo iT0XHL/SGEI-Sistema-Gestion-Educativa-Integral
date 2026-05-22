@@ -1,13 +1,6 @@
-import { useState } from 'react';
-import { Sliders, CheckCircle2, AlertTriangle, PenLine, Save, X } from 'lucide-react';
-
-interface EscalaItem {
-  id: string;
-  escala: 'AD' | 'A' | 'B' | 'C';
-  descripcion: string;
-  rango_inferior: number;
-  rango_superior: number;
-}
+import { useState, useEffect } from 'react';
+import { Sliders, CheckCircle2, AlertTriangle, PenLine, Save, X, Loader2 } from 'lucide-react';
+import { escalaApi, periodosApi, type EscalaDTO, type PeriodoDTO } from '../../../lib/api/admin.api';
 
 type EscalaKey = 'AD' | 'A' | 'B' | 'C';
 
@@ -18,15 +11,6 @@ const ESCALA_COLORS: Record<EscalaKey, string> = {
   C:  'bg-red-100 text-red-700',
 };
 
-const MOCK_ESCALA: EscalaItem[] = [
-  { id: 'e1', escala: 'AD', descripcion: 'Logro destacado',  rango_inferior: 18,   rango_superior: 20 },
-  { id: 'e2', escala: 'A',  descripcion: 'Logro esperado',   rango_inferior: 14,   rango_superior: 17.99 },
-  { id: 'e3', escala: 'B',  descripcion: 'En proceso',       rango_inferior: 11,   rango_superior: 13.99 },
-  { id: 'e4', escala: 'C',  descripcion: 'En inicio',        rango_inferior: 0,    rango_superior: 10.99 },
-];
-
-const PERIODO_ACTIVO = 'Año Escolar 2025';
-
 interface RowEdit {
   rango_inferior: string;
   rango_superior: string;
@@ -34,11 +18,47 @@ interface RowEdit {
 }
 
 export default function AdminEscalaLiteral() {
-  const [items, setItems]     = useState<EscalaItem[]>(MOCK_ESCALA);
+  const [periodos, setPeriodos] = useState<PeriodoDTO[]>([]);
+  const [periodActivo, setPeriodActivo] = useState<PeriodoDTO | null>(null);
+  const [items, setItems] = useState<EscalaDTO[]>([]);
   const [editing, setEditing] = useState<Record<string, RowEdit>>({});
   const [verifyResult, setVerifyResult] = useState<{ ok: boolean; messages: string[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  function startEdit(item: EscalaItem) {
+  useEffect(() => {
+    loadPeriodos();
+  }, []);
+
+  async function loadPeriodos() {
+    try {
+      setLoading(true);
+      setError('');
+      const res = await periodosApi.listar();
+      setPeriodos(res.items);
+      const activo = res.items.find(p => p.activo);
+      setPeriodActivo(activo || null);
+      if (activo) {
+        await loadEscala(activo.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cargando períodos');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadEscala(periodoId: string) {
+    try {
+      const data = await escalaApi.listar(periodoId);
+      setItems(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cargando escala');
+    }
+  }
+
+  function startEdit(item: EscalaDTO) {
     setEditing(prev => ({
       ...prev,
       [item.id]: {
@@ -53,9 +73,9 @@ export default function AdminEscalaLiteral() {
     setEditing(prev => { const next = { ...prev }; delete next[id]; return next; });
   }
 
-  function saveRow(id: string) {
+  async function saveRow(id: string) {
     const row = editing[id];
-    if (!row) return;
+    if (!row || !periodActivo) return;
     const inf = parseFloat(row.rango_inferior);
     const sup = parseFloat(row.rango_superior);
 
@@ -72,29 +92,56 @@ export default function AdminEscalaLiteral() {
       return;
     }
 
-    // En producción: await fetch(`/api/escala-literal/${id}`, { method: 'PUT', body: JSON.stringify({ rango_inferior: inf, rango_superior: sup }) });
-    setItems(prev => prev.map(e => e.id === id ? { ...e, rango_inferior: inf, rango_superior: sup } : e));
-    cancelEdit(id);
-    setVerifyResult(null);
+    try {
+      setSaving(true);
+      const item = items.find(e => e.id === id);
+      if (!item) return;
+
+      // Construir escalas ajustando automáticamente los rangos para cobertura continua
+      const sorted = [...items].sort((a, b) => a.rango_inferior - b.rango_inferior);
+      const escalas = sorted.map(e => {
+        if (e.id === id) {
+          return { escala: e.escala, rango_inferior: inf, rango_superior: sup };
+        }
+        return { escala: e.escala, rango_inferior: e.rango_inferior, rango_superior: e.rango_superior };
+      });
+
+      // Ajustar rangos automáticamente para evitar huecos
+      for (let i = 0; i < escalas.length - 1; i++) {
+        // El rango superior del actual debe ser igual al rango inferior del siguiente
+        escalas[i + 1].rango_inferior = escalas[i].rango_superior;
+      }
+      // Asegurar que el primero empiece en 0 y el último termine en 20
+      escalas[0].rango_inferior = 0;
+      escalas[escalas.length - 1].rango_superior = 20;
+
+      await escalaApi.upsert({ periodo_id: periodActivo.id, escalas });
+      await loadEscala(periodActivo.id);
+      cancelEdit(id);
+      setVerifyResult(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error guardando escala');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleVerify() {
-    const sorted = [...items].sort((a, b) => a.rango_inferior - b.rango_inferior);
-    const msgs: string[] = [];
-
-    if (Math.abs(sorted[0].rango_inferior - 0) > 0.001)
-      msgs.push(`El rango mínimo es ${sorted[0].rango_inferior}, debería ser 0.`);
-
-    if (Math.abs(sorted[sorted.length - 1].rango_superior - 20) > 0.001)
-      msgs.push(`El rango máximo es ${sorted[sorted.length - 1].rango_superior}, debería ser 20.`);
-
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const gap = sorted[i + 1].rango_inferior - sorted[i].rango_superior;
-      if (gap > 0.01) msgs.push(`Hueco entre ${sorted[i].escala} (${sorted[i].rango_superior}) y ${sorted[i+1].escala} (${sorted[i+1].rango_inferior}).`);
-      if (gap < -0.01) msgs.push(`Superposición entre ${sorted[i].escala} y ${sorted[i+1].escala}.`);
+  async function handleVerify() {
+    if (!periodActivo) return;
+    try {
+      const result = await escalaApi.cobertura(periodActivo.id);
+      setVerifyResult({ ok: result.completa, messages: result.cubre_0_20 ? [] : ['La escala no cubre el rango 0-20 correctamente.'] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error verificando cobertura');
     }
+  }
 
-    setVerifyResult({ ok: msgs.length === 0, messages: msgs });
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -106,17 +153,33 @@ export default function AdminEscalaLiteral() {
         <p className="text-sm text-slate-500 mt-0.5">Configura la conversión de nota vigesimal a escala literal (AD/A/B/C)</p>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+          <AlertTriangle className="size-5 text-red-600 shrink-0" />
+          <p className="text-sm font-medium text-red-800">{error}</p>
+        </div>
+      )}
+
       {/* Contexto de período */}
-      <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
-        <Sliders className="size-5 text-blue-600 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-semibold text-blue-800">Período activo: {PERIODO_ACTIVO}</p>
-          <p className="text-xs text-blue-700 mt-0.5">
-            La escala literal define cómo se convierte la nota vigesimal (0–20) en calificación AD/A/B/C.
-            Debe cubrir el rango completo de 0 a 20 sin superposiciones.
+      {periodActivo ? (
+        <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+          <Sliders className="size-5 text-blue-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-blue-800">Período activo: {periodActivo.nombre}</p>
+            <p className="text-xs text-blue-700 mt-0.5">
+              La escala literal define cómo se convierte la nota vigesimal (0–20) en calificación AD/A/B/C.
+              Debe cubrir el rango completo de 0 a 20 sin superposiciones.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+          <AlertTriangle className="size-5 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-sm font-medium text-amber-800">
+            No hay período académico activo. Activa un período primero en <strong>Período Académico</strong>.
           </p>
         </div>
-      </div>
+      )}
 
       {/* Tabla de escalas */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -124,7 +187,8 @@ export default function AdminEscalaLiteral() {
           <p className="text-sm font-semibold text-slate-700">Escalas de calificación (4 fijas)</p>
           <button
             onClick={handleVerify}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white transition-colors"
+            disabled={saving || !periodActivo}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <CheckCircle2 className="size-3.5" /> Verificar cobertura
           </button>
@@ -204,10 +268,11 @@ export default function AdminEscalaLiteral() {
                     <td className="px-4 py-3.5 text-right">
                       {isEditing ? (
                         <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => saveRow(item.id)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium">
-                            <Save className="size-3" /> Guardar
+                          <button onClick={() => saveRow(item.id)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                            {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                            Guardar
                           </button>
-                          <button onClick={() => cancelEdit(item.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                          <button onClick={() => cancelEdit(item.id)} disabled={saving} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 disabled:opacity-50">
                             <X className="size-3.5" />
                           </button>
                         </div>

@@ -1,46 +1,64 @@
-import { useState } from 'react';
-import { PlusCircle, X, CalendarRange, CheckCircle2, AlertTriangle, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { PlusCircle, X, CalendarRange, CheckCircle2, AlertTriangle, ChevronDown, Loader2 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '../../components/ui/alert-dialog';
 import { DatePicker } from '../../components/DatePicker';
+import { periodosApi, type PeriodoRow } from '../../../lib/api/periodos.api';
 
-interface PeriodoAcademico {
-  id: string;
-  anio: number;
-  nombre: string;
-  fecha_inicio: string;
-  fecha_fin: string;
-  activo: boolean;
-}
-
-const MOCK_PERIODOS: PeriodoAcademico[] = [
-  { id: 'p1', anio: 2025, nombre: 'Año Escolar 2025', fecha_inicio: '2025-03-10', fecha_fin: '2025-12-19', activo: true },
-  { id: 'p2', anio: 2024, nombre: 'Año Escolar 2024', fecha_inicio: '2024-03-11', fecha_fin: '2024-12-20', activo: false },
-];
+interface PeriodoAcademico extends PeriodoRow {}
 
 function formatDate(iso: string): string {
   if (!iso) return '—';
-  const [y, m, d] = iso.split('-').map(Number);
+  const dateOnly = iso.split('T')[0];
+  const [y, m, d] = dateOnly.split('-').map(Number);
   return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
 }
 
 const EMPTY_FORM = { anio: new Date().getFullYear() + 1, nombre: '', fechaInicio: '', fechaFin: '' };
 
 export default function AdminPeriodo() {
-  const [items, setItems]       = useState<PeriodoAcademico[]>(MOCK_PERIODOS);
-  const [modal, setModal]       = useState(false);
-  const [form, setForm]         = useState(EMPTY_FORM);
-  const [formError, setFormError] = useState('');
-  const [saved, setSaved]       = useState(false);
+  const [items, setItems]           = useState<PeriodoAcademico[]>([]);
+  const [modal, setModal]           = useState(false);
+  const [form, setForm]             = useState(EMPTY_FORM);
+  const [formError, setFormError]   = useState('');
+  const [saved, setSaved]           = useState(false);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [activating, setActivating] = useState<string | null>(null);
 
-  function handleActivar(id: string) {
-    setItems(prev => prev.map(p => ({ ...p, activo: p.id === id })));
-    // En producción: await fetch(`/api/periodos/${id}/activar`, { method: 'PATCH' });
+  // Cargar períodos al montar
+  useEffect(() => {
+    loadPeriodos();
+  }, []);
+
+  async function loadPeriodos() {
+    try {
+      setLoading(true);
+      const res = await periodosApi.listar({ limit: 100 });
+      setItems(res.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cargando períodos');
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function handleCreate(e: React.FormEvent) {
+  async function handleActivar(id: string) {
+    try {
+      setActivating(id);
+      await periodosApi.actualizar(id, { activo: true });
+      await loadPeriodos();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error activando período');
+    } finally {
+      setActivating(null);
+    }
+  }
+
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
     if (!form.anio || !form.nombre.trim() || !form.fechaInicio || !form.fechaFin) {
@@ -51,20 +69,25 @@ export default function AdminPeriodo() {
       setFormError('La fecha fin debe ser posterior a la fecha inicio.');
       return;
     }
-    const nuevo: PeriodoAcademico = {
-      id: `p${Date.now()}`,
-      anio: Number(form.anio),
-      nombre: form.nombre.trim(),
-      fecha_inicio: form.fechaInicio,
-      fecha_fin: form.fechaFin,
-      activo: false,
-    };
-    // En producción: await fetch('/api/periodos', { method: 'POST', body: JSON.stringify(nuevo) });
-    setItems(prev => [nuevo, ...prev]);
-    setForm(EMPTY_FORM);
-    setModal(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    try {
+      setSaving(true);
+      await periodosApi.crear({
+        anio: Number(form.anio),
+        nombre: form.nombre.trim(),
+        fecha_inicio: form.fechaInicio,
+        fecha_fin: form.fechaFin,
+        activo: false,
+      });
+      await loadPeriodos();
+      setForm(EMPTY_FORM);
+      setModal(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Error creando período');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -91,7 +114,19 @@ export default function AdminPeriodo() {
         </div>
       )}
 
-      {/* Períodos table */}
+      {error && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <AlertTriangle className="size-5 text-red-600 shrink-0" />
+          <p className="text-sm font-medium text-red-800">{error}</p>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="size-8 text-slate-400 animate-spin" />
+        </div>
+      ) : (
+      /* Períodos table */
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
           <CalendarRange className="size-4 text-slate-500" />
@@ -132,7 +167,11 @@ export default function AdminPeriodo() {
                     {!p.activo && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <button className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white transition-colors">
+                          <button
+                            disabled={activating === p.id}
+                            className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                            {activating === p.id ? <Loader2 className="size-3 animate-spin" /> : null}
                             Activar período
                           </button>
                         </AlertDialogTrigger>
@@ -159,6 +198,7 @@ export default function AdminPeriodo() {
           </table>
         </div>
       </div>
+      )}
 
       {/* Create modal */}
       {modal && (
@@ -215,8 +255,9 @@ export default function AdminPeriodo() {
                 <button type="button" onClick={() => setModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors">
-                  Crear período
+                <button type="submit" disabled={saving} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {saving ? 'Creando...' : 'Crear período'}
                 </button>
               </div>
             </form>

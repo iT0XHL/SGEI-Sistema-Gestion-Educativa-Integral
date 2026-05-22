@@ -14,6 +14,9 @@ model Credencial {
   id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   usuario_login     String         @unique @db.VarChar(50)
   password_hash     String         @db.VarChar(255)
+  nombres           String?        @db.VarChar(100)
+  apellido_paterno  String?        @db.VarChar(60)
+  apellido_materno  String?        @db.VarChar(60)
   activo            Boolean        @default(true)
   intentos_fallidos Int            @default(0) @db.SmallInt
   bloqueado_hasta   DateTime?      @db.Timestamptz(6)

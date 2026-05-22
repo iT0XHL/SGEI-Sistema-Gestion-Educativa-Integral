@@ -201,6 +201,22 @@ export const CreateHorarioSchema = z
   });
 export type CreateHorarioInput = z.infer<typeof CreateHorarioSchema>;
 
+export const UpdateHorarioSchema = z
+  .object({
+    dia_semana: z.coerce.number().int().min(1).max(6).optional(),
+    hora_inicio: horaHHMM.optional(),
+    hora_fin: horaHHMM.optional(),
+    aula: z.string().trim().max(20).optional().nullable(),
+  })
+  .refine(
+    (d) => {
+      if (d.hora_inicio && d.hora_fin) return d.hora_fin > d.hora_inicio;
+      return true;
+    },
+    { message: 'hora_fin debe ser mayor que hora_inicio', path: ['hora_fin'] }
+  );
+export type UpdateHorarioInput = z.infer<typeof UpdateHorarioSchema>;
+
 // ── Query params reutilizables ────────────────────────────────
 export const PeriodoIdQuery = z.object({ periodoId: uuid.optional() });
 export const BimestresQuery = z.object({ periodoId: uuid.optional() });

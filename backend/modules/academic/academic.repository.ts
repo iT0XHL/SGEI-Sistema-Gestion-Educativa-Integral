@@ -304,6 +304,42 @@ export const HorarioRepo = {
     return rows[0]!;
   },
 
+  async update(id: string, input: {
+    diaSemana?: number;
+    horaInicio?: string;
+    horaFin?: string;
+    aula?: string | null;
+  }): Promise<{ id: string }> {
+    const updates: string[] = [];
+    const params: (string | number | null)[] = [];
+
+    if (input.diaSemana !== undefined) {
+      updates.push(`dia_semana = $${params.length + 1}::smallint`);
+      params.push(input.diaSemana);
+    }
+    if (input.horaInicio !== undefined) {
+      updates.push(`hora_inicio = $${params.length + 1}::time`);
+      params.push(input.horaInicio);
+    }
+    if (input.horaFin !== undefined) {
+      updates.push(`hora_fin = $${params.length + 1}::time`);
+      params.push(input.horaFin);
+    }
+    if (input.aula !== undefined) {
+      updates.push(`aula = $${params.length + 1}`);
+      params.push(input.aula);
+    }
+
+    if (updates.length === 0) {
+      return { id };
+    }
+
+    params.push(id);
+    const query = `UPDATE academic_schema.horario SET ${updates.join(', ')} WHERE id = $${params.length}::uuid RETURNING id`;
+    const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(query, ...params);
+    return rows[0] || { id };
+  },
+
   delete(id: string) {
     return prisma.horario.delete({ where: { id } });
   },

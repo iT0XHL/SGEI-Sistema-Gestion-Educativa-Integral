@@ -1,24 +1,19 @@
-// ============================================================
-//  /api/bimestres
-//   GET  — lista de bimestres (?periodoId)   (autenticado)
-//   POST — crea un bimestre                  (Admin)
-// ============================================================
-import { withAuth, withRole } from '@/lib/auth';
+import { withRole } from '@/lib/auth';
 import { ok, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
-import { CreateBimestreSchema, BimestresQuery } from '@/schemas/academic.schema';
-import { BimestreService } from '@/modules/academic/periodo.service';
+import { CreateBimestreSchema, ListBimestresQuery } from '@/schemas/periodo.schema';
+import { BimestreService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withAuth(async (req) => {
-  const { periodoId } = parseQuery(req, BimestresQuery);
-  const data = await BimestreService.list(periodoId);
-  return ok(data, 'Bimestres');
+export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
+  const q = parseQuery(req, ListBimestresQuery);
+  const data = await BimestreService.list(q);
+  return ok(data, 'Listado de bimestres');
 });
 
-export const POST = withRole(['Admin'], async (req) => {
+export const POST = withRole(['Admin'], async (req, { user }) => {
   const input = await parseBody(req, CreateBimestreSchema);
-  const bimestre = await BimestreService.create(input);
+  const bimestre = await BimestreService.create(input, user.perfilId);
   return created(bimestre, 'Bimestre creado');
 });

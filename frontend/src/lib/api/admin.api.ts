@@ -24,10 +24,10 @@ export interface Paginated<T> {
 export interface UsuarioDTO {
   id:                string;
   usuario_login:     string;
+  nombres:           string | null;
+  apellido_paterno:  string | null;
+  apellido_materno:  string | null;
   rol:               RolUsuario;
-  nombres:           string;
-  apellido_paterno:  string;
-  apellido_materno:  string;
   entidad_tipo:      string;
   entidad_id:        string;
   activo:            boolean;
@@ -38,12 +38,9 @@ export interface UsuarioDTO {
 }
 
 export interface CreateUsuarioPayload {
-  usuario_login:    string;
-  password:         string;
-  rol:              'Admin' | 'Secretaria';
-  nombres:          string;
-  apellido_paterno: string;
-  apellido_materno: string;
+  usuario_login: string;
+  password:      string;
+  rol:           'Admin' | 'Secretaria';
 }
 
 export interface UpdateUsuarioPayload {

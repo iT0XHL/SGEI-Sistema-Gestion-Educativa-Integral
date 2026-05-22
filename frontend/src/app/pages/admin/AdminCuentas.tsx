@@ -28,10 +28,7 @@ interface RowCuenta {
 }
 
 function fromDocente(d: DocenteDTO): RowCuenta {
-  let displayName = `${d.nombres} ${d.apellido_paterno} ${d.apellido_materno}`.trim();
-  if (!displayName) {
-    displayName = d.usuario_login ?? d.email_institucional ?? 'Sin nombre';
-  }
+  const displayName = `${d.nombres} ${d.apellido_paterno} ${d.apellido_materno}`.trim();
   const parts = displayName.split(' ');
   return {
     id:           d.id,
@@ -48,9 +45,9 @@ function fromDocente(d: DocenteDTO): RowCuenta {
 }
 
 function fromUsuario(u: UsuarioDTO): RowCuenta {
+  // For Admin/Secretaria users, try to use real names, fall back to generic label
   let displayName = `${u.nombres} ${u.apellido_paterno} ${u.apellido_materno}`.trim();
   if (!displayName) {
-    // For Admin/Secretaria users without names, assign a generic displayName
     const genericLabel = u.rol === 'Admin' ? 'Administrador' : u.rol === 'Secretaria' ? 'Secretario/a' : 'Usuario';
     displayName = genericLabel;
   }
@@ -70,10 +67,7 @@ function fromUsuario(u: UsuarioDTO): RowCuenta {
 }
 
 function fromAlumno(a: AlumnoResumenDTO): RowCuenta {
-  let displayName = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`.trim();
-  if (!displayName) {
-    displayName = a.usuario_login || 'Sin nombre';
-  }
+  const displayName = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`.trim();
   const parts = displayName.split(' ');
   return {
     id:           a.id,
@@ -149,18 +143,10 @@ export default function AdminCuentas() {
       ...alumnoRows.map(fromAlumno),
     ];
 
-    // Filtrar registros defectuosos: eliminar si displayName es igual al email
-    // (significa que es un registro sin nombre real)
-    const validAccounts = merged.filter(acc => {
-      const emailLower = acc.email.toLowerCase();
-      const displayLower = acc.displayName.toLowerCase();
-      return displayLower !== emailLower;
-    });
-
-    // Deduplicar por (tipo, id) entre registros válidos
+    // Deduplicar por (tipo, id)
     const seen = new Set<string>();
     const deduplicated: RowCuenta[] = [];
-    for (const account of validAccounts) {
+    for (const account of merged) {
       const key = `${account.tipo}:${account.id}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -253,7 +239,7 @@ export default function AdminCuentas() {
         rol: u.rol as 'Admin' | 'Secretaria',
         initialData: {
           id: u.id,
-          usuario_login: u.usuario_login,
+          usuario_login: u.usuario_login ?? '',
           rol: u.rol as 'Admin' | 'Secretaria',
           nombres: u.nombres ?? '',
           apellido_paterno: u.apellido_paterno ?? '',
