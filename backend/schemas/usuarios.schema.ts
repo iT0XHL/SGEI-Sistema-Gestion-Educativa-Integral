@@ -27,10 +27,16 @@ export type CreateUsuarioInput = z.infer<typeof CreateUsuarioSchema>;
 
 export const UpdateUsuarioSchema = z
   .object({
+    usuario_login: z
+      .string()
+      .trim()
+      .email('Debe ser un correo válido')
+      .max(50)
+      .optional(),
     rol: z.enum(ROLES).optional(),
     activo: z.boolean().optional(),
   })
-  .refine((d) => d.rol !== undefined || d.activo !== undefined, {
+  .refine((d) => d.usuario_login !== undefined || d.rol !== undefined || d.activo !== undefined, {
     message: 'Debes enviar al menos un campo a actualizar',
   });
 export type UpdateUsuarioInput = z.infer<typeof UpdateUsuarioSchema>;
@@ -46,3 +52,25 @@ export const ListUsuariosQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 export type ListUsuariosQuery = z.infer<typeof ListUsuariosQuerySchema>;
+
+export const ChangePasswordSchema = z
+  .object({
+    password_actual: z.string().min(1, 'Ingresa tu contraseña actual'),
+    password_nueva: z
+      .string()
+      .min(8, 'La nueva contraseña debe tener al menos 8 caracteres')
+      .max(128),
+  })
+  .refine((d) => d.password_actual !== d.password_nueva, {
+    message: 'La nueva contraseña debe ser distinta de la actual',
+    path: ['password_nueva'],
+  });
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+export const AdminResetPasswordSchema = z.object({
+  password_nueva: z
+    .string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres')
+    .max(128),
+});
+export type AdminResetPasswordInput = z.infer<typeof AdminResetPasswordSchema>;

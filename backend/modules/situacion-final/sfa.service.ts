@@ -23,7 +23,7 @@ export const SfaService = {
       throw new ForbiddenError('ACCESS_DENIED', 'Solo puedes ver tu propia situación final.');
     }
     const sfa = await SfaRepository.findByAlumno(alumnoId, periodoId);
-    if (!sfa) throw new NotFoundError('SFA_NOT_FOUND', 'Situación final no registrada para este alumno y período.');
+    if (!sfa) throw new NotFoundError('Situación final');
     return sfa;
   },
 
@@ -50,7 +50,7 @@ export const SfaService = {
     }
 
     const sfa = await SfaRepository.findByAlumno(alumnoId, periodoId);
-    if (!sfa) throw new NotFoundError('SFA_NOT_FOUND', 'Situación final no encontrada.');
+    if (!sfa) throw new NotFoundError('Situación final');
 
     await SfaRepository.eliminar(alumnoId, periodoId, user.perfilId);
 

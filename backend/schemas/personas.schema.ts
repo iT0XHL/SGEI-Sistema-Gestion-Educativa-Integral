@@ -31,6 +31,8 @@ export const CreateDocenteSchema = z.object({
 export type CreateDocenteInput = z.infer<typeof CreateDocenteSchema>;
 
 export const UpdateDocenteSchema = z.object({
+  usuario_login: z.string().trim().email('Correo de acceso inválido').max(50).optional(),
+  dni: dni.optional(),
   nombres: z.string().trim().min(2).max(100).optional(),
   apellido_paterno: z.string().trim().min(2).max(60).optional(),
   apellido_materno: z.string().trim().min(2).max(60).optional(),
@@ -51,7 +53,7 @@ export const ListDocentesQuery = z.object({
     .transform((v) => v === 'true')
     .optional(),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(500).default(20),
 });
 export type ListDocentesQuery = z.infer<typeof ListDocentesQuery>;
 
@@ -80,6 +82,8 @@ export const CreateAlumnoSchema = z.object({
 export type CreateAlumnoInput = z.infer<typeof CreateAlumnoSchema>;
 
 export const UpdateAlumnoSchema = z.object({
+  usuario_login: z.string().trim().email('Correo de acceso inválido').max(50).optional(),
+  dni: dni.optional(),
   seccion_id: uuid.optional(),
   codigo_siagie: z.string().trim().max(20).optional().nullable(),
   nombres: z.string().trim().min(2).max(100).optional(),
@@ -111,6 +115,6 @@ export const ListAlumnosQuery = z.object({
     .transform((v) => v === 'true')
     .optional(),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(500).default(20),
 });
 export type ListAlumnosQuery = z.infer<typeof ListAlumnosQuery>;

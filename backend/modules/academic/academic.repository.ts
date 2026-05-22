@@ -145,9 +145,13 @@ export const SeccionRepo = {
       },
       orderBy: { nombre: 'asc' },
       include: {
-        grado: { select: { nombre: true, orden: true } },
-        docente_tutor: {
-          select: { id: true, nombres: true, apellido_paterno: true },
+        grado: {
+          select: {
+            id:    true,
+            nombre: true,
+            orden:  true,
+            nivel:  { select: { id: true, nombre: true } },
+          },
         },
       },
     });

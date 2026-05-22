@@ -1,82 +1,194 @@
-import { useState, useMemo } from 'react';
-import { GraduationCap, Save, CheckCircle2, ChevronDown, Search } from 'lucide-react';
-import { STUDENTS_3A } from '../../data/mockData';
+import { useState, useEffect, useMemo } from 'react';
+import { GraduationCap, Save, CheckCircle2, ChevronDown, Search, Loader2, AlertTriangle } from 'lucide-react';
+import {
+  periodosApi,
+  alumnosAdminApi,
+  estructuraApi,
+  type AlumnoResumenDTO,
+  type SeccionDTO,
+} from '@/lib/api/admin.api';
+import { sfaApi } from '@/lib/api/situacion-final.api';
+import type { SituacionFinal } from '@/types/situacion-final';
 
-type SituacionFinal = 'Promovido' | 'Repitente' | 'Retirado' | 'Trasladado' | 'Fallecido' | null;
 type Comportamiento = 'AD' | 'A' | 'B' | 'C';
 
-interface AlumnoSituacion {
-  id: string;
-  name: string;
-  initials: string;
-  grado: string;
-  seccion: string;
-  situacion_final: SituacionFinal;
+interface AlumnoRow {
+  alumno_id:    string;
+  nombre:       string;
+  initials:     string;
+  grado:        string;
+  nivel:        string;
+  seccion:      string;
+  situacion:    SituacionFinal | null;
   comportamiento: Comportamiento;
-  numero_areas_desaprobadas: number;
-  motivo_retiro: string;
-  dirty: boolean;
-  saved: boolean;
+  areas_desap:  number;
+  motivo:       string;
+  dirty:        boolean;
+  saving:       boolean;
+  saved:        boolean;
 }
 
 const SITUACION_COLORS: Record<string, string> = {
-  Promovido:   'bg-emerald-100 text-emerald-700',
-  Repitente:   'bg-amber-100 text-amber-700',
-  Retirado:    'bg-red-100 text-red-700',
-  Trasladado:  'bg-red-100 text-red-700',
-  Fallecido:   'bg-slate-100 text-slate-600',
+  Promovido:  'bg-emerald-100 text-emerald-700',
+  Repitente:  'bg-amber-100 text-amber-700',
+  Retirado:   'bg-red-100 text-red-700',
+  Trasladado: 'bg-red-100 text-red-700',
+  Fallecido:  'bg-slate-100 text-slate-600',
 };
 
-const INITIAL_DATA: AlumnoSituacion[] = STUDENTS_3A.map(s => ({
-  id: s.id,
-  name: s.name,
-  initials: s.initials,
-  grado: '3°',
-  seccion: 'A',
-  situacion_final: null,
-  comportamiento: 'A',
-  numero_areas_desaprobadas: 0,
-  motivo_retiro: '',
-  dirty: false,
-  saved: false,
-}));
-
-const GRADOS = ['1°', '2°', '3°', '4°', '5°'];
-const SECCIONES = ['A', 'B', 'C'];
+function makeInitials(nombres: string, ap: string): string {
+  return `${nombres[0] ?? ''}${ap[0] ?? ''}`.toUpperCase();
+}
 
 export default function SecretariaSituacionFinal() {
-  const [alumnos, setAlumnos] = useState<AlumnoSituacion[]>(INITIAL_DATA);
-  const [filterNivel,   setFilterNivel]   = useState('Secundaria');
+  const [rows,      setRows]      = useState<AlumnoRow[]>([]);
+  const [periodoId, setPeriodoId] = useState<string | null>(null);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState<string | null>(null);
+
+  const [filterNivel,   setFilterNivel]   = useState('Todos');
   const [filterGrado,   setFilterGrado]   = useState('Todos');
   const [filterSeccion, setFilterSeccion] = useState('Todos');
-  const [search, setSearch] = useState('');
+  const [search,        setSearch]        = useState('');
 
-  const filtered = useMemo(() => alumnos.filter(a => {
-    const matchGrado   = filterGrado   === 'Todos' || a.grado   === filterGrado;
-    const matchSeccion = filterSeccion === 'Todos' || a.seccion === filterSeccion;
-    const matchSearch  = a.name.toLowerCase().includes(search.toLowerCase());
-    return matchGrado && matchSeccion && matchSearch;
-  }), [alumnos, filterGrado, filterSeccion, search]);
+  useEffect(() => {
+    let cancelled = false;
 
-  // Estadísticas
-  const promovidos   = alumnos.filter(a => a.situacion_final === 'Promovido').length;
-  const repitentes   = alumnos.filter(a => a.situacion_final === 'Repitente').length;
-  const retirados    = alumnos.filter(a => a.situacion_final === 'Retirado' || a.situacion_final === 'Trasladado').length;
-  const sinRegistrar = alumnos.filter(a => !a.situacion_final).length;
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
 
-  function updateField<K extends keyof AlumnoSituacion>(id: string, field: K, value: AlumnoSituacion[K]) {
-    setAlumnos(prev => prev.map(a =>
-      a.id === id ? { ...a, [field]: value, dirty: true, saved: false } : a
+        const periodos = await periodosApi.listar();
+        const activo   = periodos.find(p => p.activo);
+        if (!activo) {
+          if (!cancelled) { setLoading(false); setError('No hay período académico activo.'); }
+          return;
+        }
+
+        const [alumnosData, sfaData, seccionesData] = await Promise.all([
+          alumnosAdminApi.listar({ limit: 500, activo: 'true', periodoId: activo.id }),
+          sfaApi.listar({ periodoId: activo.id }),
+          estructuraApi.secciones({ periodoId: activo.id }),
+        ]);
+
+        if (cancelled) return;
+
+        const seccionMap = new Map<string, SeccionDTO>(seccionesData.map(s => [s.id, s]));
+        const sfaMap     = new Map(sfaData.map(s => [s.alumno_id, s]));
+
+        const mapped: AlumnoRow[] = (alumnosData.items as AlumnoResumenDTO[]).map(a => {
+          const sfa = sfaMap.get(a.id);
+          const sec = seccionMap.get(a.seccion.id);
+          return {
+            alumno_id:     a.id,
+            nombre:        `${a.apellido_paterno} ${a.apellido_materno}, ${a.nombres}`,
+            initials:      makeInitials(a.nombres, a.apellido_paterno),
+            grado:         a.seccion.grado.nombre,
+            nivel:         sec?.grado.nivel?.nombre ?? 'Secundaria',
+            seccion:       a.seccion.nombre,
+            situacion:     sfa?.situacion_final ?? null,
+            comportamiento: (sfa?.comportamiento as Comportamiento | null) ?? 'A',
+            areas_desap:   sfa?.numero_areas_desaprobadas ?? 0,
+            motivo:        sfa?.motivo_retiro ?? '',
+            dirty:         false,
+            saving:        false,
+            saved:         !!sfa,
+          };
+        });
+
+        setPeriodoId(activo.id);
+        setRows(mapped);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message ?? 'Error al cargar datos.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const niveles = useMemo(() =>
+    ['Todos', ...new Set(rows.map(r => r.nivel))].sort(),
+    [rows]);
+
+  const grados = useMemo(() => {
+    const base = rows.filter(r => filterNivel === 'Todos' || r.nivel === filterNivel);
+    return ['Todos', ...new Set(base.map(r => r.grado))].sort();
+  }, [rows, filterNivel]);
+
+  const secciones = useMemo(() => {
+    const base = rows.filter(r =>
+      (filterNivel === 'Todos' || r.nivel === filterNivel) &&
+      (filterGrado === 'Todos' || r.grado === filterGrado),
+    );
+    return ['Todos', ...new Set(base.map(r => r.seccion))].sort();
+  }, [rows, filterNivel, filterGrado]);
+
+  const filtered = useMemo(() => rows.filter(r => {
+    if (filterNivel   !== 'Todos' && r.nivel   !== filterNivel)   return false;
+    if (filterGrado   !== 'Todos' && r.grado   !== filterGrado)   return false;
+    if (filterSeccion !== 'Todos' && r.seccion !== filterSeccion)  return false;
+    if (search && !r.nombre.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }), [rows, filterNivel, filterGrado, filterSeccion, search]);
+
+  const promovidos   = rows.filter(r => r.situacion === 'Promovido').length;
+  const repitentes   = rows.filter(r => r.situacion === 'Repitente').length;
+  const retirados    = rows.filter(r => r.situacion === 'Retirado' || r.situacion === 'Trasladado').length;
+  const sinRegistrar = rows.filter(r => !r.situacion).length;
+
+  function updateField<K extends keyof AlumnoRow>(id: string, field: K, value: AlumnoRow[K]) {
+    setRows(prev => prev.map(r =>
+      r.alumno_id === id ? { ...r, [field]: value, dirty: true, saved: false } : r,
     ));
   }
 
-  function handleSave(id: string) {
-    const alumno = alumnos.find(a => a.id === id);
-    if (!alumno) return;
-    const needsMotivo = alumno.situacion_final === 'Retirado' || alumno.situacion_final === 'Trasladado';
-    if (needsMotivo && !alumno.motivo_retiro.trim()) return;
-    // En producción: await fetch(`/api/situacion-final/${id}`, { method: 'PATCH', body: JSON.stringify(alumno) });
-    setAlumnos(prev => prev.map(a => a.id === id ? { ...a, dirty: false, saved: true } : a));
+  async function handleSave(alumnoId: string) {
+    if (!periodoId) return;
+    const row = rows.find(r => r.alumno_id === alumnoId);
+    const situacion = row?.situacion;
+    if (!row || !situacion) return;
+
+    const needsMotivo = situacion === 'Retirado' || situacion === 'Trasladado';
+    if (needsMotivo && row.motivo.trim().length < 5) return;
+
+    setRows(prev => prev.map(r => r.alumno_id === alumnoId ? { ...r, saving: true } : r));
+    try {
+      await sfaApi.upsert({
+        alumno_id:                 alumnoId,
+        periodo_id:                periodoId,
+        situacion_final:           situacion,
+        numero_areas_desaprobadas: row.areas_desap,
+        comportamiento:            row.comportamiento,
+        motivo_retiro:             row.motivo.trim() || undefined,
+      });
+      setRows(prev => prev.map(r =>
+        r.alumno_id === alumnoId ? { ...r, dirty: false, saving: false, saved: true } : r,
+      ));
+    } catch {
+      setRows(prev => prev.map(r => r.alumno_id === alumnoId ? { ...r, saving: false } : r));
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="size-6 animate-spin text-teal-600" />
+        <span className="ml-2 text-slate-500">Cargando alumnos…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <AlertTriangle className="size-6 text-red-500" />
+        <p className="text-red-600 text-sm">{error}</p>
+      </div>
+    );
   }
 
   return (
@@ -88,61 +200,63 @@ export default function SecretariaSituacionFinal() {
         <p className="text-sm text-slate-500 mt-0.5">Registra la situación académica final de cada alumno para el acta SIAGIE</p>
       </div>
 
-      {/* Estadísticas */}
+      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Promovidos',          value: promovidos,   cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
-          { label: 'Repitentes',          value: repitentes,   cls: 'bg-amber-50 border-amber-200 text-amber-700' },
-          { label: 'Retirados/Trasladados', value: retirados,  cls: 'bg-red-50 border-red-200 text-red-700' },
-          { label: 'Sin registrar',       value: sinRegistrar, cls: 'bg-slate-50 border-slate-200 text-slate-600' },
-        ].map(stat => (
-          <div key={stat.label} className={`bg-white rounded-2xl border shadow-sm p-5 ${stat.cls.split(' ').find(c => c.startsWith('border'))}`}>
-            <p className={`text-2xl font-bold ${stat.cls.split(' ').find(c => c.startsWith('text'))}`}>{stat.value}</p>
-            <p className="text-xs font-medium text-slate-500 mt-0.5">{stat.label}</p>
+          { label: 'Promovidos',            value: promovidos,   border: 'border-emerald-200', text: 'text-emerald-700' },
+          { label: 'Repitentes',            value: repitentes,   border: 'border-amber-200',   text: 'text-amber-700'   },
+          { label: 'Retirados/Trasladados', value: retirados,    border: 'border-red-200',     text: 'text-red-700'     },
+          { label: 'Sin registrar',         value: sinRegistrar, border: 'border-slate-200',   text: 'text-slate-600'   },
+        ].map(s => (
+          <div key={s.label} className={`bg-white rounded-2xl border shadow-sm p-5 ${s.border}`}>
+            <p className={`text-2xl font-bold ${s.text}`}>{s.value}</p>
+            <p className="text-xs font-medium text-slate-500 mt-0.5">{s.label}</p>
           </div>
         ))}
       </div>
 
-      {/* Filtros */}
+      {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Nivel */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Nivel</label>
             <div className="relative">
-              <select value={filterNivel} onChange={e => setFilterNivel(e.target.value)}
-                className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-teal-400">
-                <option>Primaria</option>
-                <option>Secundaria</option>
+              <select
+                value={filterNivel}
+                onChange={e => { setFilterNivel(e.target.value); setFilterGrado('Todos'); setFilterSeccion('Todos'); }}
+                className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                {niveles.map(n => <option key={n}>{n}</option>)}
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
             </div>
           </div>
-          {/* Grado */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Grado</label>
             <div className="relative">
-              <select value={filterGrado} onChange={e => setFilterGrado(e.target.value)}
-                className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-teal-400">
-                <option value="Todos">Todos</option>
-                {GRADOS.map(g => <option key={g}>{g}</option>)}
+              <select
+                value={filterGrado}
+                onChange={e => { setFilterGrado(e.target.value); setFilterSeccion('Todos'); }}
+                className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                {grados.map(g => <option key={g}>{g}</option>)}
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
             </div>
           </div>
-          {/* Sección */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Sección</label>
             <div className="relative">
-              <select value={filterSeccion} onChange={e => setFilterSeccion(e.target.value)}
-                className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-teal-400">
-                <option value="Todos">Todas</option>
-                {SECCIONES.map(s => <option key={s}>{s}</option>)}
+              <select
+                value={filterSeccion}
+                onChange={e => setFilterSeccion(e.target.value)}
+                className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                {secciones.map(s => <option key={s}>{s}</option>)}
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
             </div>
           </div>
-          {/* Búsqueda */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Buscar alumno</label>
             <div className="relative">
@@ -159,7 +273,7 @@ export default function SecretariaSituacionFinal() {
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
           <GraduationCap className="size-4 text-slate-500" />
@@ -180,38 +294,41 @@ export default function SecretariaSituacionFinal() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filtered.map(alumno => {
-                const needsMotivo = alumno.situacion_final === 'Retirado' || alumno.situacion_final === 'Trasladado';
-                const saveDisabled = !alumno.dirty || (needsMotivo && !alumno.motivo_retiro.trim());
+              {filtered.map(row => {
+                const needsMotivo  = row.situacion === 'Retirado' || row.situacion === 'Trasladado';
+                const motivoOk     = !needsMotivo || row.motivo.trim().length >= 5;
+                const saveDisabled = !row.dirty || !row.situacion || row.saving || !motivoOk;
                 return (
-                  <tr key={alumno.id} className={`hover:bg-slate-50 transition-colors ${alumno.saved ? 'bg-emerald-50/30' : ''}`}>
-                    {/* Alumno */}
+                  <tr
+                    key={row.alumno_id}
+                    className={`hover:bg-slate-50 transition-colors ${row.saved && !row.dirty ? 'bg-emerald-50/30' : ''}`}
+                  >
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="flex size-8 items-center justify-center rounded-full bg-teal-100 text-teal-700 text-xs font-semibold shrink-0">
-                          {alumno.initials}
+                          {row.initials}
                         </div>
-                        <span className="text-sm font-medium text-slate-800 whitespace-nowrap">{alumno.name}</span>
+                        <span className="text-sm font-medium text-slate-800 whitespace-nowrap">{row.nombre}</span>
                       </div>
                     </td>
-                    {/* Grado/Sección */}
                     <td className="px-3 py-3.5 text-center">
-                      <span className="text-xs font-medium text-slate-600">{alumno.grado} {alumno.seccion}</span>
+                      <span className="text-xs font-medium text-slate-600">{row.grado} {row.seccion}</span>
                     </td>
-                    {/* Situación Final */}
                     <td className="px-3 py-3.5 text-center">
                       <div className="relative inline-block">
                         <select
-                          value={alumno.situacion_final ?? ''}
+                          value={row.situacion ?? ''}
                           onChange={e => {
-                            const val = e.target.value as SituacionFinal;
-                            updateField(alumno.id, 'situacion_final', val || null);
+                            const val = (e.target.value || null) as SituacionFinal | null;
+                            updateField(row.alumno_id, 'situacion', val);
                             if (val !== 'Retirado' && val !== 'Trasladado') {
-                              updateField(alumno.id, 'motivo_retiro', '');
+                              updateField(row.alumno_id, 'motivo', '');
                             }
                           }}
                           className={`appearance-none pr-6 pl-2.5 py-1 rounded-full text-xs font-medium border focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer ${
-                            alumno.situacion_final ? SITUACION_COLORS[alumno.situacion_final] + ' border-transparent' : 'bg-slate-100 text-slate-500 border-slate-200'
+                            row.situacion
+                              ? SITUACION_COLORS[row.situacion] + ' border-transparent'
+                              : 'bg-slate-100 text-slate-500 border-slate-200'
                           }`}
                         >
                           <option value="">Sin registrar</option>
@@ -224,62 +341,70 @@ export default function SecretariaSituacionFinal() {
                         <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 size-3 pointer-events-none text-current opacity-60" />
                       </div>
                     </td>
-                    {/* Motivo retiro */}
                     <td className="px-3 py-3.5 text-center">
                       {needsMotivo ? (
                         <input
                           type="text"
-                          value={alumno.motivo_retiro}
-                          onChange={e => updateField(alumno.id, 'motivo_retiro', e.target.value)}
-                          placeholder="Motivo requerido…"
+                          value={row.motivo}
+                          onChange={e => updateField(row.alumno_id, 'motivo', e.target.value)}
+                          placeholder="Motivo (mín. 5 caracteres)…"
                           className={`w-full text-xs px-2.5 py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-teal-400 ${
-                            !alumno.motivo_retiro.trim() ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50'
+                            row.motivo.trim().length < 5
+                              ? 'border-red-300 bg-red-50'
+                              : 'border-slate-200 bg-slate-50'
                           }`}
                         />
                       ) : (
                         <span className="text-xs text-slate-300">—</span>
                       )}
                     </td>
-                    {/* Comportamiento */}
                     <td className="px-3 py-3.5 text-center">
                       <select
-                        value={alumno.comportamiento}
-                        onChange={e => updateField(alumno.id, 'comportamiento', e.target.value as Comportamiento)}
+                        value={row.comportamiento}
+                        onChange={e => updateField(row.alumno_id, 'comportamiento', e.target.value as Comportamiento)}
                         className="appearance-none bg-slate-50 border border-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400"
                       >
-                        {(['AD','A','B','C'] as const).map(c => <option key={c} value={c}>{c}</option>)}
+                        {(['AD', 'A', 'B', 'C'] as const).map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </td>
-                    {/* Áreas desaprobadas */}
                     <td className="px-3 py-3.5 text-center">
                       <input
                         type="number"
                         min={0}
                         max={13}
-                        value={alumno.numero_areas_desaprobadas}
-                        onChange={e => updateField(alumno.id, 'numero_areas_desaprobadas', Math.min(13, Math.max(0, Number(e.target.value))))}
+                        value={row.areas_desap}
+                        onChange={e => updateField(row.alumno_id, 'areas_desap', Math.min(13, Math.max(0, Number(e.target.value))))}
                         className="w-16 text-center text-xs border border-slate-200 bg-slate-50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400"
                       />
                     </td>
-                    {/* Guardar */}
                     <td className="px-4 py-3.5 text-right">
-                      {alumno.saved && !alumno.dirty ? (
+                      {row.saved && !row.dirty ? (
                         <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
                           <CheckCircle2 className="size-3.5" /> Guardado
                         </span>
                       ) : (
                         <button
-                          onClick={() => handleSave(alumno.id)}
+                          onClick={() => handleSave(row.alumno_id)}
                           disabled={saveDisabled}
                           className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed ml-auto"
                         >
-                          <Save className="size-3" /> Guardar
+                          {row.saving
+                            ? <><Loader2 className="size-3 animate-spin" /> Guardando…</>
+                            : <><Save className="size-3" /> Guardar</>
+                          }
                         </button>
                       )}
                     </td>
                   </tr>
                 );
               })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
+                    No se encontraron alumnos con los filtros seleccionados.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

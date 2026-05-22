@@ -136,7 +136,7 @@ export async function buildSiagieExcel(rows: FormatoSiagieRow[]): Promise<Buffer
 
     // Zebra striping
     if (idx % 2 === 1) {
-      row.eachCell((cell) => {
+      row.eachCell((cell: import('exceljs').Cell) => {
         cell.fill = {
           type:    'pattern',
           pattern: 'solid',

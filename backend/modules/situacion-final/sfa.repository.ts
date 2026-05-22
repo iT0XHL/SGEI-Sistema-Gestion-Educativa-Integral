@@ -72,7 +72,7 @@ export const SfaRepository = {
             seccion_id:       true,
           },
         },
-        periodo: { select: { nombre: true, año: true } },
+        periodo: { select: { nombre: true, anio: true } },
       },
       orderBy: [
         { alumno: { apellido_paterno: 'asc' } },

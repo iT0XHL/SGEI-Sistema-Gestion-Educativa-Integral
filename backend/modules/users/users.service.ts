@@ -9,7 +9,8 @@ import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { UsersRepository, type ListFilters } from './users.repository';
-import type { CreateUsuarioInput, UpdateUsuarioInput } from '@/schemas/usuarios.schema';
+import type { CreateUsuarioInput, UpdateUsuarioInput, ChangePasswordInput } from '@/schemas/usuarios.schema';
+import { verifyPassword } from '@/lib/password';
 import type { RolUsuario } from '@/types/roles';
 
 /** Cuenta tal como se expone al frontend (sin datos sensibles). */
@@ -90,6 +91,14 @@ export const UsersService = {
     if (!current) throw new NotFoundError('Usuario');
 
     let result = current;
+
+    // Actualizar email
+    if (input.usuario_login && input.usuario_login !== current.credencial.usuario_login) {
+      const existing = await UsersRepository.findByLogin(input.usuario_login);
+      if (existing) throw new ConflictError('Ya existe una cuenta con ese correo.');
+      await UsersRepository.updateLogin(current.credencial.id, input.usuario_login);
+    }
+
     if (input.rol && input.rol !== current.rol) {
       result = await UsersRepository.updateRol(perfilId, input.rol);
     }
@@ -108,7 +117,42 @@ export const UsersService = {
         newValue: { rol: input.rol },
       });
     }
+    const final = await UsersRepository.findById(perfilId);
+    if (final) result = final;
     return toDTO(result);
+  },
+
+  /** Usuario cambia su propia contraseña. */
+  async changePassword(
+    perfilId: string,
+    input: ChangePasswordInput,
+  ): Promise<void> {
+    const row = await UsersRepository.findByIdWithPassword(perfilId);
+    if (!row) throw new NotFoundError('Usuario');
+
+    const isValid = await verifyPassword(input.password_actual, row.credencial.password_hash);
+    if (!isValid) {
+      throw new Error('La contraseña actual es incorrecta.');
+    }
+
+    const hash = await hashPassword(input.password_nueva);
+    await withAuditContext(perfilId, (tx) =>
+      tx.credencial.update({ where: { id: row.credencial.id }, data: { password_hash: hash } }),
+    );
+  },
+
+  /** Admin resetea contraseña de una cuenta sin conocer la actual. */
+  async adminResetPassword(
+    perfilId: string,
+    input: { password_nueva: string },
+    adminPerfilId: string,
+  ): Promise<void> {
+    const row = await UsersRepository.findById(perfilId);
+    if (!row) throw new NotFoundError('Usuario');
+    const hash = await hashPassword(input.password_nueva);
+    await withAuditContext(adminPerfilId, (tx) =>
+      tx.credencial.update({ where: { id: row.credencial.id }, data: { password_hash: hash } }),
+    );
   },
 
   /**

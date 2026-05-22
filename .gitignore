@@ -51,5 +51,17 @@ desktop.ini
 # typescript
 *.tsbuildinfo
 
+# pnpm — virtual store y store local (opcional)
+.pnpm/
+pnpm-store/
+.pnpm-store/
+
+# pnpm lockfile (tracked por frontend, no por backend)
+backend/pnpm-lock.yaml
+backend/pnpm-workspace.yaml
+
+# pnpm / npm config (rutas de store, registries, etc — específico de máquina)
+.npmrc
+
 # Docker
 .dockerignore

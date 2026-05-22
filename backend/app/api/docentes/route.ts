@@ -1,8 +1,3 @@
-// ============================================================
-//  /api/docentes
-//   GET  — lista paginada de docentes   (Admin, Secretaria)
-//   POST — crea docente + credencial    (Admin)
-// ============================================================
 import { withRole } from '@/lib/auth';
 import { ok, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
@@ -14,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
   const q = parseQuery(req, ListDocentesQuery);
   const data = await DocentesService.list(q);
-  return ok(data, 'Docentes');
+  return ok(data, 'Listado de docentes');
 });
 
 export const POST = withRole(['Admin'], async (req, { user }) => {

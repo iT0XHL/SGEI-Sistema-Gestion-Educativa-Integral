@@ -1,109 +1,152 @@
-// ============================================================
-//  modules/docentes/docentes.repository.ts
-//  Un docente = credencial + perfil_usuario + academic_schema.docente.
-// ============================================================
-import { randomUUID } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import type { Tx } from '@/lib/audit-context';
+import { withAuditContext } from '@/lib/audit-context';
+import { Prisma } from '@prisma/client';
+import type { CreateDocenteInput, UpdateDocenteInput } from '@/schemas/personas.schema';
 
-export interface DocenteData {
-  dni: string;
-  nombres: string;
-  apellido_paterno: string;
-  apellido_materno: string;
-  especialidad: string;
-  telefono: string;
-  email_institucional?: string | null;
-  fecha_nacimiento?: Date | null;
-  sexo?: string | null;
-  titulo_profesional?: string | null;
-  fecha_ingreso?: Date | null;
+export interface ListFilters {
+  q?: string;
+  activo?: boolean;
+  page: number;
+  limit: number;
 }
 
 export const DocentesRepository = {
-  list(filters: { q?: string; activo?: boolean; page: number; limit: number }) {
+  buildWhere(filters: ListFilters): Prisma.DocenteWhereInput {
     const where: Prisma.DocenteWhereInput = {};
     if (filters.activo !== undefined) where.activo = filters.activo;
     if (filters.q) {
       where.OR = [
         { nombres: { contains: filters.q, mode: 'insensitive' } },
         { apellido_paterno: { contains: filters.q, mode: 'insensitive' } },
-        { apellido_materno: { contains: filters.q, mode: 'insensitive' } },
         { dni: { contains: filters.q } },
       ];
     }
-    return Promise.all([
+    return where;
+  },
+
+  async list(filters: ListFilters) {
+    const where = this.buildWhere(filters);
+    const [rows, total] = await Promise.all([
       prisma.docente.findMany({
         where,
-        orderBy: [{ apellido_paterno: 'asc' }, { nombres: 'asc' }],
+        select: {
+          id: true,
+          dni: true,
+          nombres: true,
+          apellido_paterno: true,
+          apellido_materno: true,
+          especialidad: true,
+          telefono: true,
+          email_institucional: true,
+          fecha_nacimiento: true,
+          sexo: true,
+          titulo_profesional: true,
+          fecha_ingreso: true,
+          activo: true,
+          perfil: { select: { credencial: { select: { usuario_login: true } } } },
+        },
+        orderBy: { apellido_paterno: 'asc' },
         skip: (filters.page - 1) * filters.limit,
         take: filters.limit,
       }),
       prisma.docente.count({ where }),
     ]);
+    return { rows, total };
   },
 
-  findById(id: string) {
-    return prisma.docente.findUnique({ where: { id } });
+  async findById(docenteId: string) {
+    return prisma.docente.findUnique({
+      where: { id: docenteId },
+      select: {
+        id: true,
+        dni: true,
+        nombres: true,
+        apellido_paterno: true,
+        apellido_materno: true,
+        especialidad: true,
+        telefono: true,
+        email_institucional: true,
+        fecha_nacimiento: true,
+        sexo: true,
+        titulo_profesional: true,
+        fecha_ingreso: true,
+        activo: true,
+        perfil_usuario_id: true,
+        perfil: { select: { credencial: { select: { usuario_login: true, id: true, activo: true } } } },
+      },
+    });
   },
 
-  findByDni(dni: string) {
-    return prisma.docente.findUnique({ where: { dni } });
+  async findByDNI(dni: string) {
+    return prisma.docente.findUnique({
+      where: { dni },
+      select: { id: true },
+    });
   },
 
-  /**
-   * Crea credencial + perfil + docente de forma atómica.
-   * El id del docente se pre-genera para resolver la dependencia
-   * perfil_usuario.entidad_id ↔ docente.id sin un segundo UPDATE.
-   */
-  createWithAccount(input: {
-    usuarioLogin: string;
-    passwordHash: string;
-    docente: DocenteData;
-  }) {
-    const docenteId = randomUUID();
-    return prisma.$transaction(async (tx) => {
-      const cred = await tx.credencial.create({
-        data: {
-          usuario_login: input.usuarioLogin,
-          password_hash: input.passwordHash,
-        },
-      });
-      const perfil = await tx.perfilUsuario.create({
-        data: {
-          credencial_id: cred.id,
-          rol: 'Docente',
-          entidad_tipo: 'docente',
-          entidad_id: docenteId,
-        },
-      });
+  async create(input: CreateDocenteInput & { perfilUsuarioId: string }, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
       return tx.docente.create({
         data: {
-          id: docenteId,
-          perfil_usuario_id: perfil.id,
-          ...input.docente,
+          perfil_usuario_id: input.perfilUsuarioId,
+          dni: input.dni,
+          nombres: input.nombres,
+          apellido_paterno: input.apellido_paterno,
+          apellido_materno: input.apellido_materno,
+          especialidad: input.especialidad,
+          telefono: input.telefono,
+          email_institucional: input.email_institucional ?? null,
+          fecha_nacimiento: input.fecha_nacimiento ? new Date(input.fecha_nacimiento) : null,
+          sexo: input.sexo ?? null,
+          titulo_profesional: input.titulo_profesional ?? null,
+          fecha_ingreso: input.fecha_ingreso ? new Date(input.fecha_ingreso) : new Date(),
+        },
+        select: {
+          id: true,
+          dni: true,
+          nombres: true,
+          apellido_paterno: true,
+          apellido_materno: true,
+          especialidad: true,
+          telefono: true,
+          email_institucional: true,
+          fecha_nacimiento: true,
+          sexo: true,
+          titulo_profesional: true,
+          fecha_ingreso: true,
+          activo: true,
         },
       });
     });
   },
 
-  update(id: string, data: Prisma.DocenteUpdateInput) {
-    return prisma.docente.update({ where: { id }, data });
-  },
-
-  /** Baja lógica: desactiva docente + su credencial (corre en Tx auditada). */
-  async deactivate(tx: Tx, id: string, credencialId: string) {
-    await tx.docente.update({ where: { id }, data: { activo: false } });
-    await tx.credencial.update({ where: { id: credencialId }, data: { activo: false } });
-  },
-
-  /** Devuelve el credencial_id asociado al docente. */
-  async getCredencialId(docenteId: string): Promise<string | null> {
-    const docente = await prisma.docente.findUnique({
-      where: { id: docenteId },
-      select: { perfil: { select: { credencial_id: true } } },
+  async update(docenteId: string, input: UpdateDocenteInput, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
+      return tx.docente.update({
+        where: { id: docenteId },
+        data: {
+          ...(input.nombres && { nombres: input.nombres }),
+          ...(input.apellido_paterno && { apellido_paterno: input.apellido_paterno }),
+          ...(input.apellido_materno && { apellido_materno: input.apellido_materno }),
+          ...(input.dni && { dni: input.dni }),
+          ...(input.especialidad && { especialidad: input.especialidad }),
+          ...(input.telefono && { telefono: input.telefono }),
+          ...(input.email_institucional !== undefined && { email_institucional: input.email_institucional }),
+          ...(input.fecha_nacimiento !== undefined && { fecha_nacimiento: input.fecha_nacimiento ? new Date(input.fecha_nacimiento) : null }),
+          ...(input.sexo !== undefined && { sexo: input.sexo }),
+          ...(input.titulo_profesional !== undefined && { titulo_profesional: input.titulo_profesional }),
+          ...(input.fecha_ingreso !== undefined && { fecha_ingreso: input.fecha_ingreso ? new Date(input.fecha_ingreso) : null }),
+        },
+      });
     });
-    return docente?.perfil.credencial_id ?? null;
+  },
+
+  async setActivo(docenteId: string, activo: boolean, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
+      return tx.docente.update({
+        where: { id: docenteId },
+        data: { activo },
+      });
+    });
   },
 };

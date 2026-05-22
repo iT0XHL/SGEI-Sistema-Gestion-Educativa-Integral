@@ -73,6 +73,24 @@ export const UsersRepository = {
     });
   },
 
+  /**
+   * Busca perfil CON password_hash (solo para verificación de cambio de contraseña).
+   * NUNCA exponer esto en API responses.
+   */
+  async findByIdWithPassword(perfilId: string) {
+    return prisma.perfilUsuario.findUnique({
+      where: { id: perfilId },
+      select: {
+        id: true,
+        rol: true,
+        entidad_tipo: true,
+        entidad_id: true,
+        created_at: true,
+        credencial: { select: { id: true, usuario_login: true, password_hash: true, activo: true } },
+      },
+    });
+  },
+
   findByLogin(login: string) {
     return prisma.credencial.findUnique({
       where: { usuario_login: login },
@@ -114,6 +132,14 @@ export const UsersRepository = {
       where: { id: perfilId },
       data: { rol },
       select: perfilWithCredencial,
+    });
+  },
+
+  updateLogin(credencialId: string, usuarioLogin: string) {
+    return prisma.credencial.update({
+      where: { id: credencialId },
+      data: { usuario_login: usuarioLogin },
+      select: credencialSafeSelect,
     });
   },
 };

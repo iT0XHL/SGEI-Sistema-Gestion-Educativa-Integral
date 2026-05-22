@@ -24,3 +24,12 @@ export const ChangePasswordSchema = z
     path: ['password_nueva'],
   });
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+export const AdminResetPasswordSchema = z.object({
+  password_nueva: z
+    .string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres')
+    .max(128),
+  confirmacion: z.string().optional(),
+});
+export type AdminResetPasswordInput = z.infer<typeof AdminResetPasswordSchema>;

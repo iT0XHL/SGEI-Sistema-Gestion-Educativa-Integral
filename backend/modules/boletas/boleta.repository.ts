@@ -2,13 +2,38 @@ import { prisma } from '@/lib/prisma';
 import { withAuditContext } from '@/lib/audit-context';
 import { Prisma } from '@prisma/client';
 
+// ── Helper: fetch reviewer usernames sin cross-schema join ─────
+// Consulta DENTRO de auth_schema (perfil_usuario → credencial).
+// Evita el join cross-schema financial → auth que falla en Prisma multiSchema.
+async function fetchRevisorMap(ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (ids.length === 0) return map;
+  const perfiles = await prisma.perfilUsuario.findMany({
+    where:  { id: { in: ids } },
+    select: { id: true, credencial: { select: { usuario_login: true } } },
+  });
+  for (const p of perfiles) map.set(p.id, p.credencial.usuario_login);
+  return map;
+}
+
+function buildRevisor(
+  revisadoPor: string | null,
+  revisorMap: Map<string, string>,
+): { nombres: string } | null {
+  if (!revisadoPor) return null;
+  const login = revisorMap.get(revisadoPor);
+  return login ? { nombres: login } : null;
+}
+
+// ── Repository ────────────────────────────────────────────────
+
 export const BoletaRepository = {
   async create(
     data: {
-      pago_id:          string;
-      url_archivo:      string;
-      nombre_archivo?:  string;
-      banco?:           string;
+      pago_id:           string;
+      url_archivo:       string;
+      nombre_archivo?:   string;
+      banco?:            string;
       numero_operacion?: string;
     },
     perfilId: string,
@@ -27,7 +52,7 @@ export const BoletaRepository = {
         include: {
           pago: {
             include: {
-              alumno:  { select: { nombres: true, apellido_paterno: true } },
+              alumno:   { select: { nombres: true, apellido_paterno: true } },
               concepto: { select: { nombre: true } },
             },
           },
@@ -37,42 +62,58 @@ export const BoletaRepository = {
   },
 
   async findMany(filters: {
-    alumnoId?:      string;
-    pagoId?:        string;
+    alumnoId?:       string;
+    pagoId?:         string;
     estadoRevision?: string;
   }) {
-    return prisma.boletaPago.findMany({
+    const rows = await prisma.boletaPago.findMany({
       where: {
-        ...(filters.pagoId        ? { pago_id:         filters.pagoId }                         : {}),
-        ...(filters.estadoRevision ? { estado_revision: filters.estadoRevision as never }        : {}),
-        ...(filters.alumnoId      ? { pago: { alumno_id: filters.alumnoId } }                   : {}),
+        ...(filters.pagoId         ? { pago_id:         filters.pagoId }                  : {}),
+        ...(filters.estadoRevision ? { estado_revision: filters.estadoRevision as never } : {}),
+        ...(filters.alumnoId       ? { pago: { alumno_id: filters.alumnoId } }            : {}),
       },
       include: {
         pago: {
           include: {
-            alumno:  { select: { nombres: true, apellido_paterno: true, seccion: { select: { nombre: true, grado: { select: { nombre: true } } } } } },
+            alumno: {
+              select: {
+                nombres:          true,
+                apellido_paterno: true,
+                seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+              },
+            },
             concepto: { select: { nombre: true } },
           },
         },
-        revisor: { select: { nombres: true } },
+        // Sin include cross-schema (financial → auth). Reviewer se resuelve abajo.
       },
       orderBy: { fecha_subida: 'desc' },
     });
+
+    const revisorIds = [...new Set(
+      rows.map(r => r.revisado_por).filter((id): id is string => id !== null),
+    )];
+    const revisorMap = await fetchRevisorMap(revisorIds);
+
+    return rows.map(r => ({ ...r, revisor: buildRevisor(r.revisado_por, revisorMap) }));
   },
 
   async findOne(id: string) {
-    return prisma.boletaPago.findUnique({
+    const row = await prisma.boletaPago.findUnique({
       where: { id },
       include: {
         pago: {
           include: {
-            alumno:  { select: { nombres: true, apellido_paterno: true } },
+            alumno:   { select: { nombres: true, apellido_paterno: true } },
             concepto: { select: { nombre: true } },
           },
         },
-        revisor: { select: { nombres: true } },
+        // Sin include cross-schema (financial → auth). Reviewer se resuelve abajo.
       },
     });
+    if (!row) return null;
+    const revisorMap = await fetchRevisorMap(row.revisado_por ? [row.revisado_por] : []);
+    return { ...row, revisor: buildRevisor(row.revisado_por, revisorMap) };
   },
 
   async findByPagoId(pagoId: string) {
@@ -88,7 +129,7 @@ export const BoletaRepository = {
    */
   async revisar(
     boletaId:           string,
-    revisorId:          string,   // perfil_usuario.id
+    revisorId:          string,
     nuevoEstado:        'Aprobada' | 'Rechazada',
     observacionRechazo: string | null,
     perfilId:           string,

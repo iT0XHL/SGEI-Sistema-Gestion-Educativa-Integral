@@ -1,156 +1,158 @@
-// ============================================================
-//  modules/alumnos/alumnos.repository.ts
-//  Un alumno = credencial + perfil_usuario + academic_schema.alumno.
-// ============================================================
-import { randomUUID } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import type { Tx } from '@/lib/audit-context';
+import { withAuditContext } from '@/lib/audit-context';
+import { Prisma } from '@prisma/client';
+import type { CreateAlumnoInput, UpdateAlumnoInput } from '@/schemas/personas.schema';
 
-export interface AlumnoData {
-  seccion_id: string;
-  periodo_id: string;
-  dni: string;
-  codigo_siagie?: string | null;
-  nombres: string;
-  apellido_paterno: string;
-  apellido_materno: string;
-  fecha_nacimiento: Date;
-  sexo: string;
-  direccion?: string | null;
-  distrito?: string | null;
-  telefono_emergencia?: string | null;
-  grupo_sanguineo?: string | null;
-  condicion_especial?: string | null;
+export interface ListFilters {
+  q?: string;
+  activo?: boolean;
+  page: number;
+  limit: number;
 }
 
-const alumnoInclude = {
-  seccion: {
-    select: {
-      id: true,
-      nombre: true,
-      turno: true,
-      grado: {
-        select: {
-          id: true,
-          nombre: true,
-          nivel: { select: { id: true, nombre: true } },
-        },
-      },
-    },
-  },
-} satisfies Prisma.AlumnoInclude;
-
 export const AlumnosRepository = {
-  list(filters: {
-    q?: string;
-    nivelId?: string;
-    gradoId?: string;
-    seccionId?: string;
-    periodoId?: string;
-    activo?: boolean;
-    page: number;
-    limit: number;
-  }) {
+  buildWhere(filters: ListFilters): Prisma.AlumnoWhereInput {
     const where: Prisma.AlumnoWhereInput = {};
     if (filters.activo !== undefined) where.activo = filters.activo;
-    if (filters.periodoId) where.periodo_id = filters.periodoId;
-    if (filters.seccionId) where.seccion_id = filters.seccionId;
-    if (filters.gradoId || filters.nivelId) {
-      where.seccion = {
-        ...(filters.gradoId ? { grado_id: filters.gradoId } : {}),
-        ...(filters.nivelId ? { grado: { nivel_id: filters.nivelId } } : {}),
-      };
-    }
     if (filters.q) {
       where.OR = [
         { nombres: { contains: filters.q, mode: 'insensitive' } },
         { apellido_paterno: { contains: filters.q, mode: 'insensitive' } },
-        { apellido_materno: { contains: filters.q, mode: 'insensitive' } },
         { dni: { contains: filters.q } },
       ];
     }
-    return Promise.all([
+    return where;
+  },
+
+  async list(filters: ListFilters) {
+    const where = this.buildWhere(filters);
+    const [rows, total] = await Promise.all([
       prisma.alumno.findMany({
         where,
-        include: alumnoInclude,
-        orderBy: [{ apellido_paterno: 'asc' }, { apellido_materno: 'asc' }, { nombres: 'asc' }],
+        select: {
+          id: true,
+          dni: true,
+          nombres: true,
+          apellido_paterno: true,
+          apellido_materno: true,
+          fecha_nacimiento: true,
+          sexo: true,
+          activo: true,
+          seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+          perfil: { select: { credencial: { select: { usuario_login: true } } } },
+        },
+        orderBy: { apellido_paterno: 'asc' },
         skip: (filters.page - 1) * filters.limit,
         take: filters.limit,
       }),
       prisma.alumno.count({ where }),
     ]);
+    return { rows, total };
   },
 
-  findById(id: string) {
-    return prisma.alumno.findUnique({ where: { id }, include: alumnoInclude });
+  async findById(alumnoId: string) {
+    return prisma.alumno.findUnique({
+      where: { id: alumnoId },
+      select: {
+        id: true,
+        dni: true,
+        nombres: true,
+        apellido_paterno: true,
+        apellido_materno: true,
+        fecha_nacimiento: true,
+        sexo: true,
+        direccion: true,
+        distrito: true,
+        telefono_emergencia: true,
+        grupo_sanguineo: true,
+        condicion_especial: true,
+        codigo_siagie: true,
+        activo: true,
+        seccion_id: true,
+        periodo_id: true,
+        perfil_usuario_id: true,
+        seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+        perfil: { select: { credencial: { select: { usuario_login: true, id: true, activo: true } } } },
+      },
+    });
   },
 
-  findByDni(dni: string) {
-    return prisma.alumno.findUnique({ where: { dni } });
+  async findByDNI(dni: string, periodoId: string) {
+    return prisma.alumno.findFirst({
+      where: { dni, periodo_id: periodoId },
+      select: { id: true },
+    });
   },
 
-  /** Nº de alumnos activos en una sección (control de cupo). */
-  countActivosEnSeccion(seccionId: string) {
-    return prisma.alumno.count({ where: { seccion_id: seccionId, activo: true } });
-  },
-
-  /** Crea credencial + perfil + alumno de forma atómica. */
-  createWithAccount(input: {
-    usuarioLogin: string;
-    passwordHash: string;
-    alumno: AlumnoData;
-  }) {
-    const alumnoId = randomUUID();
-    return prisma.$transaction(async (tx) => {
-      const cred = await tx.credencial.create({
-        data: {
-          usuario_login: input.usuarioLogin,
-          password_hash: input.passwordHash,
-        },
-      });
-      const perfil = await tx.perfilUsuario.create({
-        data: {
-          credencial_id: cred.id,
-          rol: 'Alumno',
-          entidad_tipo: 'alumno',
-          entidad_id: alumnoId,
-        },
-      });
+  async create(input: CreateAlumnoInput & { perfilUsuarioId: string }, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
       return tx.alumno.create({
         data: {
-          id: alumnoId,
-          perfil_usuario_id: perfil.id,
-          ...input.alumno,
+          perfil_usuario_id: input.perfilUsuarioId,
+          seccion_id: input.seccion_id,
+          periodo_id: input.periodo_id,
+          dni: input.dni,
+          nombres: input.nombres,
+          apellido_paterno: input.apellido_paterno,
+          apellido_materno: input.apellido_materno,
+          fecha_nacimiento: new Date(input.fecha_nacimiento),
+          sexo: input.sexo,
+          direccion: input.direccion ?? null,
+          distrito: input.distrito ?? null,
+          telefono_emergencia: input.telefono_emergencia ?? null,
+          grupo_sanguineo: input.grupo_sanguineo ?? null,
+          condicion_especial: input.condicion_especial ?? null,
+          codigo_siagie: input.codigo_siagie ?? null,
         },
-        include: alumnoInclude,
+        select: {
+          id: true,
+          dni: true,
+          nombres: true,
+          apellido_paterno: true,
+          apellido_materno: true,
+          fecha_nacimiento: true,
+          sexo: true,
+          direccion: true,
+          distrito: true,
+          telefono_emergencia: true,
+          grupo_sanguineo: true,
+          condicion_especial: true,
+          codigo_siagie: true,
+          activo: true,
+        },
       });
     });
   },
 
-  update(id: string, data: Prisma.AlumnoUpdateInput) {
-    return prisma.alumno.update({ where: { id }, data, include: alumnoInclude });
-  },
-
-  setBloqueoManual(id: string, bloqueo: boolean) {
-    return prisma.alumno.update({
-      where: { id },
-      data: { bloqueo_manual: bloqueo },
-      include: alumnoInclude,
+  async update(alumnoId: string, input: UpdateAlumnoInput, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
+      return tx.alumno.update({
+        where: { id: alumnoId },
+        data: {
+          ...(input.nombres && { nombres: input.nombres }),
+          ...(input.apellido_paterno && { apellido_paterno: input.apellido_paterno }),
+          ...(input.apellido_materno && { apellido_materno: input.apellido_materno }),
+          ...(input.dni && { dni: input.dni }),
+          ...(input.fecha_nacimiento && { fecha_nacimiento: new Date(input.fecha_nacimiento) }),
+          ...(input.sexo && { sexo: input.sexo }),
+          ...(input.direccion !== undefined && { direccion: input.direccion }),
+          ...(input.distrito !== undefined && { distrito: input.distrito }),
+          ...(input.telefono_emergencia !== undefined && { telefono_emergencia: input.telefono_emergencia }),
+          ...(input.grupo_sanguineo !== undefined && { grupo_sanguineo: input.grupo_sanguineo }),
+          ...(input.condicion_especial !== undefined && { condicion_especial: input.condicion_especial }),
+          ...(input.codigo_siagie !== undefined && { codigo_siagie: input.codigo_siagie }),
+          ...(input.seccion_id && { seccion_id: input.seccion_id }),
+        },
+      });
     });
   },
 
-  /** Baja lógica: desactiva alumno + su credencial (Tx auditada). */
-  async deactivate(tx: Tx, id: string, credencialId: string) {
-    await tx.alumno.update({ where: { id }, data: { activo: false } });
-    await tx.credencial.update({ where: { id: credencialId }, data: { activo: false } });
-  },
-
-  async getCredencialId(alumnoId: string): Promise<string | null> {
-    const alumno = await prisma.alumno.findUnique({
-      where: { id: alumnoId },
-      select: { perfil: { select: { credencial_id: true } } },
+  async setActivo(alumnoId: string, activo: boolean, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
+      return tx.alumno.update({
+        where: { id: alumnoId },
+        data: { activo },
+      });
     });
-    return alumno?.perfil.credencial_id ?? null;
   },
 };

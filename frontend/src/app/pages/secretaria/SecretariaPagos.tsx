@@ -1,139 +1,202 @@
-import { useState } from 'react';
-import { Search, CheckCircle2, AlertCircle, Clock, DollarSign, TrendingUp } from 'lucide-react';
-import { ALL_PAYMENTS_SEC } from '../../data/mockData';
+// ============================================================
+//  SecretariaPagos.tsx — Estado de pagos por alumno.
+//  Conectado 100% al backend. Sin mock data.
+//  Roles permitidos: Admin, Secretaria.
+// ============================================================
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router';
+import {
+  Search, CheckCircle2, AlertCircle, Clock,
+  DollarSign, Users, Receipt, Loader2,
+} from 'lucide-react';
+import {
+  secretariaApi,
+  type AlumnoPagoResumenDTO,
+} from '../../../lib/api/secretaria.api';
 
-type FilterStatus = 'all' | 'paid' | 'partial' | 'overdue';
+// ── Tipos derivados de UI ─────────────────────────────────────
+type DisplayStatus = 'al_dia' | 'pendiente' | 'moroso';
+type FilterStatus  = 'all' | DisplayStatus;
 
-// 🔄 Corrección #13 — 'partial' y 'overdue' son SOLO estados de UI.
-// Se derivan de los datos DB; NUNCA se envían en INSERT/UPDATE a financial_schema.estado_pago.
-// Al hacer PATCH usar únicamente: 'Pendiente' | 'En_Revision' | 'Pagado' | 'Rechazado'
-function calcPaymentDisplayStatus(
-  estadoDb: string,
-  fechaVencimiento: string,
-  tienePagosParciales: boolean
-): 'paid' | 'partial' | 'overdue' | 'pending' {
-  if (estadoDb === 'Pagado') return 'paid';
-  const isPending = estadoDb === 'Pendiente' || estadoDb === 'En_Revision';
-  if (isPending && new Date(fechaVencimiento) < new Date()) return 'overdue';
-  if (isPending && tienePagosParciales) return 'partial';
-  return 'pending';
+function deriveStatus(r: AlumnoPagoResumenDTO): DisplayStatus {
+  if (r.monto_pendiente === 0 && r.cuotas_total > 0) return 'al_dia';
+  if (r.moroso) return 'moroso';
+  return 'pendiente';
 }
 
-const MONTHLY_FEE = 350;
-const MORA_RATE   = 0.05;
+const STATUS_CFG: Record<DisplayStatus, { label: string; cls: string; icon: React.ElementType }> = {
+  al_dia:    { label: 'Al día',    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
+  pendiente: { label: 'Pendiente', cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
+  moroso:    { label: 'Moroso',    cls: 'bg-red-50 text-red-700 border-red-200',             icon: AlertCircle },
+};
 
-function calcMora(pending: number): number {
-  if (pending <= 0) return 0;
-  const unpaidMonths = Math.round(pending / MONTHLY_FEE);
-  return parseFloat((unpaidMonths * MONTHLY_FEE * MORA_RATE).toFixed(2));
+// ── Helpers ───────────────────────────────────────────────────
+function initials(name: string) {
+  return name.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 }
 
+function pct(pagado: number, total: number) {
+  if (total === 0) return 0;
+  return Math.min(100, Math.round((pagado / total) * 100));
+}
+
+function fmtSol(n: number) {
+  return `S/ ${n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtFecha(iso: string) {
+  return new Date(iso).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ── Componente principal ──────────────────────────────────────
 export default function SecretariaPagos() {
-  const [search, setSearch]   = useState('');
-  const [filter, setFilter]   = useState<FilterStatus>('all');
-  const [payments, setPayments] = useState(ALL_PAYMENTS_SEC);
+  const [data,      setData]      = useState<AlumnoPagoResumenDTO[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [fetchError, setFetchError] = useState('');
+  const [filter,    setFilter]    = useState<FilterStatus>('all');
+  const [search,    setSearch]    = useState('');
 
-  const filtered = payments.filter(p => {
-    const matchSearch =
-      p.studentName.toLowerCase().includes(search.toLowerCase()) ||
-      p.grade.toLowerCase().includes(search.toLowerCase());
-    // 🔄 Corrección #13 — filtrar por estado derivado, no por campo 'status' de la DB
-    const displayStatus = calcPaymentDisplayStatus(p.estadoDb, p.fechaVencimiento, p.tienePagosParciales);
-    const matchFilter = filter === 'all' || displayStatus === filter;
-    return matchSearch && matchFilter;
-  });
+  // ── Carga inicial ─────────────────────────────────────────────
+  useEffect(() => {
+    async function cargar() {
+      setLoading(true);
+      setFetchError('');
+      try {
+        const res = await secretariaApi.pagosPorAlumno();
+        setData(res);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : 'No se pudo cargar el estado de pagos.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    cargar();
+  }, []);
 
-  const totalRecauded = payments.reduce((s, p) => s + p.paid, 0);
-  const totalDebt     = payments.reduce((s, p) => s + p.pending, 0);
-  const totalMora     = payments.reduce((s, p) => s + calcMora(p.pending), 0);
-  // 🔄 Corrección #13 — contar 'overdue' mediante estado derivado
-  const overdue = payments.filter(p =>
-    calcPaymentDisplayStatus(p.estadoDb, p.fechaVencimiento, p.tienePagosParciales) === 'overdue'
-  ).length;
+  // ── Filtrado ──────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return data.filter(r => {
+      const matchSearch = !q
+        || r.nombre_completo.toLowerCase().includes(q)
+        || r.grado.toLowerCase().includes(q)
+        || r.seccion.toLowerCase().includes(q);
+      const status = deriveStatus(r);
+      const matchFilter = filter === 'all' || status === filter;
+      return matchSearch && matchFilter;
+    });
+  }, [data, filter, search]);
 
-  const STATUS_CONFIG = {
-    paid:    { label: 'Al día',    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-    partial: { label: 'Parcial',   cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
-    overdue: { label: 'Vencido',   cls: 'bg-red-50 text-red-700 border-red-200',             icon: AlertCircle },
-    pending: { label: 'Pendiente', cls: 'bg-slate-100 text-slate-600 border-slate-200',      icon: Clock },
-  };
+  // ── Resumen global ────────────────────────────────────────────
+  const totalRecaudado = data.reduce((s, r) => s + r.monto_pagado, 0);
+  const totalPendiente = data.reduce((s, r) => s + r.monto_pendiente, 0);
+  const countAlDia     = data.filter(r => deriveStatus(r) === 'al_dia').length;
+  const countMorosos   = data.filter(r => r.moroso).length;
 
-  const FILTERS: { value: FilterStatus; label: string }[] = [
-    { value: 'all',     label: 'Todos' },
-    { value: 'paid',    label: 'Al día' },
-    { value: 'partial', label: 'Parcial' },
-    { value: 'overdue', label: 'Vencido' },
+  const FILTERS: { value: FilterStatus; label: string; count?: number }[] = [
+    { value: 'all',      label: 'Todos',    count: data.length },
+    { value: 'al_dia',   label: 'Al día',   count: countAlDia },
+    { value: 'pendiente', label: 'Pendiente', count: data.filter(r => deriveStatus(r) === 'pendiente').length },
+    { value: 'moroso',   label: 'Moroso',   count: countMorosos },
   ];
 
+  // ── Loading ───────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-6 animate-pulse">
+        <div className="h-8 w-64 bg-slate-200 rounded" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-slate-200 rounded-2xl" />)}
+        </div>
+        <div className="h-12 bg-slate-200 rounded-2xl" />
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-14 mx-4 my-2 bg-slate-100 rounded" />)}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+
+      {/* Header */}
       <div>
+        <p className="text-sm text-slate-500 mb-1">Panel de secretaría</p>
         <h1 className="text-2xl font-bold text-slate-900">Estado de Pagos</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Gestión de cuentas por cobrar — Año 2025</p>
+        <p className="text-sm text-slate-500 mt-0.5">Seguimiento de pagos por alumno — período activo</p>
       </div>
 
-      {/* Summary */}
+      {/* Error */}
+      {fetchError && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <AlertCircle className="size-5 text-red-600 shrink-0" />
+          <p className="text-sm text-red-800 flex-1">{fetchError}</p>
+        </div>
+      )}
+
+      {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-50">
               <DollarSign className="size-4 text-emerald-600" />
             </div>
-            <p className="text-xs font-semibold text-slate-500 uppercase">Recaudado</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Recaudado</p>
           </div>
-          <p className="text-xl font-bold text-slate-900">S/ {totalRecauded.toLocaleString()}</p>
+          <p className="text-xl font-bold text-slate-900">{fmtSol(totalRecaudado)}</p>
         </div>
+
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-red-50">
               <AlertCircle className="size-4 text-red-600" />
             </div>
-            <p className="text-xs font-semibold text-slate-500 uppercase">Por cobrar</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Por cobrar</p>
           </div>
-          <p className="text-xl font-bold text-slate-900">S/ {totalDebt.toLocaleString()}</p>
+          <p className="text-xl font-bold text-slate-900">{fmtSol(totalPendiente)}</p>
         </div>
+
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-orange-50">
-              <TrendingUp className="size-4 text-orange-600" />
+            <div className="flex size-8 items-center justify-center rounded-lg bg-teal-50">
+              <Users className="size-4 text-teal-600" />
             </div>
-            <p className="text-xs font-semibold text-slate-500 uppercase">Total mora</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Al día</p>
           </div>
-          <p className="text-xl font-bold text-orange-700">S/ {totalMora.toLocaleString()}</p>
-          <p className="text-xs text-slate-400 mt-0.5">5% × cuotas vencidas</p>
+          <p className="text-xl font-bold text-slate-900">{countAlDia}</p>
+          <p className="text-xs text-slate-400 mt-0.5">de {data.length} alumnos</p>
         </div>
+
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-amber-50">
               <Clock className="size-4 text-amber-600" />
             </div>
-            <p className="text-xs font-semibold text-slate-500 uppercase">Morosos</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Morosos</p>
           </div>
-          <p className="text-xl font-bold text-slate-900">{overdue} alumnos</p>
+          <p className="text-xl font-bold text-slate-900">{countMorosos}</p>
+          <p className="text-xs text-slate-400 mt-0.5">con cuotas vencidas</p>
         </div>
       </div>
 
-      {/* Mora info banner */}
-      <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-        <TrendingUp className="size-4 text-orange-600 shrink-0" />
-        <p className="text-xs text-orange-700">
-          <strong>Cálculo de mora:</strong> 5% del monto mensual (S/ {MONTHLY_FEE}) por cada cuota impaga, de forma acumulativa.
-          Por ejemplo: 3 cuotas impagas → S/ {(3 * MONTHLY_FEE * MORA_RATE).toFixed(2)} de mora.
-        </p>
-      </div>
-
-      {/* Filters + search */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* Filters + Search */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
           {FILTERS.map(f => (
             <button
               key={f.value}
               onClick={() => setFilter(f.value)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                filter === f.value ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                filter === f.value
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {f.label}
+              {f.count !== undefined && (
+                <span className="ml-1.5 text-xs text-slate-400">{f.count}</span>
+              )}
             </button>
           ))}
         </div>
@@ -141,7 +204,7 @@ export default function SecretariaPagos() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
           <input
             type="search"
-            placeholder="Buscar alumno o grado…"
+            placeholder="Buscar alumno, grado…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
@@ -151,80 +214,103 @@ export default function SecretariaPagos() {
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto overflow-y-auto max-h-[520px]">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[700px]">
-            <thead className="sticky top-0 z-10">
+            <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Alumno</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Grado</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Pagado</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-orange-600">Mora (5%)</th>
-                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[120px]">Avance</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Acción</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Alumno
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">
+                  Grado / Sección
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Pagado
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Pendiente
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[120px]">
+                  Avance
+                </th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Estado
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Acción
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filtered.map(student => {
-                const pct  = Math.round(student.paid / student.total * 100);
-                const mora = calcMora(student.pending);
-                const unpaidMonths = Math.round(student.pending / MONTHLY_FEE);
-                // 🔄 Corrección #13 — estado UI derivado de estadoDb + fecha + parciales
-                const displayStatus = calcPaymentDisplayStatus(student.estadoDb, student.fechaVencimiento, student.tienePagosParciales);
-                const st   = STATUS_CONFIG[displayStatus];
-                const StatusIcon = st.icon;
+              {filtered.map(r => {
+                const status  = deriveStatus(r);
+                const cfg     = STATUS_CFG[status];
+                const Icon    = cfg.icon;
+                const avance  = pct(r.monto_pagado, r.monto_total);
+                const barCls  = avance === 100 ? 'bg-emerald-500' : avance > 50 ? 'bg-amber-400' : 'bg-red-400';
+
                 return (
-                  <tr key={student.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={r.alumno_id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="flex size-8 items-center justify-center rounded-full bg-teal-100 text-teal-700 text-xs font-semibold shrink-0">
-                          {student.studentName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                          {initials(r.nombre_completo)}
                         </div>
-                        <span className="font-semibold text-slate-800">{student.studentName}</span>
+                        <div>
+                          <p className="font-semibold text-slate-800">{r.nombre_completo}</p>
+                          {r.fecha_proxima_vencimiento && status !== 'al_dia' && (
+                            <p className="text-xs text-slate-400">
+                              Vence: {fmtFecha(r.fecha_proxima_vencimiento)}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-slate-500 hidden sm:table-cell">{student.grade}</td>
+                    <td className="px-4 py-3.5 text-slate-500 hidden sm:table-cell">
+                      {r.grado} &quot;{r.seccion}&quot;
+                    </td>
                     <td className="px-4 py-3.5 text-right font-semibold text-emerald-700">
-                      S/ {student.paid.toLocaleString()}
+                      {fmtSol(r.monto_pagado)}
                     </td>
                     <td className="px-4 py-3.5 text-right">
-                      {mora > 0 ? (
-                        <div className="flex flex-col items-end">
-                          <span className="font-bold text-orange-600">S/ {mora.toFixed(2)}</span>
-                          <span className="text-[10px] text-slate-400">{unpaidMonths} cuota{unpaidMonths !== 1 ? 's' : ''} × 5%</span>
-                        </div>
+                      {r.monto_pendiente > 0 ? (
+                        <span className={`font-semibold ${r.moroso ? 'text-red-600' : 'text-slate-700'}`}>
+                          {fmtSol(r.monto_pendiente)}
+                        </span>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : pct > 50 ? 'bg-amber-400' : 'bg-red-400'}`}
-                            style={{ width: `${pct}%` }}
-                          />
+                      {r.cuotas_total > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${barCls}`}
+                              style={{ width: `${avance}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-500 w-9 text-right shrink-0">
+                            {r.cuotas_pagadas}/{r.cuotas_total}
+                          </span>
                         </div>
-                        <span className="text-xs text-slate-500 w-8 text-right">{pct}%</span>
-                      </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">Sin cuotas</span>
+                      )}
                     </td>
                     <td className="text-center px-4 py-3.5">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${st.cls}`}>
-                        <StatusIcon className="size-3" /> {st.label}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.cls}`}>
+                        <Icon className="size-3" /> {cfg.label}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-right">
-                      {/* 🔄 Corrección #13 — comparar estadoDb, no el status UI */}
-                      {student.estadoDb !== 'Pagado' && (
-                        <button
-                          onClick={() => setPayments(prev => prev.map(p =>
-                            // Al PATCH: usar 'Pagado' (ENUM DB) — nunca 'paid'
-                            p.id === student.id ? { ...p, estadoDb: 'Pagado' as const, paid: p.total, pending: 0 } : p
-                          ))}
-                          className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium transition-colors"
+                      {r.tiene_boleta_pendiente && (
+                        <Link
+                          to="/secretaria/vouchers"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium transition-colors"
                         >
-                          Marcar pagado
-                        </button>
+                          <Receipt className="size-3.5" /> Ver voucher
+                        </Link>
                       )}
                     </td>
                   </tr>
@@ -232,9 +318,28 @@ export default function SecretariaPagos() {
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && (
+
+          {filtered.length === 0 && !loading && (
             <div className="flex flex-col items-center py-12 text-center">
-              <p className="text-slate-500">No se encontraron resultados</p>
+              {data.length === 0 ? (
+                <>
+                  <Loader2 className="size-8 text-slate-300 mb-3" />
+                  <p className="text-slate-500">No hay alumnos registrados en el período activo.</p>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-8 text-slate-300 mb-3" />
+                  <p className="text-slate-500">No se encontraron resultados para la búsqueda.</p>
+                  {filter !== 'all' && (
+                    <button
+                      onClick={() => setFilter('all')}
+                      className="mt-2 text-sm text-teal-600 hover:underline"
+                    >
+                      Ver todos
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

@@ -100,7 +100,14 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
 
   if (error instanceof Prisma.PrismaClientValidationError) {
     console.error('[SGEI DB] Error de validación Prisma:', error.message);
-    return buildError('INTERNAL_ERROR', 'Error interno del servidor', 500);
+    const msg = process.env.NODE_ENV === 'development' ? error.message : 'Error interno del servidor';
+    return buildError('PRISMA_VALIDATION', msg, 500);
+  }
+
+  if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+    console.error('[SGEI DB] Error Prisma desconocido:', error.message);
+    const msg = process.env.NODE_ENV === 'development' ? error.message : 'Error interno del servidor';
+    return buildError('DB_ERROR', msg, 500);
   }
 
   // 4. RAISE EXCEPTION desde triggers / stored procedures de la DB.
