@@ -44,6 +44,11 @@ desktop.ini
 *~
 .vim/
 
+# Claude Code
+.claude/
+CLAUDE.md
+AGENTS.md
+
 # OS temp
 .AppleDouble
 .LSOverride
