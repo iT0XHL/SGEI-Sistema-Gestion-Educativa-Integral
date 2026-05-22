@@ -146,10 +146,12 @@ export default function AdminCuentas() {
 
     // Filtrar registros defectuosos: eliminar si displayName es igual al email
     // (significa que es un registro sin nombre real)
+    // Pero mantener staff (Admin/Secretaria) porque para ellos displayName === email es correcto
     const validAccounts = merged.filter(acc => {
+      if (acc.tipo === 'staff') return true;  // Mantener todos los staff
       const emailLower = acc.email.toLowerCase();
       const displayLower = acc.displayName.toLowerCase();
-      return displayLower !== emailLower;
+      return displayLower !== emailLower;  // Filtrar docentes/alumnos sin nombre real
     });
 
     // Deduplicar por (tipo, id) entre registros válidos

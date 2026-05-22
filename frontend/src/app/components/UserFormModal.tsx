@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Eye, EyeOff, X, AlertTriangle, ChevronDown, Loader2,
+  Eye, EyeOff, AlertTriangle, ChevronDown, Loader2,
 } from 'lucide-react';
 import {
   usuariosApi, docentesAdminApi, alumnosAdminApi,
@@ -73,26 +73,43 @@ function InputField(props: {
   maxLength?: number;
   className?: string;
   disabled?: boolean;
+  showPassword?: boolean;
+  onTogglePassword?: () => void;
 }) {
-  const { label, value, onChange, placeholder, type = 'text', required, error: fieldError, maxLength, className, disabled } = props;
+  const { label, value, onChange, placeholder, type = 'text', required, error: fieldError, maxLength, className, disabled, showPassword, onTogglePassword } = props;
+  const isPasswordField = type === 'password' && onTogglePassword;
+  const inputType = isPasswordField ? (showPassword ? 'text' : 'password') : type;
+
   return (
     <div className={className}>
       <label className="block text-sm font-medium text-slate-700 mb-1.5">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-      <input
-        type={type}
-        maxLength={maxLength}
-        value={value}
-        disabled={disabled}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all ${
-          fieldError
-            ? 'border-red-400 bg-red-50 focus:ring-red-400'
-            : 'border-slate-200 bg-slate-50 focus:ring-slate-400'
-        }`}
-      />
+      <div className="relative">
+        <input
+          type={inputType}
+          maxLength={maxLength}
+          value={value}
+          disabled={disabled}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all ${isPasswordField ? 'pr-10' : ''} ${
+            fieldError
+              ? 'border-red-400 bg-red-50 focus:ring-red-400'
+              : 'border-slate-200 bg-slate-50 focus:ring-slate-400'
+          }`}
+        />
+        {isPasswordField && (
+          <button
+            type="button"
+            onClick={onTogglePassword}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        )}
+      </div>
       {fieldError && <p className="mt-1 text-xs text-red-500">{fieldError}</p>}
     </div>
   );
@@ -190,6 +207,8 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [periodos, setPeriodos] = useState<PeriodoDTO[]>([]);
   const [secciones, setSecciones] = useState<SeccionDTO[]>([]);
@@ -212,6 +231,8 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
     if (rol === 'Admin' || rol === 'Secretaria') base.rol = rol;
     setForm(base);
     setSubmitAttempted(false);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
   }, [selectedRol, mode]);
 
   function set<K extends keyof UserFormData>(key: K, value: UserFormData[K]) {
@@ -443,6 +464,8 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
                   placeholder="Mínimo 8 caracteres"
                   required={mode === 'create'}
                   error={errors.password}
+                  showPassword={showPassword}
+                  onTogglePassword={() => setShowPassword(!showPassword)}
                 />
                 <InputField
                   label="Confirmar contraseña"
@@ -452,6 +475,8 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
                   placeholder="Repite la contraseña"
                   required={mode === 'create'}
                   error={errors.confirmPassword}
+                  showPassword={showConfirmPassword}
+                  onTogglePassword={() => setShowConfirmPassword(!showConfirmPassword)}
                 />
               </>
             )}
