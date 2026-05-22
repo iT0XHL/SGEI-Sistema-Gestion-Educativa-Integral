@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Eye, EyeOff, AlertTriangle, ChevronDown, Loader2,
+  Eye, EyeOff, X, AlertTriangle, ChevronDown, Loader2,
 } from 'lucide-react';
 import {
   usuariosApi, docentesAdminApi, alumnosAdminApi,
@@ -328,13 +328,18 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
       await alumnosAdminApi.crear(payload);
       onSuccess('Alumno creado correctamente.');
     } else {
+      // For Admin/Secretaria without names, assign generic defaults
+      const nombres = form.nombres.trim() || form.rol;
+      const apellido_paterno = form.apellido_paterno.trim() || '(vacío)';
+      const apellido_materno = form.apellido_materno.trim() || '';
+
       const payload: CreateUsuarioPayload = {
         usuario_login: form.usuario_login.trim(),
         password: form.password,
         rol: form.rol,
-        nombres: form.nombres.trim(),
-        apellido_paterno: form.apellido_paterno.trim(),
-        apellido_materno: form.apellido_materno.trim(),
+        nombres,
+        apellido_paterno,
+        apellido_materno,
       };
       await usuariosApi.crear(payload);
       onSuccess(`Cuenta de ${form.rol === 'Admin' ? 'Administrador' : 'Secretaría'} creada correctamente.`);

@@ -50,7 +50,9 @@ function fromDocente(d: DocenteDTO): RowCuenta {
 function fromUsuario(u: UsuarioDTO): RowCuenta {
   let displayName = `${u.nombres} ${u.apellido_paterno} ${u.apellido_materno}`.trim();
   if (!displayName) {
-    displayName = u.usuario_login || 'Sin nombre';
+    // For Admin/Secretaria users without names, assign a generic displayName
+    const genericLabel = u.rol === 'Admin' ? 'Administrador' : u.rol === 'Secretaria' ? 'Secretario/a' : 'Usuario';
+    displayName = genericLabel;
   }
   const parts = displayName.split(' ');
   return {
