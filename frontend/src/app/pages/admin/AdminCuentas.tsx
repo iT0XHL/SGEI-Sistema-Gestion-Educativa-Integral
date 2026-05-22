@@ -48,13 +48,16 @@ function fromDocente(d: DocenteDTO): RowCuenta {
 }
 
 function fromUsuario(u: UsuarioDTO): RowCuenta {
-  const parts = u.usuario_login.split('@');
-  const initials = (parts[0] ?? '').slice(0, 2).toUpperCase();
+  let displayName = `${u.nombres} ${u.apellido_paterno} ${u.apellido_materno}`.trim();
+  if (!displayName) {
+    displayName = u.usuario_login || 'Sin nombre';
+  }
+  const parts = displayName.split(' ');
   return {
     id:           u.id,
     tipo:         'staff',
-    displayName:  u.usuario_login,
-    initials,
+    displayName,
+    initials:     parts.slice(0, 2).map(p => p[0] ?? '').join('').toUpperCase(),
     rol:          u.rol,
     email:        u.usuario_login,
     especialidad: '',
@@ -146,12 +149,10 @@ export default function AdminCuentas() {
 
     // Filtrar registros defectuosos: eliminar si displayName es igual al email
     // (significa que es un registro sin nombre real)
-    // Pero mantener staff (Admin/Secretaria) porque para ellos displayName === email es correcto
     const validAccounts = merged.filter(acc => {
-      if (acc.tipo === 'staff') return true;  // Mantener todos los staff
       const emailLower = acc.email.toLowerCase();
       const displayLower = acc.displayName.toLowerCase();
-      return displayLower !== emailLower;  // Filtrar docentes/alumnos sin nombre real
+      return displayLower !== emailLower;
     });
 
     // Deduplicar por (tipo, id) entre registros válidos
@@ -252,6 +253,9 @@ export default function AdminCuentas() {
           id: u.id,
           usuario_login: u.usuario_login,
           rol: u.rol as 'Admin' | 'Secretaria',
+          nombres: u.nombres ?? '',
+          apellido_paterno: u.apellido_paterno ?? '',
+          apellido_materno: u.apellido_materno ?? '',
         } as UserFormData & { id: string },
       });
     }

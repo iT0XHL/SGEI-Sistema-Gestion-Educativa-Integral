@@ -332,6 +332,9 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
         usuario_login: form.usuario_login.trim(),
         password: form.password,
         rol: form.rol,
+        nombres: form.nombres.trim(),
+        apellido_paterno: form.apellido_paterno.trim(),
+        apellido_materno: form.apellido_materno.trim(),
       };
       await usuariosApi.crear(payload);
       onSuccess(`Cuenta de ${form.rol === 'Admin' ? 'Administrador' : 'Secretaría'} creada correctamente.`);
@@ -385,6 +388,9 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
     } else {
       const payload: UpdateUsuarioPayload = {};
       if (form.usuario_login !== initialData.usuario_login) payload.usuario_login = form.usuario_login;
+      if (form.nombres !== (initialData.nombres || '')) payload.nombres = form.nombres;
+      if (form.apellido_paterno !== (initialData.apellido_paterno || '')) payload.apellido_paterno = form.apellido_paterno;
+      if (form.apellido_materno !== (initialData.apellido_materno || '')) payload.apellido_materno = form.apellido_materno;
       if (Object.keys(payload).length > 0) {
         await usuariosApi.actualizar(id, payload);
       }
@@ -495,7 +501,7 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
           </div>
 
           {/* ─── Datos personales ─── */}
-          {(rol === 'Docente' || rol === 'Alumno') && (
+          {(rol === 'Docente' || rol === 'Alumno' || rol === 'Admin' || rol === 'Secretaria') && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <SectionTitle>Datos personales</SectionTitle>
 
@@ -504,7 +510,7 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
                 value={form.nombres}
                 onChange={v => set('nombres', v)}
                 placeholder={rol === 'Docente' ? 'Ej. Juan Carlos' : 'Ej. María'}
-                required
+                required={rol !== 'Admin' && rol !== 'Secretaria'}
                 error={errors.nombres}
                 className="sm:col-span-2"
               />
@@ -514,7 +520,7 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
                 value={form.apellido_paterno}
                 onChange={v => set('apellido_paterno', v)}
                 placeholder="Ej. Pérez"
-                required
+                required={rol !== 'Admin' && rol !== 'Secretaria'}
                 error={errors.apellidoPaterno}
               />
               <InputField
@@ -522,7 +528,7 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
                 value={form.apellido_materno}
                 onChange={v => set('apellido_materno', v)}
                 placeholder="Ej. González"
-                required
+                required={rol !== 'Admin' && rol !== 'Secretaria'}
                 error={errors.apellidoMaterno}
               />
 
