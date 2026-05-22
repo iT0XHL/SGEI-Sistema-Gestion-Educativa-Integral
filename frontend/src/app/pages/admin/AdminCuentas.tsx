@@ -144,31 +144,26 @@ export default function AdminCuentas() {
       ...alumnoRows.map(fromAlumno),
     ];
 
-    // Eliminar duplicados por email - mantener el que tiene mejor displayName
-    const seen = new Map<string, RowCuenta>();
-    for (const account of merged) {
-      const emailKey = account.email.toLowerCase();
-      const typeEmailKey = `${account.tipo}:${emailKey}`;
+    // Filtrar registros defectuosos: eliminar si displayName es igual al email
+    // (significa que es un registro sin nombre real)
+    const validAccounts = merged.filter(acc => {
+      const emailLower = acc.email.toLowerCase();
+      const displayLower = acc.displayName.toLowerCase();
+      return displayLower !== emailLower;
+    });
 
-      const existing = seen.get(typeEmailKey);
-      if (!existing) {
-        seen.set(typeEmailKey, account);
-      } else {
-        // Mantener el que tiene un displayName que NO es solo el email
-        const currentIsJustEmail = account.displayName.toLowerCase() === emailKey;
-        const existingIsJustEmail = existing.displayName.toLowerCase() === emailKey;
-
-        if (existingIsJustEmail && !currentIsJustEmail) {
-          // El actual tiene mejor nombre, reemplazar
-          seen.set(typeEmailKey, account);
-        }
-        // Si ambos son email o ambos tienen nombres, mantener el primero
+    // Deduplicar por (tipo, id) entre registros válidos
+    const seen = new Set<string>();
+    const deduplicated: RowCuenta[] = [];
+    for (const account of validAccounts) {
+      const key = `${account.tipo}:${account.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(account);
       }
     }
 
-    const deduplicated = Array.from(seen.values()).sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, 'es')
-    );
+    deduplicated.sort((a, b) => a.displayName.localeCompare(b.displayName, 'es'));
 
     let filtered = deduplicated;
     if (rolTab) {
