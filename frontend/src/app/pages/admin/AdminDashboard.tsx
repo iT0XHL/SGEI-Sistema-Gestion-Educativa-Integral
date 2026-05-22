@@ -1,43 +1,121 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
-import { Users, Calendar, UserCheck, TrendingUp, BookOpen, ChevronRight, AlertTriangle, ShieldAlert } from 'lucide-react';
-import { TEACHER_ACCOUNTS, TEACHER_ATTENDANCE, SCHEDULE } from '../../data/mockData';
+import { Users, Calendar, UserCheck, TrendingUp, BookOpen, ChevronRight, AlertTriangle, ShieldAlert, Loader2 } from 'lucide-react';
+import { estadisticasApi } from '../../../lib/api/admin.api';
+import type { EstadisticasDTO } from '../../../lib/api/admin.api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-const gradeData = [
-  { grado: '1°', promedio: 14.2 },
-  { grado: '2°', promedio: 13.8 },
-  { grado: '3°', promedio: 14.9 },
-  { grado: '4°', promedio: 15.1 },
-  { grado: '5°', promedio: 14.6 },
-];
-
-const paymentData = [
-  { name: 'Pagado', value: 68, color: '#059669' },
-  { name: 'Pendiente', value: 24, color: '#d97706' },
-  { name: 'Vencido', value: 8, color: '#dc2626' },
-];
-
-const activeTeachers = TEACHER_ACCOUNTS.filter(t => t.status === 'active').length;
-const presentTeachers = TEACHER_ATTENDANCE.filter(t => t.status === 'present').length;
-
 export default function AdminDashboard() {
+  const [stats, setStats] = useState<EstadisticasDTO | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    estadisticasApi
+      .obtener()
+      .then(setStats)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Error al cargar estadísticas'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-6xl mx-auto flex items-center justify-center min-h-[60vh]">
+        <div className="flex items-center gap-3">
+          <Loader2 className="size-6 animate-spin text-slate-400" />
+          <p className="text-slate-600">Cargando estadísticas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 lg:p-8 max-w-6xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+          <p className="text-red-700">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="p-6 lg:p-8 max-w-6xl mx-auto">
+        <div className="text-center py-12">
+          <p className="text-slate-500">No hay datos disponibles</p>
+        </div>
+      </div>
+    );
+  }
+
+  const assistancePercent = stats.asistencia_hoy.total_docentes > 0
+    ? Math.round((stats.asistencia_hoy.presentes / stats.asistencia_hoy.total_docentes) * 100)
+    : 0;
+
+  const gradeData = [
+    { grado: '1°', promedio: 14.2 },
+    { grado: '2°', promedio: 13.8 },
+    { grado: '3°', promedio: 14.9 },
+    { grado: '4°', promedio: 15.1 },
+    { grado: '5°', promedio: 14.6 },
+  ];
+
+  const paymentData = [
+    { name: 'Pagado', value: 68, color: '#059669' },
+    { name: 'Pendiente', value: 24, color: '#d97706' },
+    { name: 'Vencido', value: 8, color: '#dc2626' },
+  ];
+
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
       {/* Header */}
       <div>
         <p className="text-sm text-slate-500 mb-1">Panel de administración</p>
         <h1 className="text-2xl font-bold text-slate-900">Vista General del Sistema</h1>
-        <p className="text-sm text-slate-500 mt-0.5">I.E. San José de Calasanz · Año escolar 2025</p>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {stats.periodo
+            ? `${stats.periodo.nombre} · Año escolar ${stats.periodo.anio}`
+            : 'Sin período académico activo'}
+        </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Estudiantes matriculados', value: '450', sub: 'Año 2025', icon: BookOpen, color: 'bg-blue-50 text-blue-600', change: '+12 este año' },
-          { label: 'Docentes activos', value: `${activeTeachers}`, sub: 'En el sistema', icon: Users, color: 'bg-indigo-50 text-indigo-600', change: `${TEACHER_ACCOUNTS.filter(t=>t.status==='inactive').length} inactivos` },
-          { label: 'Asistencia hoy', value: `${Math.round(presentTeachers/TEACHER_ATTENDANCE.length*100)}%`, sub: 'Docentes presentes', icon: UserCheck, color: 'bg-emerald-50 text-emerald-600', change: `${presentTeachers}/${TEACHER_ATTENDANCE.length}` },
-          { label: 'Libretas bloqueadas', value: '14', sub: 'Por deudas — automático', icon: ShieldAlert, color: 'bg-amber-50 text-amber-600', change: 'Detección automática' },
-        ].map(s => (
+          {
+            label: 'Estudiantes matriculados',
+            value: `${stats.alumnos.total}`,
+            sub: stats.periodo?.nombre || 'Año actual',
+            icon: BookOpen,
+            color: 'bg-blue-50 text-blue-600',
+            change: stats.alumnos.bloqueados > 0 ? `${stats.alumnos.bloqueados} bloqueados` : 'Ninguno bloqueado',
+          },
+          {
+            label: 'Docentes activos',
+            value: `${stats.docentes.total}`,
+            sub: 'En el sistema',
+            icon: Users,
+            color: 'bg-indigo-50 text-indigo-600',
+            change: 'Personal activo',
+          },
+          {
+            label: 'Asistencia hoy',
+            value: `${assistancePercent}%`,
+            sub: 'Docentes presentes',
+            icon: UserCheck,
+            color: 'bg-emerald-50 text-emerald-600',
+            change: `${stats.asistencia_hoy.presentes}/${stats.asistencia_hoy.total_docentes}`,
+          },
+          {
+            label: 'Libretas bloqueadas',
+            value: `${stats.alumnos.bloqueados}`,
+            sub: 'Por deudas — automático',
+            icon: ShieldAlert,
+            color: 'bg-amber-50 text-amber-600',
+            change: 'Detección automática',
+          },
+        ].map((s) => (
           <div key={s.label} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-start justify-between mb-3">
               <div className={`flex size-10 items-center justify-center rounded-xl ${s.color}`}>
@@ -98,9 +176,9 @@ export default function AdminDashboard() {
       {/* Sections grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[
-          { label: 'Gestión de Cuentas',  desc: 'Crear y gestionar accesos del personal', to: '/admin/cuentas',     icon: Users,     color: 'bg-blue-600',    count: `${TEACHER_ACCOUNTS.length} usuarios` },
-          { label: 'Horarios',            desc: 'Asignar cursos, horas y docentes',       to: '/admin/horarios',    icon: Calendar,  color: 'bg-indigo-600',  count: `${SCHEDULE.length} bloques` },
-          { label: 'Asistencia Docente',  desc: 'Control de puntualidad del personal',   to: '/admin/asistencia',  icon: UserCheck, color: 'bg-emerald-600', count: 'Hoy: ' + presentTeachers + ' presentes' },
+          { label: 'Gestión de Cuentas',  desc: 'Crear y gestionar accesos del personal', to: '/admin/cuentas',     icon: Users,     color: 'bg-blue-600',    count: 'Usuarios' },
+          { label: 'Horarios',            desc: 'Asignar cursos, horas y docentes',       to: '/admin/horarios',    icon: Calendar,  color: 'bg-indigo-600',  count: `${stats.asignaciones} asignaciones` },
+          { label: 'Asistencia Docente',  desc: 'Control de puntualidad del personal',   to: '/admin/asistencia',  icon: UserCheck, color: 'bg-emerald-600', count: `Hoy: ${stats.asistencia_hoy.presentes} presentes` },
         ].map(s => (
           <Link
             key={s.to}

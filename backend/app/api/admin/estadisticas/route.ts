@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withRole(['Admin'], async () => {
+export const GET = withRole(['Admin', 'Secretaria'], async () => {
   // Período activo + total docentes activos
   const [periodo, docentesActivos] = await Promise.all([
     prisma.periodoAcademico.findFirst({ where: { activo: true } }),
