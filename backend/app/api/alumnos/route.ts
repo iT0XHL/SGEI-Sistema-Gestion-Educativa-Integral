@@ -12,7 +12,7 @@ export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
   return ok(data, 'Listado de alumnos');
 });
 
-export const POST = withRole(['Admin'], async (req, { user }) => {
+export const POST = withRole(['Admin', 'Secretaria'], async (req, { user }) => {
   const input = await parseBody(req, CreateAlumnoSchema);
   const alumno = await AlumnosService.create(input, user.perfilId);
   return created(alumno, 'Alumno creado');

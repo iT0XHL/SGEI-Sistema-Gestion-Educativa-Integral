@@ -38,7 +38,19 @@ export const AlumnosRepository = {
           fecha_nacimiento: true,
           sexo: true,
           activo: true,
-          seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+          seccion: {
+            select: {
+              id: true,
+              nombre: true,
+              grado: {
+                select: {
+                  id: true,
+                  nombre: true,
+                  nivel: { select: { id: true, nombre: true } },
+                },
+              },
+            },
+          },
           perfil: { select: { credencial: { select: { usuario_login: true } } } },
         },
         orderBy: { apellido_paterno: 'asc' },
@@ -71,7 +83,19 @@ export const AlumnosRepository = {
         seccion_id: true,
         periodo_id: true,
         perfil_usuario_id: true,
-        seccion: { select: { nombre: true, grado: { select: { nombre: true } } } },
+        seccion: {
+            select: {
+              id: true,
+              nombre: true,
+              grado: {
+                select: {
+                  id: true,
+                  nombre: true,
+                  nivel: { select: { id: true, nombre: true } },
+                },
+              },
+            },
+          },
         perfil: { select: { credencial: { select: { usuario_login: true, id: true, activo: true } } } },
       },
     });

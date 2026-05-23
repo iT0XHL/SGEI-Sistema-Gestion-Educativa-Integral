@@ -59,8 +59,8 @@ export default function SecretariaSituacionFinal() {
         setLoading(true);
         setError(null);
 
-        const periodos = await periodosApi.listar();
-        const activo   = periodos.find(p => p.activo);
+        const periodosRes = await periodosApi.listar({ activo: true, limit: 1 });
+        const activo      = periodosRes.items[0];
         if (!activo) {
           if (!cancelled) { setLoading(false); setError('No hay período académico activo.'); }
           return;

@@ -1,6 +1,49 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 
+/**
+ * Una nota final agregada por (alumno, curso) — promedio anual de todos
+ * los bimestres/competencias. Usado para el Acta Consolidada.
+ */
+export interface NotaFinalSiagie {
+  periodo_id:                string;
+  seccion_id:                string;
+  alumno_id:                 string;
+  grado:                     string;
+  seccion:                   string;
+  turno:                     string;
+  nivel_educativo:           string;
+  numero_orden:              number;
+  codigo_estudiante:         string | null;
+  numero_documento:          string;
+  apellido_paterno:          string;
+  apellido_materno:          string;
+  nombres:                   string;
+  sexo:                      string;
+  curso:                     string;
+  codigo_cneb:               string | null;
+  nota_promedio:             number;
+  comportamiento:            string | null;
+  numero_areas_desaprobadas: number | null;
+  situacion_final:           string | null;
+  motivo_retiro:             string | null;
+  observaciones:             string | null;
+  codigo_ugel:               string;
+  nombre_ugel:               string;
+  nombre_ie:                 string;
+  codigo_modular:            string;
+  resolucion_creacion:       string | null;
+  modalidad:                 string;
+  gestion:                   string;
+  departamento:              string;
+  provincia:                 string;
+  distrito:                  string;
+  centro_poblado:            string | null;
+  fecha_inicio_periodo:      Date;
+  fecha_fin_periodo:         Date;
+  anio_escolar:              number;
+}
+
 export interface FormatoSiagieRow {
   // IE
   codigo_ugel:          string;
@@ -80,8 +123,107 @@ export const SiagieRepository = {
   },
 
   async refresh(): Promise<void> {
-    // CONCURRENTLY no bloquea lecturas; requiere el unique index definido en la MV.
-    await prisma.$executeRaw`REFRESH MATERIALIZED VIEW CONCURRENTLY audit_schema.formato_siagie`;
+    // Primer intento: CONCURRENTLY (no bloquea lecturas, requiere índice único en la MV).
+    // Si la MV nunca se ha poblado (caso seed inicial), CONCURRENTLY falla con
+    // "cannot refresh materialized view concurrently"; en ese caso hacemos un
+    // REFRESH plano una sola vez.
+    try {
+      await prisma.$executeRaw`REFRESH MATERIALIZED VIEW CONCURRENTLY audit_schema.formato_siagie`;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/concurrently/i.test(msg)) {
+        await prisma.$executeRaw`REFRESH MATERIALIZED VIEW audit_schema.formato_siagie`;
+      } else {
+        throw err;
+      }
+    }
+  },
+
+  /**
+   * ¿Hay al menos una nota registrada en la DB? Se usa para decidir si vale
+   * la pena refrescar la MV cuando viene vacía.
+   */
+  async existenNotas(): Promise<boolean> {
+    const [r] = await prisma.$queryRaw<[{ existe: boolean }]>`
+      SELECT EXISTS(SELECT 1 FROM academic_schema.nota) AS existe
+    `;
+    return Boolean(r?.existe);
+  },
+
+  /**
+   * Devuelve los registros del MV agregados a nivel (alumno, curso): un
+   * promedio anual de la nota_vigesimal (a través de todos los bimestres
+   * y competencias). Usado por el builder de "Acta Consolidada".
+   */
+  async obtenerNotasFinales(periodoId?: string): Promise<NotaFinalSiagie[]> {
+    const where = periodoId
+      ? Prisma.sql`WHERE periodo_id = ${periodoId}::uuid`
+      : Prisma.sql``;
+
+    const rows = await prisma.$queryRaw<NotaFinalSiagie[]>`
+      SELECT
+        periodo_id,
+        seccion_id,
+        alumno_id,
+        grado,
+        seccion,
+        turno,
+        nivel_educativo,
+        numero_orden,
+        codigo_estudiante,
+        numero_documento,
+        apellido_paterno,
+        apellido_materno,
+        nombres,
+        sexo,
+        curso,
+        codigo_cneb,
+        AVG(nota_vigesimal)::numeric(5,2)  AS nota_promedio,
+        comportamiento,
+        numero_areas_desaprobadas,
+        situacion_final,
+        motivo_retiro,
+        observaciones,
+        codigo_ugel,
+        nombre_ugel,
+        nombre_ie,
+        codigo_modular,
+        resolucion_creacion,
+        modalidad,
+        gestion,
+        departamento,
+        provincia,
+        distrito,
+        centro_poblado,
+        fecha_inicio_periodo,
+        fecha_fin_periodo,
+        anio_escolar
+      FROM  audit_schema.formato_siagie
+      ${where}
+      GROUP BY
+        periodo_id, seccion_id, alumno_id,
+        grado, seccion, turno, nivel_educativo,
+        numero_orden, codigo_estudiante, numero_documento,
+        apellido_paterno, apellido_materno, nombres, sexo,
+        curso, codigo_cneb,
+        comportamiento, numero_areas_desaprobadas, situacion_final,
+        motivo_retiro, observaciones,
+        codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
+        resolucion_creacion, modalidad, gestion,
+        departamento, provincia, distrito, centro_poblado,
+        fecha_inicio_periodo, fecha_fin_periodo, anio_escolar
+      ORDER BY anio_escolar, grado, seccion, numero_orden, curso
+    `;
+
+    return rows.map(r => ({
+      ...r,
+      numero_orden:              Number(r.numero_orden),
+      anio_escolar:              Number(r.anio_escolar),
+      nota_promedio:             parseFloat(String(r.nota_promedio)),
+      numero_areas_desaprobadas: r.numero_areas_desaprobadas !== null
+        ? Number(r.numero_areas_desaprobadas)
+        : null,
+    }));
   },
 
   async stats(periodoId?: string) {

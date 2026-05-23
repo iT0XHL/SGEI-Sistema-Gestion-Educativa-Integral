@@ -1,36 +1,41 @@
+// ============================================================
+//  lib/api/situacion-final.api.ts — Cliente HTTP para situación
+//  final de alumnos (SFA). Usa apiClient compartido para que
+//  herede BASE_URL, credenciales y manejo unificado de errores.
+// ============================================================
+import { apiClient } from './client';
 import type { SituacionFinalAlumno, UpsertSfaPayload } from '../../types/situacion-final';
 
-const BASE = `${import.meta.env.VITE_API_URL}/api/situacion-final`;
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res  = await fetch(url, { credentials: 'include', ...init });
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error?.message ?? 'Error');
-  return json.data as T;
+export interface ListarSfaParams {
+  periodoId?: string;
+  seccionId?: string;
+  alumnoId?:  string;
 }
 
 export const sfaApi = {
-  listar(params: { periodoId?: string; seccionId?: string; alumnoId?: string } = {}): Promise<SituacionFinalAlumno[]> {
-    const url = new URL(BASE);
-    if (params.periodoId) url.searchParams.set('periodoId', params.periodoId);
-    if (params.seccionId) url.searchParams.set('seccionId', params.seccionId);
-    if (params.alumnoId)  url.searchParams.set('alumnoId',  params.alumnoId);
-    return request<SituacionFinalAlumno[]>(url.toString());
+  listar(params: ListarSfaParams = {}): Promise<SituacionFinalAlumno[]> {
+    const q: Record<string, string> = {};
+    if (params.periodoId) q.periodoId = params.periodoId;
+    if (params.seccionId) q.seccionId = params.seccionId;
+    if (params.alumnoId)  q.alumnoId  = params.alumnoId;
+    return apiClient.get<SituacionFinalAlumno[]>(
+      '/api/situacion-final',
+      Object.keys(q).length ? q : undefined,
+    );
   },
 
   obtener(alumnoId: string, periodoId: string): Promise<SituacionFinalAlumno> {
-    return request<SituacionFinalAlumno>(`${BASE}/${alumnoId}?periodoId=${periodoId}`);
+    return apiClient.get<SituacionFinalAlumno>(
+      `/api/situacion-final/${alumnoId}`,
+      { periodoId },
+    );
   },
 
   upsert(payload: UpsertSfaPayload): Promise<SituacionFinalAlumno> {
-    return request<SituacionFinalAlumno>(BASE, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-    });
+    return apiClient.post<SituacionFinalAlumno>('/api/situacion-final', payload);
   },
 
   eliminar(alumnoId: string, periodoId: string): Promise<void> {
-    return request<void>(`${BASE}/${alumnoId}?periodoId=${periodoId}`, { method: 'DELETE' });
+    return apiClient.delete<void>(`/api/situacion-final/${alumnoId}?periodoId=${periodoId}`);
   },
 };

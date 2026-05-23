@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
-import { Users, Calendar, UserCheck, TrendingUp, BookOpen, ChevronRight, AlertTriangle, ShieldAlert, Loader2 } from 'lucide-react';
+import { Users, Calendar, UserCheck, BookOpen, ChevronRight, AlertTriangle, ShieldAlert, Loader2 } from 'lucide-react';
 import { estadisticasApi } from '../../../lib/api/admin.api';
 import type { EstadisticasDTO } from '../../../lib/api/admin.api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<EstadisticasDTO | null>(null);
@@ -52,20 +51,6 @@ export default function AdminDashboard() {
   const assistancePercent = stats.asistencia_hoy.total_docentes > 0
     ? Math.round((stats.asistencia_hoy.presentes / stats.asistencia_hoy.total_docentes) * 100)
     : 0;
-
-  const gradeData = [
-    { grado: '1°', promedio: 14.2 },
-    { grado: '2°', promedio: 13.8 },
-    { grado: '3°', promedio: 14.9 },
-    { grado: '4°', promedio: 15.1 },
-    { grado: '5°', promedio: 14.6 },
-  ];
-
-  const paymentData = [
-    { name: 'Pagado', value: 68, color: '#059669' },
-    { name: 'Pendiente', value: 24, color: '#d97706' },
-    { name: 'Vencido', value: 8, color: '#dc2626' },
-  ];
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
@@ -129,46 +114,62 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Avg grades chart */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Promedio general por grado — Bimestre II 2025</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={gradeData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-              <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis key="xaxis" dataKey="grado" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-              <YAxis key="yaxis" domain={[0, 20]} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <Tooltip
-                key="tooltip"
-                contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
-                cursor={{ fill: '#f8fafc' }}
-              />
-              <Bar key="bar" dataKey="promedio" fill="#6366f1" radius={[6, 6, 0, 0]} isAnimationActive={false} />
-            </BarChart>
-          </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Bimestres y secciones */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Estructura académica</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Bimestres</p>
+                <p className="text-lg font-bold text-slate-900">{stats.bimestres.abiertos} abierto{stats.bimestres.abiertos !== 1 ? 's' : ''} · {stats.bimestres.cerrados} cerrado{stats.bimestres.cerrados !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500">Total: {stats.bimestres.total}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Secciones activas</p>
+                <p className="text-lg font-bold text-slate-900">{stats.secciones}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Asignaciones</p>
+                <p className="text-lg font-bold text-slate-900">{stats.asignaciones} docente-curso-sección</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Payment status pie */}
+        {/* Resumen de asistencia */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Estado de pagos</h2>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie key="pie" data={paymentData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} dataKey="value" paddingAngle={3} isAnimationActive={false}>
-                {paymentData.map((entry, i) => <Cell key={`cell-admin-${i}`} fill={entry.color} />)}
-              </Pie>
-              <Tooltip key="tooltip" contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1.5 mt-2">
-            {paymentData.map(d => (
-              <div key={d.name} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="size-2.5 rounded-full" style={{ backgroundColor: d.color }} />
-                  <span className="text-xs text-slate-600">{d.name}</span>
-                </div>
-                <span className="text-xs font-bold text-slate-700">{d.value}%</span>
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Asistencia docente hoy</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-4 py-3 bg-emerald-50 rounded-lg">
+              <div>
+                <p className="text-xs text-emerald-600 uppercase tracking-wider font-medium">Presentes</p>
+                <p className="text-lg font-bold text-emerald-900">{stats.asistencia_hoy.presentes} ({assistancePercent}%)</p>
               </div>
-            ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="px-3 py-2 bg-amber-50 rounded-lg">
+                <p className="text-xs text-amber-600 font-medium">Tardanzas</p>
+                <p className="text-sm font-bold text-amber-900">{stats.asistencia_hoy.tardanzas}</p>
+              </div>
+              <div className="px-3 py-2 bg-red-50 rounded-lg">
+                <p className="text-xs text-red-600 font-medium">Faltas</p>
+                <p className="text-sm font-bold text-red-900">{stats.asistencia_hoy.faltas}</p>
+              </div>
+              <div className="px-3 py-2 bg-blue-50 rounded-lg">
+                <p className="text-xs text-blue-600 font-medium">Justificados</p>
+                <p className="text-sm font-bold text-blue-900">{stats.asistencia_hoy.justificados}</p>
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 px-4 py-2">
+              {stats.asistencia_hoy.sin_registrar} sin registrar
+            </div>
           </div>
         </div>
       </div>
@@ -198,26 +199,50 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Recent alerts */}
+      {/* Alertas basadas en datos reales */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-          <h2 className="text-sm font-semibold text-slate-700">Alertas recientes del sistema</h2>
+          <h2 className="text-sm font-semibold text-slate-700">Alertas del sistema</h2>
         </div>
         <div className="divide-y divide-slate-50">
-          {[
-            { icon: AlertTriangle, color: 'text-amber-500 bg-amber-50', msg: '3 docentes con notas del Bimestre II sin cerrar', time: 'Hace 2 horas' },
-            { icon: ShieldAlert, color: 'text-red-500 bg-red-50', msg: '14 libretas bloqueadas automáticamente por deudas de mayo', time: 'Hace 4 horas' },
-            { icon: UserCheck, color: 'text-orange-500 bg-orange-50', msg: 'Luis Quispe registró inasistencia hoy (C. y Tecnología)', time: 'Hoy 8:05 AM' },
-            { icon: Users, color: 'text-blue-500 bg-blue-50', msg: 'Nueva cuenta docente creada: Marco Benítez Soto', time: 'Ayer 3:12 PM' },
-          ].map((a, i) => (
-            <div key={i} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
-              <div className={`flex size-8 items-center justify-center rounded-lg shrink-0 ${a.color}`}>
-                <a.icon className="size-4" />
+          {stats.alumnos.bloqueados > 0 ? (
+            <div className="flex items-center gap-3 px-5 py-3.5">
+              <div className="flex size-8 items-center justify-center rounded-lg shrink-0 bg-red-50">
+                <ShieldAlert className="size-4 text-red-500" />
               </div>
-              <p className="text-sm text-slate-700 flex-1">{a.msg}</p>
-              <span className="text-xs text-slate-400 shrink-0">{a.time}</span>
+              <p className="text-sm text-slate-700 flex-1">
+                {stats.alumnos.bloqueados} libreta{stats.alumnos.bloqueados !== 1 ? 's' : ''} bloqueada{stats.alumnos.bloqueados !== 1 ? 's' : ''} automáticamente por deudas
+              </p>
             </div>
-          ))}
+          ) : null}
+
+          {stats.asistencia_hoy.sin_registrar > 0 ? (
+            <div className="flex items-center gap-3 px-5 py-3.5">
+              <div className="flex size-8 items-center justify-center rounded-lg shrink-0 bg-amber-50">
+                <AlertTriangle className="size-4 text-amber-500" />
+              </div>
+              <p className="text-sm text-slate-700 flex-1">
+                {stats.asistencia_hoy.sin_registrar} docente{stats.asistencia_hoy.sin_registrar !== 1 ? 's' : ''} sin registrar asistencia hoy
+              </p>
+            </div>
+          ) : null}
+
+          {stats.bimestres.cerrados > 0 && stats.asignaciones > 0 ? (
+            <div className="flex items-center gap-3 px-5 py-3.5">
+              <div className="flex size-8 items-center justify-center rounded-lg shrink-0 bg-blue-50">
+                <UserCheck className="size-4 text-blue-500" />
+              </div>
+              <p className="text-sm text-slate-700 flex-1">
+                {stats.bimestres.cerrados} bimestre{stats.bimestres.cerrados !== 1 ? 's' : ''} cerrado{stats.bimestres.cerrados !== 1 ? 's' : ''} — revisa el estado de calificaciones
+              </p>
+            </div>
+          ) : null}
+
+          {stats.alumnos.bloqueados === 0 && stats.asistencia_hoy.sin_registrar === 0 ? (
+            <div className="px-5 py-6 text-center">
+              <p className="text-sm text-slate-500">No hay alertas en este momento. El sistema opera normalmente.</p>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

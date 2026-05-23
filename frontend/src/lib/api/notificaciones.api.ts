@@ -1,42 +1,35 @@
+// ============================================================
+//  lib/api/notificaciones.api.ts — Usa apiClient compartido
+//  para heredar BASE_URL, credenciales y manejo de errores.
+// ============================================================
+import { apiClient } from './client';
 import type {
   Notificacion,
   ContadorNotificaciones,
   CrearNotificacionPayload,
 } from '../../types/notificacion';
 
-const BASE = `${import.meta.env.VITE_API_URL}/api/notificaciones`;
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res  = await fetch(url, { credentials: 'include', ...init });
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error?.message ?? 'Error');
-  return json.data as T;
-}
-
 export const notificacionesApi = {
   listar(leida?: boolean): Promise<Notificacion[]> {
-    const url = new URL(BASE);
-    if (leida !== undefined) url.searchParams.set('leida', String(leida));
-    return request<Notificacion[]>(url.toString());
+    return apiClient.get<Notificacion[]>(
+      '/api/notificaciones',
+      leida !== undefined ? { leida: String(leida) } : undefined,
+    );
   },
 
   contar(): Promise<ContadorNotificaciones> {
-    return request<ContadorNotificaciones>(`${BASE}/contar`);
+    return apiClient.get<ContadorNotificaciones>('/api/notificaciones/contar');
   },
 
   marcarLeida(id: string): Promise<{ actualizada: boolean }> {
-    return request<{ actualizada: boolean }>(`${BASE}/${id}/leer`, { method: 'PATCH' });
+    return apiClient.patch<{ actualizada: boolean }>(`/api/notificaciones/${id}/leer`, {});
   },
 
   marcarTodasLeidas(): Promise<{ actualizadas: number }> {
-    return request<{ actualizadas: number }>(`${BASE}/leer-todas`, { method: 'PATCH' });
+    return apiClient.patch<{ actualizadas: number }>('/api/notificaciones/leer-todas', {});
   },
 
   crear(payload: CrearNotificacionPayload): Promise<Notificacion> {
-    return request<Notificacion>(BASE, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-    });
+    return apiClient.post<Notificacion>('/api/notificaciones', payload);
   },
 };

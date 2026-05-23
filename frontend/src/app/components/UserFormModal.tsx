@@ -216,7 +216,7 @@ export default function UserFormModal({ mode, rol: initialRol, initialData, onCl
 
   useEffect(() => {
     if (rol !== 'Alumno') return;
-    periodosApi.listar().then(setPeriodos).catch(() => {});
+    periodosApi.listar().then(res => setPeriodos(res.items ?? [])).catch(() => {});
     estructuraApi.grados().then(setGrados).catch(() => {});
   }, [rol]);
 

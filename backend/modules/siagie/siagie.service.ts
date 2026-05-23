@@ -21,9 +21,7 @@ export const SiagieService = {
   },
 
   async refresh(user: JwtClaims) {
-    if (user.rol !== 'Admin') {
-      throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo Admin puede refrescar la vista materializada SIAGIE.');
-    }
+    assertAdminOrSecretaria(user);
     await SiagieRepository.refresh();
     await AuditService.log({
       usuarioId:       user.perfilId,
@@ -43,7 +41,28 @@ export const SiagieService = {
     userAgent?: string,
   ) {
     assertAdminOrSecretaria(user);
-    const rows = await SiagieRepository.obtener(periodoId);
+
+    // 1° intento: leer la MV directamente.
+    let [detalle, notasFinales] = await Promise.all([
+      SiagieRepository.obtener(periodoId),
+      SiagieRepository.obtenerNotasFinales(periodoId),
+    ]);
+
+    // Si la MV está vacía pero la tabla 'nota' tiene registros, refrescamos
+    // automáticamente y reintentamos. Esto cubre el caso inicial (seed sin
+    // REFRESH) y el caso en que se ingresaron notas sin refrescar la vista.
+    let refrescada = false;
+    if (detalle.length === 0 && notasFinales.length === 0) {
+      const hayNotas = await SiagieRepository.existenNotas();
+      if (hayNotas) {
+        await SiagieRepository.refresh();
+        refrescada = true;
+        [detalle, notasFinales] = await Promise.all([
+          SiagieRepository.obtener(periodoId),
+          SiagieRepository.obtenerNotasFinales(periodoId),
+        ]);
+      }
+    }
 
     await AuditService.log({
       usuarioId:       user.perfilId,
@@ -51,11 +70,15 @@ export const SiagieService = {
       modulo:          'siagie',
       entidadAfectada: 'formato_siagie',
       entidadId:       periodoId ?? null,
-      newValue:        { registros: rows.length },
+      newValue:        {
+        registros_detalle: detalle.length,
+        registros_acta:    notasFinales.length,
+        mv_refrescada:     refrescada,
+      },
       ip,
       userAgent,
     });
 
-    return rows;
+    return { detalle, notasFinales };
   },
 };

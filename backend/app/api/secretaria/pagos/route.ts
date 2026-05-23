@@ -39,34 +39,64 @@ export const GET = withRole(['Secretaria', 'Admin'], async () => {
   }
 
   // ── Mapear respuesta ────────────────────────────────────────────────────
+  // Reglas de negocio (computadas en servidor):
+  //   · moroso       → tiene ≥1 cuota vencida (fecha_vencimiento < hoy) sin pagar
+  //   · al_dia       → no debe nada (monto_pendiente = 0) y tiene al menos 1 cuota
+  //   · pendiente    → tiene cuotas por pagar pero ninguna vencida
+  //   · sin_cuotas   → todavía no se le generaron pagos
   const data = alumnos.map(alumno => {
     const alumPagos  = pagosByAlumno.get(alumno.id) ?? [];
     const pagados    = alumPagos.filter(p => p.estado === 'Pagado');
     const pendientes = alumPagos.filter(p => p.estado !== 'Pagado');
+    const vencidos   = pendientes.filter(p => p.fecha_vencimiento < today);
 
     const montoPagado    = pagados.reduce((s, p) => s + Number(p.monto), 0);
     const montoPendiente = pendientes.reduce((s, p) => s + Number(p.monto), 0);
-    const moroso         = pendientes.some(p => p.fecha_vencimiento < today);
-    const tieneBoleta    = alumPagos.some(
-      p => p.boleta?.estado_revision === 'En_Revision',
-    );
+    const montoVencido   = vencidos.reduce((s, p) => s + Number(p.monto), 0);
+    const montoTotal     = montoPagado + montoPendiente;
+
+    const moroso = vencidos.length > 0;
+
+    let estadoPago: 'al_dia' | 'moroso' | 'pendiente' | 'sin_cuotas';
+    if (alumPagos.length === 0)          estadoPago = 'sin_cuotas';
+    else if (moroso)                      estadoPago = 'moroso';
+    else if (montoPendiente === 0)        estadoPago = 'al_dia';
+    else                                  estadoPago = 'pendiente';
+
+    const boletasPendientes  = alumPagos.filter(p => p.boleta?.estado_revision === 'En_Revision').length;
+    const boletasAprobadas   = alumPagos.filter(p => p.boleta?.estado_revision === 'Aprobada').length;
+    const boletasRechazadas  = alumPagos.filter(p => p.boleta?.estado_revision === 'Rechazada').length;
+    const boletasTotal       = boletasPendientes + boletasAprobadas + boletasRechazadas;
 
     const proxVenc = [...pendientes].sort(
       (a, b) => a.fecha_vencimiento.getTime() - b.fecha_vencimiento.getTime(),
     )[0];
+
+    const porcentajePagado = montoTotal > 0
+      ? Math.round((montoPagado / montoTotal) * 100)
+      : 0;
 
     return {
       alumno_id:                 alumno.id,
       nombre_completo:           `${alumno.nombres} ${alumno.apellido_paterno}`,
       grado:                     alumno.seccion.grado.nombre,
       seccion:                   alumno.seccion.nombre,
-      monto_total:               montoPagado + montoPendiente,
+      estado_pago:               estadoPago,
+      monto_total:               montoTotal,
       monto_pagado:              montoPagado,
       monto_pendiente:           montoPendiente,
+      monto_vencido:             montoVencido,
+      porcentaje_pagado:         porcentajePagado,
       cuotas_pagadas:            pagados.length,
+      cuotas_pendientes:         pendientes.length,
+      cuotas_vencidas:           vencidos.length,
       cuotas_total:              alumPagos.length,
       moroso,
-      tiene_boleta_pendiente:    tieneBoleta,
+      tiene_boleta_pendiente:    boletasPendientes > 0,
+      boletas_pendientes:        boletasPendientes,
+      boletas_aprobadas:         boletasAprobadas,
+      boletas_rechazadas:        boletasRechazadas,
+      boletas_total:             boletasTotal,
       fecha_proxima_vencimiento: proxVenc?.fecha_vencimiento.toISOString() ?? null,
     };
   });

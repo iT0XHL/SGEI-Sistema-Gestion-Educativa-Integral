@@ -12,6 +12,8 @@ export default function SecretariaSIAGIE() {
   const [loading,    setLoading]    = useState(true);
   const [loadError,  setLoadError]  = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
   const [exporting,  setExporting]  = useState(false);
   const [exported,   setExported]   = useState(false);
   const [exportErr,  setExportErr]  = useState<string | null>(null);
@@ -61,6 +63,21 @@ export default function SecretariaSIAGIE() {
     }
   }
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    setExportErr(null);
+    try {
+      const r = await siagieApi.refresh();
+      setRefreshMsg(r.mensaje);
+      await loadData();
+    } catch (e) {
+      setRefreshMsg(`Error: ${(e as Error).message ?? 'No se pudo refrescar.'}`);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   function dismiss(id: string) {
     setDismissed(prev => new Set([...prev, id]));
   }
@@ -91,10 +108,38 @@ export default function SecretariaSIAGIE() {
 
   return (
     <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Exportar al SIAGIE</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Genera el archivo de carga masiva para el portal del MINEDU</p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Exportar al SIAGIE</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Genera el Acta Consolidada en formato MINEDU</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="Refresca la vista materializada formato_siagie. Necesario después de ingresar/modificar notas."
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-50 transition-colors disabled:opacity-60 self-start sm:self-auto"
+        >
+          {refreshing
+            ? <><Loader2 className="size-3.5 animate-spin" />Refrescando…</>
+            : <><RefreshCw className="size-3.5" />Refrescar datos</>
+          }
+        </button>
       </div>
+
+      {refreshMsg && (
+        <div className={`flex items-start gap-3 rounded-2xl p-4 ${
+          refreshMsg.startsWith('Error')
+            ? 'bg-red-50 border border-red-200'
+            : 'bg-emerald-50 border border-emerald-200'
+        }`}>
+          {refreshMsg.startsWith('Error')
+            ? <AlertTriangle className="size-5 text-red-600 shrink-0 mt-0.5" />
+            : <CheckCircle2 className="size-5 text-emerald-600 shrink-0 mt-0.5" />}
+          <p className={`text-sm ${refreshMsg.startsWith('Error') ? 'text-red-800' : 'text-emerald-800'}`}>
+            {refreshMsg}
+          </p>
+        </div>
+      )}
 
       {/* Info banner */}
       <div className="flex items-start gap-3 bg-teal-50 border border-teal-200 rounded-2xl p-4">

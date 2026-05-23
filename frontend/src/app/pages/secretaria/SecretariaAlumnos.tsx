@@ -1,32 +1,29 @@
-// ============================================================
-//  SecretariaAlumnos.tsx — Gestión de alumnos (vista Secretaría).
-//  Conectado 100% al backend. Sin mock data.
-//  Roles permitidos: Admin, Secretaria.
-// ============================================================
 import { useState, useEffect, useMemo } from 'react';
 import {
-  PlusCircle, Eye, EyeOff, X, Search, Copy, CheckCircle2,
-  GraduationCap, Users, Loader2, ChevronDown, AlertCircle,
+  PlusCircle, Search, Loader2, AlertTriangle, Edit2, Trash2, ChevronDown, X,
+  RefreshCw, Eye, EyeOff,
 } from 'lucide-react';
 import { DatePicker } from '../../components/DatePicker';
 import {
-  alumnosAdminApi,
-  estructuraApi,
-  type AlumnoResumenDTO,
-  type SeccionDTO,
-  type CreateAlumnoPayload,
+  alumnosAdminApi, estructuraApi,
+} from '../../../lib/api/admin.api';
+import type {
+  AlumnoResumenDTO, SeccionDTO,
+  CreateAlumnoPayload, UpdateAlumnoPayload,
 } from '../../../lib/api/admin.api';
 
-// ── Helpers ───────────────────────────────────────────────────
-const GRUPOS_SANGUINEOS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-
-function normalize(s: string) {
-  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
+const INIT_FORM = {
+  usuario_login: '', password: '',
+  nombres: '', apellido_paterno: '', apellido_materno: '', dni: '',
+  fecha_nacimiento: '', sexo: 'M' as 'M' | 'F', seccion_id: '',
+  grupo_sanguineo: '', codigo_siagie: '', direccion: '',
+  distrito: '', telefono_emergencia: '', condicion_especial: '',
+};
 
 function generateLogin(nombres: string, apellido: string): string {
-  const n = normalize(nombres).split(' ')[0].replace(/[^a-z]/g, '');
-  const a = normalize(apellido).replace(/[^a-z]/g, '');
+  const n = (nombres.split(' ')[0] || '').replace(/[^a-z]/gi, '').toLowerCase();
+  const a = apellido.replace(/[^a-z]/gi, '').toLowerCase();
+  if (!n || !a) return '';
   return `${n}.${a}@calasanz.edu.pe`;
 }
 
@@ -39,552 +36,526 @@ function initials(name: string) {
   return name.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 }
 
-const INIT_FORM = {
-  nombres:            '',
-  apellido_paterno:   '',
-  apellido_materno:   '',
-  dni:                '',
-  fecha_nacimiento:   '',
-  sexo:               'M' as 'M' | 'F',
-  seccion_id:         '',
-  grupo_sanguineo:    '',
-  codigo_siagie:      '',
-  direccion:          '',
-  distrito:           '',
-  telefono_emergencia: '',
-  condicion_especial:  '',
-};
-
-// ── Componente ────────────────────────────────────────────────
 export default function SecretariaAlumnos() {
-  const [alumnos,   setAlumnos]   = useState<AlumnoResumenDTO[]>([]);
+  const [alumnos, setAlumnos] = useState<AlumnoResumenDTO[]>([]);
   const [secciones, setSecciones] = useState<SeccionDTO[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [fetchError, setFetchError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Filtros
-  const [search,     setSearch]     = useState('');
-  const [filterNivel, setFilterNivel] = useState<'all' | 'Primaria' | 'Secundaria'>('all');
-  const [filterSeccion, setFilterSeccion] = useState('');
+  const [search, setSearch] = useState('');
+  const [nivelTab, setNivelTab] = useState<'Primaria' | 'Secundaria' | ''>('');
 
-  // Modal crear
-  const [modal,  setModal]  = useState(false);
-  const [form,   setForm]   = useState(INIT_FORM);
+  const [modal, setModal] = useState(false);
+  const [modalMode, setModalMode] = useState<'crear' | 'editar'>('crear');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingOriginalLogin, setEditingOriginalLogin] = useState('');
+  const [form, setForm] = useState(INIT_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-
-  // Credenciales generadas
-  const [newCred, setNewCred]   = useState<{ nombre: string; login: string; pass: string } | null>(null);
-  const [showPass, setShowPass] = useState(false);
-  const [copied,   setCopied]   = useState(false);
-
-  // Acciones fila
   const [actionId, setActionId] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
-  // ── Carga inicial ────────────────────────────────────────────
   useEffect(() => {
-    async function cargar() {
-      setLoading(true);
-      setFetchError('');
-      try {
-        const [alumnosRes, seccionesRes] = await Promise.all([
-          alumnosAdminApi.listar({ limit: 200, activo: 'true' }),
-          estructuraApi.secciones(),
-        ]);
-        setAlumnos(alumnosRes.items);
-        setSecciones(seccionesRes);
-      } catch (err) {
-        setFetchError(err instanceof Error ? err.message : 'Error al cargar datos.');
-      } finally {
-        setLoading(false);
-      }
-    }
-    cargar();
+    loadData();
   }, []);
 
-  // ── Filtrado ─────────────────────────────────────────────────
-  const seccionesFiltered = useMemo(
-    () => secciones.filter(s => filterNivel === 'all' || s.grado.nivel.nombre === filterNivel),
-    [secciones, filterNivel],
-  );
+  async function loadData() {
+    setLoading(true);
+    setError('');
+    try {
+      const [aluRes, secRes] = await Promise.all([
+        alumnosAdminApi.listar({ limit: 200 }),
+        estructuraApi.secciones(),
+      ]);
+      setAlumnos(aluRes.items);
+      setSecciones(secRes);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar datos');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return alumnos.filter(a => {
       const nombre = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`.toLowerCase();
       const matchSearch = !q || nombre.includes(q) || a.dni.includes(q) || (a.usuario_login ?? '').toLowerCase().includes(q);
-      const matchNivel  = filterNivel === 'all' || a.seccion.grado.nivel?.nombre === filterNivel;
-      const matchSecc   = !filterSeccion || a.seccion.id === filterSeccion;
-      return matchSearch && matchNivel && matchSecc;
+
+      const nivel = a.seccion?.grado?.nivel?.nombre;
+      const matchNivel = !nivelTab || nivel === nivelTab;
+
+      return matchSearch && matchNivel;
     });
-  }, [alumnos, search, filterNivel, filterSeccion]);
+  }, [alumnos, search, nivelTab]);
 
-  // Contadores
-  const countSec = alumnos.filter(a => a.seccion.grado.nivel?.nombre === 'Secundaria').length;
-  const countPri = alumnos.filter(a => a.seccion.grado.nivel?.nombre === 'Primaria').length;
+  function openCreate() {
+    setModalMode('crear');
+    setEditingId(null);
+    setEditingOriginalLogin('');
+    setForm({ ...INIT_FORM, password: generatePassword() });
+    setFormError('');
+    setShowPassword(true);
+    setModal(true);
+  }
 
-  // ── Crear alumno ─────────────────────────────────────────────
+  function openEdit(alumno: AlumnoResumenDTO) {
+    setModalMode('editar');
+    setEditingId(alumno.id);
+    setEditingOriginalLogin(alumno.usuario_login ?? '');
+    setForm({
+      ...INIT_FORM,
+      usuario_login: alumno.usuario_login ?? '',
+      password: '',
+      nombres: alumno.nombres,
+      apellido_paterno: alumno.apellido_paterno,
+      apellido_materno: alumno.apellido_materno,
+      dni: alumno.dni,
+      seccion_id: alumno.seccion?.id ?? '',
+    });
+    setFormError('');
+    setShowPassword(false);
+    setModal(true);
+  }
+
+  function autoLogin() {
+    const login = generateLogin(form.nombres, form.apellido_paterno);
+    if (login) setForm(f => ({ ...f, usuario_login: login }));
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.seccion_id) { setFormError('Selecciona una sección.'); return; }
-    if (!/^\d{8}$/.test(form.dni)) { setFormError('El DNI debe tener exactamente 8 dígitos.'); return; }
-    if (!form.fecha_nacimiento) { setFormError('La fecha de nacimiento es obligatoria.'); return; }
+    if (!form.usuario_login.trim()) { setFormError('Correo institucional es obligatorio'); return; }
+    if (!form.password || form.password.length < 8) { setFormError('La contraseña debe tener al menos 8 caracteres'); return; }
+    if (!form.seccion_id) { setFormError('Selecciona una sección'); return; }
+    if (!/^\d{8}$/.test(form.dni)) { setFormError('DNI debe tener 8 dígitos'); return; }
+    if (!form.fecha_nacimiento) { setFormError('Fecha de nacimiento es obligatoria'); return; }
 
     const seccion = secciones.find(s => s.id === form.seccion_id);
-    if (!seccion) { setFormError('Sección inválida.'); return; }
-
-    const usuario_login = generateLogin(form.nombres, form.apellido_paterno);
-    const password      = generatePassword();
+    if (!seccion) { setFormError('Sección inválida'); return; }
 
     const payload: CreateAlumnoPayload = {
-      usuario_login,
-      password,
-      seccion_id:       form.seccion_id,
-      periodo_id:       seccion.periodo_id,
-      dni:              form.dni,
-      nombres:          form.nombres.trim(),
+      usuario_login: form.usuario_login.trim(),
+      password: form.password,
+      seccion_id: form.seccion_id,
+      periodo_id: seccion.periodo_id,
+      dni: form.dni,
+      nombres: form.nombres.trim(),
       apellido_paterno: form.apellido_paterno.trim(),
       apellido_materno: form.apellido_materno.trim(),
       fecha_nacimiento: form.fecha_nacimiento,
-      sexo:             form.sexo,
-      ...(form.grupo_sanguineo     ? { grupo_sanguineo:     form.grupo_sanguineo }     : {}),
-      ...(form.codigo_siagie       ? { codigo_siagie:       form.codigo_siagie }       : {}),
-      ...(form.direccion           ? { direccion:           form.direccion }           : {}),
-      ...(form.distrito            ? { distrito:            form.distrito }            : {}),
+      sexo: form.sexo,
+      ...(form.grupo_sanguineo ? { grupo_sanguineo: form.grupo_sanguineo } : {}),
+      ...(form.codigo_siagie ? { codigo_siagie: form.codigo_siagie } : {}),
+      ...(form.direccion ? { direccion: form.direccion } : {}),
+      ...(form.distrito ? { distrito: form.distrito } : {}),
       ...(form.telefono_emergencia ? { telefono_emergencia: form.telefono_emergencia } : {}),
-      ...(form.condicion_especial  ? { condicion_especial:  form.condicion_especial }  : {}),
+      ...(form.condicion_especial ? { condicion_especial: form.condicion_especial } : {}),
     };
 
     setSaving(true);
-    setFormError('');
     try {
-      const alumno = await alumnosAdminApi.crear(payload);
-      setAlumnos(prev => [alumno, ...prev]);
-      setNewCred({
-        nombre: `${alumno.nombres} ${alumno.apellido_paterno}`,
-        login:  usuario_login,
-        pass:   password,
-      });
-      setForm(INIT_FORM);
+      await alumnosAdminApi.crear(payload);
+      await loadData();
       setModal(false);
+      setForm(INIT_FORM);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Error al crear el alumno.');
+      setFormError(err instanceof Error ? err.message : 'Error al crear alumno');
     } finally {
       setSaving(false);
     }
   }
 
-  // ── Desactivar alumno ─────────────────────────────────────────
+  async function handleActualizar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+    if (!form.usuario_login.trim()) { setFormError('Correo institucional es obligatorio'); return; }
+    if (!form.seccion_id) { setFormError('Selecciona una sección'); return; }
+    if (!/^\d{8}$/.test(form.dni)) { setFormError('DNI debe tener 8 dígitos'); return; }
+    if (form.password && form.password.length < 8) {
+      setFormError('La nueva contraseña debe tener al menos 8 caracteres');
+      return;
+    }
+
+    const payload: UpdateAlumnoPayload = {
+      nombres: form.nombres.trim(),
+      apellido_paterno: form.apellido_paterno.trim(),
+      apellido_materno: form.apellido_materno.trim(),
+      dni: form.dni,
+      seccion_id: form.seccion_id,
+      ...(form.usuario_login.trim() !== editingOriginalLogin
+        ? { usuario_login: form.usuario_login.trim() }
+        : {}),
+      ...(form.grupo_sanguineo ? { grupo_sanguineo: form.grupo_sanguineo } : {}),
+      ...(form.codigo_siagie ? { codigo_siagie: form.codigo_siagie } : {}),
+      ...(form.direccion ? { direccion: form.direccion } : {}),
+      ...(form.distrito ? { distrito: form.distrito } : {}),
+      ...(form.telefono_emergencia ? { telefono_emergencia: form.telefono_emergencia } : {}),
+      ...(form.condicion_especial ? { condicion_especial: form.condicion_especial } : {}),
+    };
+
+    setSaving(true);
+    try {
+      await alumnosAdminApi.actualizar(editingId, payload);
+      if (form.password) {
+        await alumnosAdminApi.resetContrasena(editingId, {
+          password_nueva: form.password,
+          confirmacion: form.password,
+        });
+      }
+      await loadData();
+      setModal(false);
+      setForm(INIT_FORM);
+      setEditingId(null);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Error al actualizar');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDesactivar(id: string) {
     setActionId(id);
     try {
       await alumnosAdminApi.desactivar(id);
-      setAlumnos(prev => prev.filter(a => a.id !== id));
+      await loadData();
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Error al desactivar el alumno.');
+      setError(err instanceof Error ? err.message : 'Error al desactivar');
     } finally {
       setActionId(null);
     }
   }
 
-  function copyCredentials() {
-    if (!newCred) return;
-    navigator.clipboard.writeText(`Usuario: ${newCred.login}\nContraseña: ${newCred.pass}`).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  // ── Render ────────────────────────────────────────────────────
   if (loading) {
-    return (
-      <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6 animate-pulse">
-        <div className="h-8 w-64 bg-slate-200 rounded" />
-        <div className="grid grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => <div key={i} className="h-24 bg-slate-200 rounded-2xl" />)}
-        </div>
-        <div className="h-12 bg-slate-200 rounded-xl" />
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-14 mx-4 my-2 bg-slate-100 rounded" />)}
-        </div>
-      </div>
-    );
+    return <div className="p-6 lg:p-8 max-w-6xl mx-auto"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>;
   }
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <p className="text-sm text-slate-500 mb-1">Panel de secretaría</p>
           <h1 className="text-2xl font-bold text-slate-900">Gestión de Alumnos</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{alumnos.length} alumnos activos registrados</p>
+          <p className="text-sm text-slate-500 mt-0.5">{alumnos.filter(a => a.activo).length} activos · {alumnos.filter(a => !a.activo).length} inactivos</p>
         </div>
         <button
-          onClick={() => { setModal(true); setFormError(''); setForm(INIT_FORM); }}
+          onClick={openCreate}
           className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm self-start sm:self-auto"
         >
-          <PlusCircle className="size-4" /> Agregar alumno
+          <PlusCircle className="size-4" /> Nuevo alumno
         </button>
       </div>
 
-      {/* Error */}
-      {fetchError && (
+      {error && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
-          <AlertCircle className="size-5 text-red-600 shrink-0" />
-          <p className="text-sm text-red-800 flex-1">{fetchError}</p>
-          <button onClick={() => setFetchError('')} className="p-1 rounded-lg hover:bg-red-100">
-            <X className="size-4 text-red-500" />
-          </button>
-        </div>
-      )}
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-teal-50 mb-2">
-            <Users className="size-5 text-teal-600" />
-          </div>
-          <p className="text-2xl font-bold text-slate-900">{alumnos.length}</p>
-          <p className="text-sm text-slate-500 mt-0.5">Total alumnos</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-blue-50 mb-2">
-            <GraduationCap className="size-5 text-blue-600" />
-          </div>
-          <p className="text-2xl font-bold text-slate-900">{countSec}</p>
-          <p className="text-sm text-slate-500 mt-0.5">Secundaria</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-purple-50 mb-2">
-            <GraduationCap className="size-5 text-purple-600" />
-          </div>
-          <p className="text-2xl font-bold text-slate-900">{countPri}</p>
-          <p className="text-sm text-slate-500 mt-0.5">Primaria</p>
-        </div>
-      </div>
-
-      {/* Credenciales banner */}
-      {newCred && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-800 mb-1">
-                Credenciales generadas para <span className="text-amber-900">{newCred.nombre}</span> — mostrar UNA SOLA VEZ
-              </p>
-              <div className="bg-white rounded-xl border border-amber-200 p-4 space-y-2 font-mono text-sm">
-                <p className="text-slate-700">
-                  <span className="text-slate-500">Usuario:</span> {newCred.login}
-                </p>
-                <p className="text-slate-700 flex items-center gap-2">
-                  <span className="text-slate-500">Contraseña:</span>
-                  {showPass ? newCred.pass : '••••••••••'}
-                  <button onClick={() => setShowPass(p => !p)} className="text-slate-400 hover:text-slate-600">
-                    {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </p>
-              </div>
-            </div>
-            <button onClick={() => setNewCred(null)} className="p-1.5 rounded-lg hover:bg-amber-100 shrink-0">
-              <X className="size-4 text-amber-700" />
-            </button>
-          </div>
-          <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={copyCredentials}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-medium transition-colors"
-            >
-              {copied ? <CheckCircle2 className="size-3.5" /> : <Copy className="size-3.5" />}
-              {copied ? '¡Copiado!' : 'Copiar credenciales'}
-            </button>
-            <p className="text-xs text-amber-600">Entrega las credenciales al alumno o apoderado de forma segura.</p>
-          </div>
+          <AlertTriangle className="size-5 text-red-600 shrink-0" />
+          <p className="text-sm text-red-800">{error}</p>
         </div>
       )}
 
       {/* Filtros */}
-      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-          {(['all', 'Primaria', 'Secundaria'] as const).map(n => (
-            <button
-              key={n}
-              onClick={() => { setFilterNivel(n); setFilterSeccion(''); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                filterNivel === n ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {n === 'all' ? 'Todos' : n}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative">
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => setNivelTab('')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+            !nivelTab ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Todos
+        </button>
+        {(['Primaria', 'Secundaria'] as const).map(n => (
+          <button
+            key={n}
+            onClick={() => setNivelTab(n)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+              nivelTab === n ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            {n}
+          </button>
+        ))}
+        <div className="ml-auto relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
           <input
             type="search"
-            placeholder="Buscar alumno, DNI, usuario…"
+            placeholder="Buscar…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+            className="pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400"
           />
         </div>
-
-        <div className="relative">
-          <select
-            value={filterSeccion}
-            onChange={e => setFilterSeccion(e.target.value)}
-            className="appearance-none pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400 min-w-[160px]"
-          >
-            <option value="">Todas las secciones</option>
-            {seccionesFiltered.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.grado.nombre} &quot;{s.nombre}&quot;
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-        </div>
       </div>
 
-      {/* Table */}
+      {/* Tabla */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Alumno</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">DNI</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Sexo</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Grado / Sección</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Usuario</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filtered.map(a => {
-                const nombre = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`;
-                return (
-                  <tr key={a.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex size-8 items-center justify-center rounded-full bg-teal-100 text-teal-700 text-xs font-semibold shrink-0">
-                          {initials(nombre)}
-                        </div>
-                        <span className="font-semibold text-slate-800">{nombre}</span>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Alumno</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">DNI</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Grado / Sección</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Usuario</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {filtered.map(a => {
+              const nombre = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`;
+              const nivel = a.seccion?.grado?.nivel?.nombre;
+              return (
+                <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex size-8 items-center justify-center rounded-full bg-teal-100 text-teal-700 text-xs font-semibold shrink-0">
+                        {initials(nombre)}
                       </div>
-                    </td>
-                    <td className="text-center px-4 py-3.5">
-                      <span className="font-mono text-xs text-slate-600">{a.dni}</span>
-                    </td>
-                    <td className="text-center px-4 py-3.5">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${
-                        a.bloqueo_manual
-                          ? 'bg-slate-50 text-slate-500 border-slate-200'
-                          : 'bg-teal-50 text-teal-700 border-teal-200'
-                      }`}>
-                        {a.bloqueo_manual ? 'Bloqueado' : 'Activo'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-600">
-                      {a.seccion.grado.nombre} &quot;{a.seccion.nombre}&quot;
-                    </td>
-                    <td className="px-4 py-3.5 hidden md:table-cell">
-                      {a.usuario_login ? (
-                        <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg">{a.usuario_login}</span>
-                      ) : (
-                        <span className="text-slate-300 text-xs">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <button
-                        onClick={() => handleDesactivar(a.id)}
-                        disabled={actionId === a.id}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors border bg-red-50 text-red-700 border-red-200 hover:bg-red-100 disabled:opacity-50"
-                      >
-                        {actionId === a.id ? <Loader2 className="size-3 animate-spin" /> : null}
-                        Desactivar
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {filtered.length === 0 && (
-            <div className="flex flex-col items-center py-12 text-center">
-              <Users className="size-10 text-slate-200 mb-3" />
-              <p className="text-slate-500">No se encontraron alumnos</p>
-              {(search || filterNivel !== 'all' || filterSeccion) && (
-                <button
-                  onClick={() => { setSearch(''); setFilterNivel('all'); setFilterSeccion(''); }}
-                  className="mt-2 text-sm text-teal-600 hover:underline"
-                >
-                  Limpiar filtros
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+                      <span className="font-semibold text-slate-800">{nombre}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3.5 text-slate-600 font-mono text-xs">{a.dni}</td>
+                  <td className="px-4 py-3.5 text-slate-600 text-xs">
+                    {a.seccion?.grado?.nombre ? (
+                      <div className="flex flex-col">
+                        <span>{a.seccion.grado.nombre} "{a.seccion.nombre}"</span>
+                        {nivel && <span className="text-[10px] text-slate-400">{nivel}</span>}
+                      </div>
+                    ) : '—'}
+                  </td>
+                  <td className="px-4 py-3.5 text-slate-600 text-xs hidden md:table-cell font-mono">{a.usuario_login ?? '—'}</td>
+                  <td className="px-4 py-3.5 text-right flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => openEdit(a)}
+                      className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      <Edit2 className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDesactivar(a.id)}
+                      disabled={actionId === a.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors border bg-red-50 text-red-700 border-red-200 hover:bg-red-100 disabled:opacity-50"
+                    >
+                      {actionId === a.id ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                      {actionId === a.id ? 'Eliminando...' : 'Eliminar'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {filtered.length === 0 && (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-slate-500">No se encontraron alumnos</p>
+          </div>
+        )}
       </div>
 
-      {/* Modal crear alumno */}
+      {/* Modal */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-base font-semibold text-slate-800">Agregar nuevo alumno</h3>
+              <h3 className="text-base font-semibold text-slate-800">
+                {modalMode === 'crear' ? 'Nuevo alumno' : 'Editar alumno'}
+              </h3>
               <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100">
                 <X className="size-4 text-slate-500" />
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="p-6 space-y-4">
-              {/* Nombres */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Nombre(s) <span className="text-red-500">*</span></label>
+            <form onSubmit={modalMode === 'crear' ? handleCreate : handleActualizar} className="p-6 space-y-4">
+              {/* Datos personales */}
+              <div className="grid grid-cols-2 gap-3">
                 <input
                   required
+                  placeholder="Nombre(s)"
                   value={form.nombres}
-                  onChange={e => setForm(f => ({ ...f, nombres: e.target.value }))}
-                  placeholder="Ej. Ana Lucía"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  onChange={e => setForm({ ...form, nombres: e.target.value })}
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
-              </div>
-
-              {/* Apellidos */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Apellido paterno <span className="text-red-500">*</span></label>
-                  <input
-                    required
-                    value={form.apellido_paterno}
-                    onChange={e => setForm(f => ({ ...f, apellido_paterno: e.target.value }))}
-                    placeholder="Ej. Pérez"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Apellido materno <span className="text-red-500">*</span></label>
-                  <input
-                    required
-                    value={form.apellido_materno}
-                    onChange={e => setForm(f => ({ ...f, apellido_materno: e.target.value }))}
-                    placeholder="Ej. Torres"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
-                </div>
-              </div>
-
-              {/* DNI */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">DNI <span className="text-red-500">*</span></label>
                 <input
-                  value={form.dni}
-                  onChange={e => setForm(f => ({ ...f, dni: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
-                  placeholder="8 dígitos"
-                  maxLength={8}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 transition-all ${
-                    form.dni.length > 0 && form.dni.length !== 8
-                      ? 'border-red-400 bg-red-50 focus:ring-red-400'
-                      : form.dni.length === 8
-                        ? 'border-emerald-400 bg-emerald-50 focus:ring-emerald-400'
-                        : 'border-slate-200 bg-slate-50 focus:ring-teal-400'
-                  }`}
+                  required
+                  placeholder="Apellido paterno"
+                  value={form.apellido_paterno}
+                  onChange={e => setForm({ ...form, apellido_paterno: e.target.value })}
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
-                {form.dni.length > 0 && form.dni.length !== 8 && (
-                  <p className="text-xs text-red-600 mt-1">El DNI debe tener exactamente 8 dígitos.</p>
-                )}
               </div>
 
-              {/* Fecha de nacimiento */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Fecha de nacimiento <span className="text-red-500">*</span></label>
+              <input
+                required
+                placeholder="Apellido materno"
+                value={form.apellido_materno}
+                onChange={e => setForm({ ...form, apellido_materno: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              />
+
+              <input
+                required
+                placeholder="DNI (8 dígitos)"
+                maxLength={8}
+                value={form.dni}
+                onChange={e => setForm({ ...form, dni: e.target.value.replace(/\D/g, '').slice(0, 8) })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
+              />
+
+              {modalMode === 'crear' && (
                 <DatePicker
                   value={form.fecha_nacimiento}
-                  onChange={v => setForm(f => ({ ...f, fecha_nacimiento: v }))}
+                  onChange={v => setForm({ ...form, fecha_nacimiento: v })}
                   max={new Date().toISOString().split('T')[0]}
-                  placeholder="DD/MM/AAAA"
+                  placeholder="Fecha de nacimiento"
                   color="teal"
-                  hasError={false}
                 />
-              </div>
+              )}
 
-              {/* Sexo */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Sexo <span className="text-red-500">*</span></label>
+              {modalMode === 'crear' && (
                 <div className="flex gap-2">
-                  {([['M', 'Masculino'], ['F', 'Femenino']] as const).map(([val, label]) => (
+                  {(['M', 'F'] as const).map(s => (
                     <button
-                      key={val}
+                      key={s}
                       type="button"
-                      onClick={() => setForm(f => ({ ...f, sexo: val }))}
+                      onClick={() => setForm({ ...form, sexo: s })}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                        form.sexo === val
-                          ? val === 'M'
+                        form.sexo === s
+                          ? s === 'M'
                             ? 'bg-blue-600 text-white border-blue-600'
                             : 'bg-pink-600 text-white border-pink-600'
                           : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      {label}
+                      {s === 'M' ? 'Masculino' : 'Femenino'}
                     </button>
                   ))}
                 </div>
+              )}
+
+              <div className="relative">
+                <select
+                  required
+                  value={form.seccion_id}
+                  onChange={e => setForm({ ...form, seccion_id: e.target.value })}
+                  className="w-full appearance-none pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                >
+                  <option value="">Selecciona sección</option>
+                  {secciones.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.grado?.nivel?.nombre} — {s.grado?.nombre} "{s.nombre}"
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
               </div>
 
-              {/* Sección */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Sección <span className="text-red-500">*</span></label>
-                <div className="relative">
-                  <select
+              {/* Credenciales de acceso */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Credenciales de acceso
+                </p>
+
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="email"
                     required
-                    value={form.seccion_id}
-                    onChange={e => setForm(f => ({ ...f, seccion_id: e.target.value }))}
-                    className="w-full appearance-none pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    placeholder="correo@calasanz.edu.pe"
+                    value={form.usuario_login}
+                    onChange={e => setForm({ ...form, usuario_login: e.target.value })}
+                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={autoLogin}
+                    title="Generar desde nombres"
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
                   >
-                    <option value="">Selecciona una sección</option>
-                    {secciones.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.grado.nivel.nombre} — {s.grado.nombre} &quot;{s.nombre}&quot;
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+                    <RefreshCw className="size-4" />
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder={modalMode === 'crear' ? 'Contraseña' : 'Nueva contraseña (dejar vacío para no cambiar)'}
+                      value={form.password}
+                      onChange={e => setForm({ ...form, password: e.target.value })}
+                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(p => !p)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setForm(f => ({ ...f, password: generatePassword() })); setShowPassword(true); }}
+                    title="Generar contraseña"
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
+                  >
+                    <RefreshCw className="size-4" />
+                  </button>
                 </div>
               </div>
 
-              {/* Grupo sanguíneo (opcional) */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Grupo sanguíneo</label>
-                <div className="relative">
-                  <select
-                    value={form.grupo_sanguineo}
-                    onChange={e => setForm(f => ({ ...f, grupo_sanguineo: e.target.value }))}
-                    className="w-full appearance-none pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  >
-                    <option value="">Sin especificar</option>
-                    {GRUPOS_SANGUINEOS.map(g => <option key={g} value={g}>{g}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-                </div>
+              {/* Datos opcionales */}
+              <div className="pt-2 border-t border-slate-100 space-y-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Datos adicionales (opcional)
+                </p>
+
+                <input
+                  placeholder="Grupo sanguíneo"
+                  value={form.grupo_sanguineo}
+                  onChange={e => setForm({ ...form, grupo_sanguineo: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+
+                <input
+                  placeholder="Código SIAGIE"
+                  value={form.codigo_siagie}
+                  onChange={e => setForm({ ...form, codigo_siagie: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+
+                <input
+                  placeholder="Dirección"
+                  value={form.direccion}
+                  onChange={e => setForm({ ...form, direccion: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+
+                <input
+                  placeholder="Distrito"
+                  value={form.distrito}
+                  onChange={e => setForm({ ...form, distrito: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+
+                <input
+                  placeholder="Teléfono emergencia"
+                  value={form.telefono_emergencia}
+                  onChange={e => setForm({ ...form, telefono_emergencia: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+
+                <input
+                  placeholder="Condición especial"
+                  value={form.condicion_especial}
+                  onChange={e => setForm({ ...form, condicion_especial: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
               </div>
 
-              {/* Error */}
               {formError && (
                 <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-                  <AlertCircle className="size-4 text-red-500 shrink-0" />
+                  <AlertTriangle className="size-4 text-red-500 shrink-0" />
                   <p className="text-xs text-red-700">{formError}</p>
                 </div>
               )}
 
-              <div className="bg-teal-50 border border-teal-200 rounded-xl p-3">
-                <p className="text-xs text-teal-700">
-                  El usuario se generará automáticamente del nombre y la contraseña se mostrará <strong>una sola vez</strong>.
-                </p>
-              </div>
-
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setModal(false)}
@@ -597,7 +568,8 @@ export default function SecretariaAlumnos() {
                   disabled={saving}
                   className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
                 >
-                  {saving ? <><Loader2 className="size-4 animate-spin" /> Guardando…</> : 'Crear alumno'}
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {modalMode === 'crear' ? 'Crear alumno' : 'Guardar cambios'}
                 </button>
               </div>
             </form>

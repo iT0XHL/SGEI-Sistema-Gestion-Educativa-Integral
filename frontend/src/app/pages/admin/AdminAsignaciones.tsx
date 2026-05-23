@@ -21,8 +21,8 @@ export default function AdminAsignaciones() {
 
   const load = useCallback(async () => {
     try {
-      const p = await periodosApi.listar();
-      const activo = p.find(p => p.activo) ?? null;
+      const p = await periodosApi.listar({ activo: true, limit: 1 });
+      const activo = p.items[0] ?? null;
       setPeriodo(activo);
 
       const [d, n] = await Promise.all([

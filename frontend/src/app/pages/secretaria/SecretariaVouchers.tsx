@@ -4,6 +4,7 @@
 //  Roles permitidos: Admin, Secretaria.
 // ============================================================
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router';
 import {
   CheckCircle2, X, Eye, Clock, Receipt, ZoomIn,
   MessageSquare, AlertCircle, Search, Loader2, ExternalLink,
@@ -50,11 +51,15 @@ function initials(name: string) {
 
 // ── Componente principal ──────────────────────────────────────
 export default function SecretariaVouchers() {
+  const [searchParams] = useSearchParams();
+  const initialQ      = searchParams.get('q') ?? '';
+  const initialFilter = (searchParams.get('estado') as FilterEstado | null) ?? 'all';
+
   const [boletas,      setBoletas]      = useState<BoletaDTO[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [fetchError,   setFetchError]   = useState('');
-  const [filter,       setFilter]       = useState<FilterEstado>('all');
-  const [search,       setSearch]       = useState('');
+  const [filter,       setFilter]       = useState<FilterEstado>(initialFilter);
+  const [search,       setSearch]       = useState(initialQ);
   const [savingId,     setSavingId]     = useState<string | null>(null);
   const [actionError,  setActionError]  = useState('');
 

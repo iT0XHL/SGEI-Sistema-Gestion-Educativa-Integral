@@ -7,37 +7,27 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router';
 import {
   Search, CheckCircle2, AlertCircle, Clock,
-  DollarSign, Users, Receipt, Loader2,
+  DollarSign, Users, Receipt, Loader2, MinusCircle,
 } from 'lucide-react';
 import {
   secretariaApi,
   type AlumnoPagoResumenDTO,
+  type EstadoPagoAlumno,
 } from '../../../lib/api/secretaria.api';
 
 // ── Tipos derivados de UI ─────────────────────────────────────
-type DisplayStatus = 'al_dia' | 'pendiente' | 'moroso';
-type FilterStatus  = 'all' | DisplayStatus;
+type FilterStatus = 'all' | EstadoPagoAlumno;
 
-function deriveStatus(r: AlumnoPagoResumenDTO): DisplayStatus {
-  if (r.monto_pendiente === 0 && r.cuotas_total > 0) return 'al_dia';
-  if (r.moroso) return 'moroso';
-  return 'pendiente';
-}
-
-const STATUS_CFG: Record<DisplayStatus, { label: string; cls: string; icon: React.ElementType }> = {
-  al_dia:    { label: 'Al día',    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-  pendiente: { label: 'Pendiente', cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
-  moroso:    { label: 'Moroso',    cls: 'bg-red-50 text-red-700 border-red-200',             icon: AlertCircle },
+const STATUS_CFG: Record<EstadoPagoAlumno, { label: string; cls: string; icon: React.ElementType }> = {
+  al_dia:     { label: 'Al día',     cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
+  pendiente:  { label: 'Pendiente',  cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
+  moroso:     { label: 'Moroso',     cls: 'bg-red-50 text-red-700 border-red-200',             icon: AlertCircle },
+  sin_cuotas: { label: 'Sin cuotas', cls: 'bg-slate-50 text-slate-600 border-slate-200',       icon: MinusCircle },
 };
 
 // ── Helpers ───────────────────────────────────────────────────
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
-}
-
-function pct(pagado: number, total: number) {
-  if (total === 0) return 0;
-  return Math.min(100, Math.round((pagado / total) * 100));
 }
 
 function fmtSol(n: number) {
@@ -81,8 +71,7 @@ export default function SecretariaPagos() {
         || r.nombre_completo.toLowerCase().includes(q)
         || r.grado.toLowerCase().includes(q)
         || r.seccion.toLowerCase().includes(q);
-      const status = deriveStatus(r);
-      const matchFilter = filter === 'all' || status === filter;
+      const matchFilter = filter === 'all' || r.estado_pago === filter;
       return matchSearch && matchFilter;
     });
   }, [data, filter, search]);
@@ -90,14 +79,20 @@ export default function SecretariaPagos() {
   // ── Resumen global ────────────────────────────────────────────
   const totalRecaudado = data.reduce((s, r) => s + r.monto_pagado, 0);
   const totalPendiente = data.reduce((s, r) => s + r.monto_pendiente, 0);
-  const countAlDia     = data.filter(r => deriveStatus(r) === 'al_dia').length;
-  const countMorosos   = data.filter(r => r.moroso).length;
+  const totalVencido   = data.reduce((s, r) => s + r.monto_vencido,   0);
+  const countAlDia     = data.filter(r => r.estado_pago === 'al_dia').length;
+  const countPendiente = data.filter(r => r.estado_pago === 'pendiente').length;
+  const countMorosos   = data.filter(r => r.estado_pago === 'moroso').length;
+  const countSinCuotas = data.filter(r => r.estado_pago === 'sin_cuotas').length;
 
-  const FILTERS: { value: FilterStatus; label: string; count?: number }[] = [
-    { value: 'all',      label: 'Todos',    count: data.length },
-    { value: 'al_dia',   label: 'Al día',   count: countAlDia },
-    { value: 'pendiente', label: 'Pendiente', count: data.filter(r => deriveStatus(r) === 'pendiente').length },
-    { value: 'moroso',   label: 'Moroso',   count: countMorosos },
+  const FILTERS: { value: FilterStatus; label: string; count: number }[] = [
+    { value: 'all',        label: 'Todos',     count: data.length },
+    { value: 'al_dia',     label: 'Al día',    count: countAlDia },
+    { value: 'pendiente',  label: 'Pendiente', count: countPendiente },
+    { value: 'moroso',     label: 'Moroso',    count: countMorosos },
+    ...(countSinCuotas > 0
+      ? [{ value: 'sin_cuotas' as const, label: 'Sin cuotas', count: countSinCuotas }]
+      : []),
   ];
 
   // ── Loading ───────────────────────────────────────────────────
@@ -145,16 +140,24 @@ export default function SecretariaPagos() {
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Recaudado</p>
           </div>
           <p className="text-xl font-bold text-slate-900">{fmtSol(totalRecaudado)}</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            de {fmtSol(totalRecaudado + totalPendiente)}
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-red-50">
-              <AlertCircle className="size-4 text-red-600" />
+            <div className="flex size-8 items-center justify-center rounded-lg bg-amber-50">
+              <Clock className="size-4 text-amber-600" />
             </div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Por cobrar</p>
           </div>
           <p className="text-xl font-bold text-slate-900">{fmtSol(totalPendiente)}</p>
+          {totalVencido > 0 && (
+            <p className="text-xs text-red-600 mt-0.5 font-medium">
+              {fmtSol(totalVencido)} vencido
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
@@ -170,8 +173,8 @@ export default function SecretariaPagos() {
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-amber-50">
-              <Clock className="size-4 text-amber-600" />
+            <div className="flex size-8 items-center justify-center rounded-lg bg-red-50">
+              <AlertCircle className="size-4 text-red-600" />
             </div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Morosos</p>
           </div>
@@ -243,11 +246,10 @@ export default function SecretariaPagos() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filtered.map(r => {
-                const status  = deriveStatus(r);
-                const cfg     = STATUS_CFG[status];
+                const cfg     = STATUS_CFG[r.estado_pago];
                 const Icon    = cfg.icon;
-                const avance  = pct(r.monto_pagado, r.monto_total);
-                const barCls  = avance === 100 ? 'bg-emerald-500' : avance > 50 ? 'bg-amber-400' : 'bg-red-400';
+                const avance  = r.porcentaje_pagado;
+                const barCls  = avance === 100 ? 'bg-emerald-500' : avance > 50 ? 'bg-amber-400' : avance > 0 ? 'bg-red-400' : 'bg-slate-300';
 
                 return (
                   <tr key={r.alumno_id} className="hover:bg-slate-50 transition-colors">
@@ -258,9 +260,9 @@ export default function SecretariaPagos() {
                         </div>
                         <div>
                           <p className="font-semibold text-slate-800">{r.nombre_completo}</p>
-                          {r.fecha_proxima_vencimiento && status !== 'al_dia' && (
+                          {r.fecha_proxima_vencimiento && r.estado_pago !== 'al_dia' && (
                             <p className="text-xs text-slate-400">
-                              Vence: {fmtFecha(r.fecha_proxima_vencimiento)}
+                              {r.estado_pago === 'moroso' ? 'Vencido desde' : 'Vence'}: {fmtFecha(r.fecha_proxima_vencimiento)}
                             </p>
                           )}
                         </div>
@@ -269,30 +271,49 @@ export default function SecretariaPagos() {
                     <td className="px-4 py-3.5 text-slate-500 hidden sm:table-cell">
                       {r.grado} &quot;{r.seccion}&quot;
                     </td>
-                    <td className="px-4 py-3.5 text-right font-semibold text-emerald-700">
-                      {fmtSol(r.monto_pagado)}
+                    <td className="px-4 py-3.5 text-right">
+                      <p className="font-semibold text-emerald-700">{fmtSol(r.monto_pagado)}</p>
+                      <p className="text-[10px] text-slate-400 font-normal">
+                        de {fmtSol(r.monto_total)}
+                      </p>
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       {r.monto_pendiente > 0 ? (
-                        <span className={`font-semibold ${r.moroso ? 'text-red-600' : 'text-slate-700'}`}>
-                          {fmtSol(r.monto_pendiente)}
-                        </span>
+                        <>
+                          <p className={`font-semibold ${r.moroso ? 'text-red-600' : 'text-slate-700'}`}>
+                            {fmtSol(r.monto_pendiente)}
+                          </p>
+                          {r.monto_vencido > 0 && (
+                            <p className="text-[10px] text-red-500 font-medium">
+                              {fmtSol(r.monto_vencido)} vencido
+                            </p>
+                          )}
+                        </>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3.5">
                       {r.cuotas_total > 0 ? (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${barCls}`}
-                              style={{ width: `${avance}%` }}
-                            />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${barCls}`}
+                                style={{ width: `${avance}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-slate-500 w-9 text-right shrink-0">
+                              {avance}%
+                            </span>
                           </div>
-                          <span className="text-xs text-slate-500 w-9 text-right shrink-0">
-                            {r.cuotas_pagadas}/{r.cuotas_total}
-                          </span>
+                          <p className="text-[10px] text-slate-400">
+                            {r.cuotas_pagadas} pagadas
+                            {r.cuotas_vencidas > 0 && (
+                              <span className="text-red-500 font-medium"> · {r.cuotas_vencidas} vencidas</span>
+                            )}
+                            {' '}/ {r.cuotas_total}
+                          </p>
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">Sin cuotas</span>
@@ -304,14 +325,36 @@ export default function SecretariaPagos() {
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-right">
-                      {r.tiene_boleta_pendiente && (
-                        <Link
-                          to="/secretaria/vouchers"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium transition-colors"
-                        >
-                          <Receipt className="size-3.5" /> Ver voucher
-                        </Link>
-                      )}
+                      {r.boletas_total > 0 && (() => {
+                        const q = encodeURIComponent(r.nombre_completo);
+                        if (r.boletas_pendientes > 0) {
+                          return (
+                            <Link
+                              to={`/secretaria/vouchers?q=${q}&estado=En_Revision`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium transition-colors"
+                            >
+                              <Receipt className="size-3.5" />
+                              Revisar
+                              {r.boletas_pendientes > 1 && (
+                                <span className="ml-0.5 text-[10px]">({r.boletas_pendientes})</span>
+                              )}
+                            </Link>
+                          );
+                        }
+                        const cls = r.boletas_aprobadas > 0
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                          : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-200';
+                        return (
+                          <Link
+                            to={`/secretaria/vouchers?q=${q}`}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${cls}`}
+                          >
+                            <Receipt className="size-3.5" />
+                            Ver vouchers
+                            <span className="ml-0.5 text-[10px]">({r.boletas_total})</span>
+                          </Link>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

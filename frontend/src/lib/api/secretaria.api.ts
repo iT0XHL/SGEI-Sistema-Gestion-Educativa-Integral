@@ -43,18 +43,29 @@ export interface ListarBoletasParams {
 }
 
 // ── Pagos por alumno ──────────────────────────────────────────
+export type EstadoPagoAlumno = 'al_dia' | 'moroso' | 'pendiente' | 'sin_cuotas';
+
 export interface AlumnoPagoResumenDTO {
   alumno_id:                 string;
   nombre_completo:           string;
   grado:                     string;
   seccion:                   string;
+  estado_pago:               EstadoPagoAlumno;
   monto_total:               number;
   monto_pagado:              number;
   monto_pendiente:           number;
+  monto_vencido:             number;
+  porcentaje_pagado:         number;
   cuotas_pagadas:            number;
+  cuotas_pendientes:         number;
+  cuotas_vencidas:           number;
   cuotas_total:              number;
   moroso:                    boolean;
   tiene_boleta_pendiente:    boolean;
+  boletas_pendientes:        number;
+  boletas_aprobadas:         number;
+  boletas_rechazadas:        number;
+  boletas_total:             number;
   fecha_proxima_vencimiento: string | null;
 }
 

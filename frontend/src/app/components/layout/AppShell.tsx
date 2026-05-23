@@ -10,6 +10,8 @@ import {
 import type { Role } from '../../data/mockData';
 import { NOTIFICATIONS } from '../../data/mockData';
 import { useSession } from '../../../lib/hooks/useSession';
+import { periodosApi, bimestresApi } from '../../../lib/api/periodos.api';
+import { secretariaApi } from '../../../lib/api/secretaria.api';
 
 function getInitials(nombre: string): string {
   return nombre.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -63,7 +65,7 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
   Secretaria: [
     { label: 'Inicio',              path: '/secretaria/inicio',           icon: LayoutDashboard },
     { label: 'Gestión de Alumnos',  path: '/secretaria/alumnos',          icon: GraduationCap },
-    { label: 'Validar Vouchers',    path: '/secretaria/vouchers',         icon: Receipt, badge: 5 },
+    { label: 'Validar Vouchers',    path: '/secretaria/vouchers',         icon: Receipt },
     { label: 'Estado de Pagos',     path: '/secretaria/pagos',            icon: DollarSign },
     { label: 'Situación Final',     path: '/secretaria/situacion-final',  icon: GraduationCap },
     { label: 'Exportar SIAGIE',     path: '/secretaria/siagie',           icon: FileOutput },
@@ -97,10 +99,18 @@ export function AppShell() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState(NOTIFICATIONS);
   const notifRef = useRef<HTMLDivElement>(null);
+  const [periodoActivo, setPeriodoActivo] = useState<string>('');
+  const [bimestreActivo, setBimestreActivo] = useState<string>('');
+  const [vouchersPendientes, setVouchersPendientes] = useState<number>(0);
 
   // 🔄 Corrección #12 — normalizeRole convierte 'alumno' (URL) → 'Alumno' (ENUM PascalCase)
   const role = normalizeRole(location.pathname.split('/')[1]);
-  const navItems = NAV_CONFIG[role] || [];
+  const baseNavItems = NAV_CONFIG[role] || [];
+  const navItems: NavItem[] = baseNavItems.map(item =>
+    item.path === '/secretaria/vouchers' && vouchersPendientes > 0
+      ? { ...item, badge: vouchersPendientes }
+      : item,
+  );
   const { session } = useSession();
   const displayName = session?.nombre ?? '…';
   const initials = session ? getInitials(session.nombre) : '…';
@@ -120,6 +130,40 @@ export function AppShell() {
       navigate(portalInicio[sessionRole] ?? '/', { replace: true });
     }
   }, [session, role, navigate]);
+
+  // Cargar período y bimestre activos
+  useEffect(() => {
+    async function loadPeriodoYBimestre() {
+      try {
+        const periodosRes = await periodosApi.listar({ activo: true, limit: 1 });
+        const periodo = periodosRes.items[0];
+        if (periodo) {
+          setPeriodoActivo(periodo.nombre);
+          const bimestresRes = await bimestresApi.listar({ periodoId: periodo.id, limit: 100 });
+          const bimestreAct = bimestresRes.items.find(b => !b.cerrado);
+          if (bimestreAct) {
+            setBimestreActivo(bimestreAct.nombre);
+          }
+        }
+      } catch (err) {
+        // Silently fail if unable to load
+        console.error('Error cargando período/bimestre activo:', err);
+      }
+    }
+    loadPeriodoYBimestre();
+  }, []);
+
+  // Cargar conteo de vouchers pendientes (solo Secretaria)
+  // Se actualiza al cambiar de ruta para reflejar aprobaciones/rechazos recientes
+  useEffect(() => {
+    if (role !== 'Secretaria') {
+      setVouchersPendientes(0);
+      return;
+    }
+    secretariaApi.resumen()
+      .then(r => setVouchersPendientes(r.resumen_financiero.vouchers_pendientes))
+      .catch(() => setVouchersPendientes(0));
+  }, [role, location.pathname]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -225,7 +269,11 @@ export function AppShell() {
         <div className="px-4 pb-3">
           <div className="rounded-xl bg-white/10 px-3 py-2.5">
             <p className="text-xs text-white/50 uppercase tracking-wider">Período activo</p>
-            <p className="text-sm text-white font-medium">Bimestre II · 2025</p>
+            <p className="text-sm text-white font-medium">
+              {bimestreActivo && periodoActivo
+                ? `${bimestreActivo} · ${periodoActivo.split(' ').pop()}`
+                : '—'}
+            </p>
           </div>
         </div>
 
@@ -255,7 +303,10 @@ export function AppShell() {
 
           <div className="flex-1 min-w-0">
             <p className="text-sm text-slate-500 hidden sm:block">
-              Año escolar 2025 · <span className="text-slate-700 font-medium">Bimestre II</span>
+              {periodoActivo && bimestreActivo
+                ? <>Año escolar {periodoActivo.split(' ').pop()} · <span className="text-slate-700 font-medium">{bimestreActivo}</span></>
+                : <>Cargando...</>
+              }
             </p>
           </div>
 

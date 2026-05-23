@@ -1,42 +1,37 @@
+// ============================================================
+//  lib/api/siagie.api.ts — Usa apiClient para JSON. El exportar
+//  baja un .xlsx por blob, así que necesita fetch directo: ahí
+//  reusamos la misma BASE_URL con fallback que client.ts.
+// ============================================================
+import { apiClient } from './client';
 import type { SiagieStats, SiagieValidacion } from '../../types/siagie';
 
-const BASE = `${import.meta.env.VITE_API_URL}/api/siagie`;
-
-async function get<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'include' });
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error?.message ?? 'Error');
-  return json.data as T;
-}
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 export const siagieApi = {
   stats(periodoId?: string): Promise<SiagieStats> {
-    const url = new URL(BASE);
-    if (periodoId) url.searchParams.set('periodoId', periodoId);
-    return get<SiagieStats>(url.toString());
+    return apiClient.get<SiagieStats>(
+      '/api/siagie',
+      periodoId ? { periodoId } : undefined,
+    );
   },
 
   validar(periodoId?: string): Promise<SiagieValidacion[]> {
-    const url = new URL(`${BASE}/validar`);
-    if (periodoId) url.searchParams.set('periodoId', periodoId);
-    return get<SiagieValidacion[]>(url.toString());
+    return apiClient.get<SiagieValidacion[]>(
+      '/api/siagie/validar',
+      periodoId ? { periodoId } : undefined,
+    );
   },
 
-  async refresh(): Promise<{ mensaje: string }> {
-    const res = await fetch(`${BASE}/refresh`, {
-      method:      'POST',
-      credentials: 'include',
-    });
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error?.message ?? 'Error al refrescar');
-    return json.data;
+  refresh(): Promise<{ mensaje: string }> {
+    return apiClient.post<{ mensaje: string }>('/api/siagie/refresh', {});
   },
 
   async exportar(periodoId?: string): Promise<void> {
-    const url = new URL(`${BASE}/exportar`);
-    if (periodoId) url.searchParams.set('periodoId', periodoId);
-
-    const res = await fetch(url.toString(), { credentials: 'include' });
+    const qs   = periodoId ? `?periodoId=${encodeURIComponent(periodoId)}` : '';
+    const res  = await fetch(`${BASE_URL}/api/siagie/exportar${qs}`, {
+      credentials: 'include',
+    });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       throw new Error((json as { error?: { message?: string } }).error?.message ?? 'Error al exportar');

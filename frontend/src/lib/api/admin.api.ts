@@ -127,7 +127,11 @@ export interface AlumnoResumenDTO {
   seccion: {
     id:     string;
     nombre: string;
-    grado:  { id: string; nombre: string };
+    grado:  {
+      id:     string;
+      nombre: string;
+      nivel:  { id: string; nombre: string };
+    };
   };
 }
 
@@ -625,9 +629,24 @@ export const institucionApi = {
 };
 
 // ── Períodos académicos ───────────────────────────────────────
+// El backend devuelve siempre un response paginado { items, meta }
+// — nunca un array desnudo.
+export interface ListPeriodosParams {
+  activo?: boolean;
+  page?:   number;
+  limit?:  number;
+}
+
 export const periodosApi = {
-  listar(): Promise<PeriodoDTO[]> {
-    return apiClient.get<PeriodoDTO[]>('/api/periodos');
+  listar(params: ListPeriodosParams = {}): Promise<Paginated<PeriodoDTO>> {
+    const q: Record<string, string> = {};
+    if (params.activo !== undefined) q.activo = String(params.activo);
+    if (params.page)                 q.page   = String(params.page);
+    if (params.limit)                q.limit  = String(params.limit);
+    return apiClient.get<Paginated<PeriodoDTO>>(
+      '/api/periodos',
+      Object.keys(q).length ? q : undefined,
+    );
   },
 
   obtener(id: string): Promise<PeriodoDTO> {

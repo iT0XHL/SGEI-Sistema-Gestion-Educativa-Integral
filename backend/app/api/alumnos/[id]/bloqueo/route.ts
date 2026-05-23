@@ -11,7 +11,7 @@ import { AlumnosService } from '@/modules/alumnos/alumnos.service';
 
 export const dynamic = 'force-dynamic';
 
-export const PATCH = withRole(['Admin'], async (req, { params, user }) => {
+export const PATCH = withRole(['Admin', 'Secretaria'], async (req, { params, user }) => {
   const { bloqueo_manual } = await parseBody(req, BloqueoLibretaSchema);
   const alumno = await AlumnosService.setBloqueoManual(
     params.id,
