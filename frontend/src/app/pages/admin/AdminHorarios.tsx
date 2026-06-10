@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { PlusCircle, X, AlertTriangle, ChevronDown, Loader2, Edit2 } from 'lucide-react';
 import { COLOR_MAP } from '../../data/mockData';
 import {
@@ -111,6 +111,23 @@ export default function AdminHorarios() {
     loadMasterData();
   }, []);
 
+  // Ajustar hora fin si queda inválida al cambiar hora inicio
+  useEffect(() => {
+    if (form.end <= form.start) {
+      const validEnd = HOURS.find(h => h > form.start);
+      if (validEnd) setForm(p => ({ ...p, end: validEnd }));
+    }
+  }, [form.start]);
+
+  // Limpiar docente si no está en la lista filtrada por curso
+  useEffect(() => {
+    if (!form.course_id) return;
+    const ids = new Set(asignacionesData.filter((a: any) => a.curso_id === form.course_id).map((a: any) => a.docente_id));
+    if (form.docente_id && !ids.has(form.docente_id)) {
+      setForm(p => ({ ...p, docente_id: '' }));
+    }
+  }, [form.course_id]);
+
   // Actualizar secciones cuando cambia el grado
   useEffect(() => {
     if (form.grado_id && secciones.length > 0) {
@@ -131,6 +148,16 @@ export default function AdminHorarios() {
   const sectionsForSelect = form.grado_id
     ? secciones.filter(s => s.grado_id === form.grado_id && s.periodo_id === periodoActivo?.id)
     : [];
+
+  // Docentes filtrados por curso seleccionado
+  const docentesDelCurso = useMemo(() => {
+    if (!form.course_id) return docentes;
+    const ids = new Set(asignacionesData.filter((a: any) => a.curso_id === form.course_id).map((a: any) => a.docente_id));
+    return docentes.filter(d => ids.has(d.id));
+  }, [form.course_id, asignacionesData, docentes]);
+
+  // Horas disponibles para el select "Fin" (siempre >= hora inicio)
+  const endHours = HOURS.filter(h => h > form.start);
 
   const sectionsForFilterGrade = filterGradeNum === 'Todos'
     ? []
@@ -610,7 +637,7 @@ export default function AdminHorarios() {
                     onChange={e => { setForm(p => ({ ...p, start: e.target.value })); setConflictWarn(''); }}
                     className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   >
-                    {HOURS.map(h => <option key={h}>{h}</option>)}
+                    {HOURS.slice(0, -1).map(h => <option key={h}>{h}</option>)}
                   </select>
                 </div>
                 <div>
@@ -620,7 +647,7 @@ export default function AdminHorarios() {
                     onChange={e => { setForm(p => ({ ...p, end: e.target.value })); setConflictWarn(''); }}
                     className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   >
-                    {HOURS.map(h => <option key={h}>{h}</option>)}
+                    {endHours.map(h => <option key={h}>{h}</option>)}
                   </select>
                 </div>
               </div>
@@ -635,7 +662,7 @@ export default function AdminHorarios() {
                     disabled={modal.mode === 'edit'}
                   >
                     <option value="">Seleccionar docente</option>
-                    {docentes.map(d => (
+                    {docentesDelCurso.map(d => (
                       <option key={d.id} value={d.id}>
                         {d.nombres} {d.apellido_paterno}
                       </option>

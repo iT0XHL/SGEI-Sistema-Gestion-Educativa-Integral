@@ -14,6 +14,7 @@ const ESCALA_COLORS: Record<EscalaKey, string> = {
 interface RowEdit {
   rango_inferior: string;
   rango_superior: string;
+  descripcion: string;
   error: string;
 }
 
@@ -64,6 +65,7 @@ export default function AdminEscalaLiteral() {
       [item.id]: {
         rango_inferior: String(item.rango_inferior),
         rango_superior: String(item.rango_superior),
+        descripcion: item.descripcion ?? '',
         error: '',
       },
     }));
@@ -101,9 +103,9 @@ export default function AdminEscalaLiteral() {
       const sorted = [...items].sort((a, b) => a.rango_inferior - b.rango_inferior);
       const escalas = sorted.map(e => {
         if (e.id === id) {
-          return { escala: e.escala, rango_inferior: inf, rango_superior: sup };
+          return { escala: e.escala, rango_inferior: inf, rango_superior: sup, descripcion: row.descripcion || null };
         }
-        return { escala: e.escala, rango_inferior: e.rango_inferior, rango_superior: e.rango_superior };
+        return { escala: e.escala, rango_inferior: e.rango_inferior, rango_superior: e.rango_superior, descripcion: e.descripcion ?? null };
       });
 
       // Ajustar rangos automáticamente para evitar huecos
@@ -237,7 +239,20 @@ export default function AdminEscalaLiteral() {
                         {item.escala}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-slate-700">{item.descripcion}</td>
+                    <td className="px-4 py-3.5 text-slate-700">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          maxLength={200}
+                          value={row.descripcion}
+                          onChange={e => setEditing(prev => ({ ...prev, [item.id]: { ...prev[item.id], descripcion: e.target.value } }))}
+                          placeholder="Ej. Logro Destacado"
+                          className="w-full text-sm border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                        />
+                      ) : (
+                        item.descripcion || '—'
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 text-center">
                       {isEditing ? (
                         <input

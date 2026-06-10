@@ -285,12 +285,14 @@ export interface EscalaDTO {
   escala:          NotaLiteral;
   rango_inferior:  number;
   rango_superior:  number;
+  descripcion?:    string | null;
 }
 
 export interface EscalaItem {
   escala:         NotaLiteral;
   rango_inferior: number;
   rango_superior: number;
+  descripcion?:   string | null;
 }
 
 export interface UpsertEscalaPayload {
