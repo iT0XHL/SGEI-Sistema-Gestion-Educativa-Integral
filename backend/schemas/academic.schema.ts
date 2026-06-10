@@ -82,6 +82,7 @@ export const UpsertEscalaSchema = z
           escala: z.enum(['AD', 'A', 'B', 'C']),
           rango_inferior: z.coerce.number().min(0).max(20),
           rango_superior: z.coerce.number().min(0).max(20),
+          descripcion: z.string().trim().max(200).optional().nullable(),
         }),
       )
       .length(4, 'Se requieren exactamente 4 escalas: AD, A, B, C'),

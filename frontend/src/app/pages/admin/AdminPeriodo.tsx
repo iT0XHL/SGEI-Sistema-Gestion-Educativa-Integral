@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PlusCircle, X, CalendarRange, CheckCircle2, AlertTriangle, ChevronDown, Loader2 } from 'lucide-react';
+import { PlusCircle, X, CalendarRange, CheckCircle2, AlertTriangle, Loader2, Pencil } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -28,6 +28,10 @@ export default function AdminPeriodo() {
   const [error, setError]           = useState('');
   const [saving, setSaving]         = useState(false);
   const [activating, setActivating] = useState<string | null>(null);
+  const [editModal, setEditModal]   = useState<{ open: boolean; item?: PeriodoAcademico }>({ open: false });
+  const [editForm, setEditForm]     = useState({ nombre: '', fechaInicio: '', fechaFin: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [deactivating, setDeactivating] = useState<string | null>(null);
 
   // Cargar períodos al montar
   useEffect(() => {
@@ -87,6 +91,49 @@ export default function AdminPeriodo() {
       setFormError(err instanceof Error ? err.message : 'Error creando período');
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openEditModal(p: PeriodoAcademico) {
+    setEditForm({
+      nombre: p.nombre,
+      fechaInicio: p.fecha_inicio.split('T')[0],
+      fechaFin: p.fecha_fin.split('T')[0],
+    });
+    setEditModal({ open: true, item: p });
+  }
+
+  async function handleEditar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editModal.item) return;
+    if (!editForm.nombre.trim() || !editForm.fechaInicio || !editForm.fechaFin) {
+      return;
+    }
+    try {
+      setEditSaving(true);
+      await periodosApi.actualizar(editModal.item.id, {
+        nombre: editForm.nombre.trim(),
+        fecha_inicio: editForm.fechaInicio,
+        fecha_fin: editForm.fechaFin,
+      });
+      await loadPeriodos();
+      setEditModal({ open: false });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error editando período');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function handleDesactivar(id: string) {
+    try {
+      setDeactivating(id);
+      await periodosApi.actualizar(id, { activo: false });
+      await loadPeriodos();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error desactivando período');
+    } finally {
+      setDeactivating(null);
     }
   }
 
@@ -164,33 +211,69 @@ export default function AdminPeriodo() {
                     )}
                   </td>
                   <td className="px-4 py-3.5 text-right">
-                    {!p.activo && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button
-                            disabled={activating === p.id}
-                            className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                          >
-                            {activating === p.id ? <Loader2 className="size-3 animate-spin" /> : null}
-                            Activar período
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>¿Activar este período?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              El período <strong>{p.nombre}</strong> pasará a estar activo. El período actualmente activo será desactivado automáticamente por el sistema.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleActivar(p.id)}>
-                              Sí, activar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => openEditModal(p)}
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                        title="Editar período"
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                      {!p.activo && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <button
+                              disabled={activating === p.id}
+                              className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                              {activating === p.id ? <Loader2 className="size-3 animate-spin" /> : null}
+                              Activar
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>¿Activar este período?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                El período <strong>{p.nombre}</strong> pasará a estar activo. El período actualmente activo será desactivado automáticamente por el sistema.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleActivar(p.id)}>
+                                Sí, activar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {p.activo && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <button
+                              disabled={deactivating === p.id}
+                              className="px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                              {deactivating === p.id ? <Loader2 className="size-3 animate-spin" /> : null}
+                              Desactivar
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>¿Desactivar este período?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                El período <strong>{p.nombre}</strong> pasará a estar inactivo.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDesactivar(p.id)}>
+                                Sí, desactivar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -198,6 +281,51 @@ export default function AdminPeriodo() {
           </table>
         </div>
       </div>
+      )}
+
+      {/* Edit modal */}
+      {editModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+              <h3 className="text-base font-semibold text-slate-800">Editar período académico</h3>
+              <button onClick={() => setEditModal({ open: false })} className="p-1.5 rounded-lg hover:bg-slate-100">
+                <X className="size-4 text-slate-500" />
+              </button>
+            </div>
+            <form onSubmit={handleEditar} className="p-6 space-y-4 overflow-y-auto">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Nombre <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={editForm.nombre}
+                  onChange={e => setEditForm(f => ({ ...f, nombre: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Fecha inicio <span className="text-red-500">*</span></label>
+                  <DatePicker value={editForm.fechaInicio} onChange={v => setEditForm(f => ({ ...f, fechaInicio: v }))} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Fecha fin <span className="text-red-500">*</span></label>
+                  <DatePicker value={editForm.fechaFin} onChange={v => setEditForm(f => ({ ...f, fechaFin: v }))} />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditModal({ open: false })} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={editSaving} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {editSaving ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {editSaving ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Create modal */}

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, Clock, Save, ChevronDown, Loader2, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Save, Loader2, AlertTriangle } from 'lucide-react';
 import { asistenciaDocentesApi, getEstadoColor, getEstadoLabel, cargarDocentes } from '../../../lib/api/asistencias.api';
 import type { AsistenciaDocenteRow, DocenteRow } from '../../../lib/api/asistencias.api';
+import { horariosApi, asignacionesApi, obtenerPeriodoActivo } from '../../../lib/api/horarios.api';
+import type { HorarioRow, AsignacionRow } from '../../../lib/api/horarios.api';
 
 
 type Estado = 'P' | 'F' | 'T' | 'J' | null;
@@ -20,7 +22,11 @@ const parseLocalDate = (dateStr: string): Date => {
 
 export default function AdminAsistenciaDocente() {
   const [date, setDate] = useState(toLocalDate(new Date()));
+  const [todosDocentes, setTodosDocentes] = useState<DocenteRow[]>([]);
   const [docentes, setDocentes] = useState<DocenteRow[]>([]);
+  const [horarios, setHorarios] = useState<HorarioRow[]>([]);
+  const [asignaciones, setAsignaciones] = useState<AsignacionRow[]>([]);
+  const [sinClases, setSinClases] = useState(false);
   const [attendance, setAttendance] = useState<Record<string, Estado>>({});
   const [historial, setHistorial] = useState<AsistenciaDocenteRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,44 +35,76 @@ export default function AdminAsistenciaDocente() {
   const [error, setError] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
 
-  // Cargar docentes al montar
+  // Cargar docentes, horarios y asignaciones al montar
   useEffect(() => {
-    async function loadData() {
+    async function loadMaster() {
       try {
-        const docentesList = await cargarDocentes();
-        setDocentes(docentesList);
+        const [docentesList, periodoActivo] = await Promise.all([
+          cargarDocentes(),
+          obtenerPeriodoActivo(),
+        ]);
+        setTodosDocentes(docentesList);
 
-        // Cargar asistencias del día actual
-        const asisRes = await asistenciaDocentesApi.listar({
-          fecha_inicio: date,
-          fecha_fin: date,
-          limit: 500
-        });
-        const asisMap: Record<string, Estado> = {};
-        (asisRes.items || []).forEach(a => {
-          asisMap[a.docente_id] = a.estado;
-        });
-        setAttendance(asisMap);
-
-        // Cargar historial del mes
-        const [year, month] = date.split('-');
-        const firstDay = `${year}-${month}-01`;
-        const lastDayObj = new Date(parseInt(year), parseInt(month), 0);
-        const lastDay = toLocalDate(lastDayObj);
-        const histRes = await asistenciaDocentesApi.listar({
-          fecha_inicio: firstDay,
-          fecha_fin: lastDay,
-          limit: 500
-        });
-        setHistorial(histRes.items || []);
+        if (periodoActivo) {
+          const [horariosRes, asignacionesRes] = await Promise.all([
+            horariosApi.listar({ periodoId: periodoActivo.id }),
+            asignacionesApi.listar({ periodoId: periodoActivo.id }),
+          ]);
+          setHorarios(horariosRes);
+          setAsignaciones(asignacionesRes);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error cargando datos');
       } finally {
         setLoading(false);
       }
     }
-    loadData();
-  }, [date]);
+    loadMaster();
+  }, []);
+
+  // Al cambiar fecha: filtrar docentes con clase ese día + cargar asistencias
+  useEffect(() => {
+    async function loadDayData() {
+      try {
+        // Mapear día de la semana (0=Dom, 1=Lun … 6=Sáb)
+        const dayOfWeek = parseLocalDate(date).getDay();
+        const DIA_MAP: Record<number, number | null> = { 0: null, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: null };
+        const diaSemana = DIA_MAP[dayOfWeek];
+
+        if (diaSemana === null) {
+          setDocentes([]);
+          setSinClases(true);
+        } else {
+          const horariosDelDia = horarios.filter(h => h.dia_semana === diaSemana);
+          const asignacionIds = new Set(horariosDelDia.map(h => h.asignacion_id));
+          const docenteIds = new Set(
+            asignaciones.filter(a => asignacionIds.has(a.id)).map(a => a.docente_id)
+          );
+          const filtrados = todosDocentes.filter(d => docenteIds.has(d.id));
+          setDocentes(filtrados.length > 0 ? filtrados : []);
+          setSinClases(filtrados.length === 0 && horarios.length > 0);
+        }
+
+        // Cargar asistencias del día
+        const asisRes = await asistenciaDocentesApi.listar({ fecha_inicio: date, fecha_fin: date, limit: 500 });
+        const asisMap: Record<string, Estado> = {};
+        (asisRes.items || []).forEach(a => { asisMap[a.docente_id] = a.estado; });
+        setAttendance(asisMap);
+
+        // Cargar historial del mes
+        const [year, month] = date.split('-');
+        const firstDay = `${year}-${month}-01`;
+        const lastDay = toLocalDate(new Date(parseInt(year), parseInt(month), 0));
+        const histRes = await asistenciaDocentesApi.listar({ fecha_inicio: firstDay, fecha_fin: lastDay, limit: 500 });
+        setHistorial(histRes.items || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error cargando datos del día');
+      }
+    }
+    if (todosDocentes.length > 0 || horarios.length > 0 || !loading) {
+      loadDayData();
+    }
+  }, [date, todosDocentes, horarios, asignaciones]);
 
   const present = Object.values(attendance).filter(v => v === 'P').length;
   const absent = Object.values(attendance).filter(v => v === 'F').length;
@@ -201,8 +239,13 @@ export default function AdminAsistenciaDocente() {
       {/* Teacher list */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-          <p className="text-sm font-semibold text-slate-700">{total} docentes · {parseLocalDate(date).toLocaleDateString('es-PE', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+          <p className="text-sm font-semibold text-slate-700">{docentes.length} docentes · {parseLocalDate(date).toLocaleDateString('es-PE', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
+        {sinClases && (
+          <div className="px-6 py-8 text-center text-sm text-slate-500">
+            Sin docentes programados para este día
+          </div>
+        )}
         <div className="divide-y divide-slate-200">
           {docentes.map(docente => {
             const estado = attendance[docente.id];

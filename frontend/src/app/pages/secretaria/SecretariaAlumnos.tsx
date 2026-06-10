@@ -1,36 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  PlusCircle, Search, Loader2, AlertTriangle, Edit2, Trash2, ChevronDown, X,
-  RefreshCw, Eye, EyeOff,
+  PlusCircle, Search, Loader2, AlertTriangle, Edit2, Trash2,
 } from 'lucide-react';
-import { DatePicker } from '../../components/DatePicker';
 import {
-  alumnosAdminApi, estructuraApi,
+  alumnosAdminApi,
 } from '../../../lib/api/admin.api';
 import type {
-  AlumnoResumenDTO, SeccionDTO,
-  CreateAlumnoPayload, UpdateAlumnoPayload,
+  AlumnoResumenDTO,
 } from '../../../lib/api/admin.api';
-
-const INIT_FORM = {
-  usuario_login: '', password: '',
-  nombres: '', apellido_paterno: '', apellido_materno: '', dni: '',
-  fecha_nacimiento: '', sexo: 'M' as 'M' | 'F', seccion_id: '',
-  grupo_sanguineo: '', codigo_siagie: '', direccion: '',
-  distrito: '', telefono_emergencia: '', condicion_especial: '',
-};
-
-function generateLogin(nombres: string, apellido: string): string {
-  const n = (nombres.split(' ')[0] || '').replace(/[^a-z]/gi, '').toLowerCase();
-  const a = apellido.replace(/[^a-z]/gi, '').toLowerCase();
-  if (!n || !a) return '';
-  return `${n}.${a}@calasanz.edu.pe`;
-}
-
-function generatePassword(): string {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!';
-  return Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
+import UserFormModal from '../../components/UserFormModal';
 
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
@@ -38,7 +16,6 @@ function initials(name: string) {
 
 export default function SecretariaAlumnos() {
   const [alumnos, setAlumnos] = useState<AlumnoResumenDTO[]>([]);
-  const [secciones, setSecciones] = useState<SeccionDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -47,13 +24,8 @@ export default function SecretariaAlumnos() {
 
   const [modal, setModal] = useState(false);
   const [modalMode, setModalMode] = useState<'crear' | 'editar'>('crear');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingOriginalLogin, setEditingOriginalLogin] = useState('');
-  const [form, setForm] = useState(INIT_FORM);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
+  const [editingAlumno, setEditingAlumno] = useState<AlumnoResumenDTO | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -63,12 +35,8 @@ export default function SecretariaAlumnos() {
     setLoading(true);
     setError('');
     try {
-      const [aluRes, secRes] = await Promise.all([
-        alumnosAdminApi.listar({ limit: 200 }),
-        estructuraApi.secciones(),
-      ]);
+      const aluRes = await alumnosAdminApi.listar({ limit: 200 });
       setAlumnos(aluRes.items);
-      setSecciones(secRes);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');
     } finally {
@@ -91,127 +59,14 @@ export default function SecretariaAlumnos() {
 
   function openCreate() {
     setModalMode('crear');
-    setEditingId(null);
-    setEditingOriginalLogin('');
-    setForm({ ...INIT_FORM, password: generatePassword() });
-    setFormError('');
-    setShowPassword(true);
+    setEditingAlumno(null);
     setModal(true);
   }
 
   function openEdit(alumno: AlumnoResumenDTO) {
     setModalMode('editar');
-    setEditingId(alumno.id);
-    setEditingOriginalLogin(alumno.usuario_login ?? '');
-    setForm({
-      ...INIT_FORM,
-      usuario_login: alumno.usuario_login ?? '',
-      password: '',
-      nombres: alumno.nombres,
-      apellido_paterno: alumno.apellido_paterno,
-      apellido_materno: alumno.apellido_materno,
-      dni: alumno.dni,
-      seccion_id: alumno.seccion?.id ?? '',
-    });
-    setFormError('');
-    setShowPassword(false);
+    setEditingAlumno(alumno);
     setModal(true);
-  }
-
-  function autoLogin() {
-    const login = generateLogin(form.nombres, form.apellido_paterno);
-    if (login) setForm(f => ({ ...f, usuario_login: login }));
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.usuario_login.trim()) { setFormError('Correo institucional es obligatorio'); return; }
-    if (!form.password || form.password.length < 8) { setFormError('La contraseña debe tener al menos 8 caracteres'); return; }
-    if (!form.seccion_id) { setFormError('Selecciona una sección'); return; }
-    if (!/^\d{8}$/.test(form.dni)) { setFormError('DNI debe tener 8 dígitos'); return; }
-    if (!form.fecha_nacimiento) { setFormError('Fecha de nacimiento es obligatoria'); return; }
-
-    const seccion = secciones.find(s => s.id === form.seccion_id);
-    if (!seccion) { setFormError('Sección inválida'); return; }
-
-    const payload: CreateAlumnoPayload = {
-      usuario_login: form.usuario_login.trim(),
-      password: form.password,
-      seccion_id: form.seccion_id,
-      periodo_id: seccion.periodo_id,
-      dni: form.dni,
-      nombres: form.nombres.trim(),
-      apellido_paterno: form.apellido_paterno.trim(),
-      apellido_materno: form.apellido_materno.trim(),
-      fecha_nacimiento: form.fecha_nacimiento,
-      sexo: form.sexo,
-      ...(form.grupo_sanguineo ? { grupo_sanguineo: form.grupo_sanguineo } : {}),
-      ...(form.codigo_siagie ? { codigo_siagie: form.codigo_siagie } : {}),
-      ...(form.direccion ? { direccion: form.direccion } : {}),
-      ...(form.distrito ? { distrito: form.distrito } : {}),
-      ...(form.telefono_emergencia ? { telefono_emergencia: form.telefono_emergencia } : {}),
-      ...(form.condicion_especial ? { condicion_especial: form.condicion_especial } : {}),
-    };
-
-    setSaving(true);
-    try {
-      await alumnosAdminApi.crear(payload);
-      await loadData();
-      setModal(false);
-      setForm(INIT_FORM);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Error al crear alumno');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleActualizar(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingId) return;
-    if (!form.usuario_login.trim()) { setFormError('Correo institucional es obligatorio'); return; }
-    if (!form.seccion_id) { setFormError('Selecciona una sección'); return; }
-    if (!/^\d{8}$/.test(form.dni)) { setFormError('DNI debe tener 8 dígitos'); return; }
-    if (form.password && form.password.length < 8) {
-      setFormError('La nueva contraseña debe tener al menos 8 caracteres');
-      return;
-    }
-
-    const payload: UpdateAlumnoPayload = {
-      nombres: form.nombres.trim(),
-      apellido_paterno: form.apellido_paterno.trim(),
-      apellido_materno: form.apellido_materno.trim(),
-      dni: form.dni,
-      seccion_id: form.seccion_id,
-      ...(form.usuario_login.trim() !== editingOriginalLogin
-        ? { usuario_login: form.usuario_login.trim() }
-        : {}),
-      ...(form.grupo_sanguineo ? { grupo_sanguineo: form.grupo_sanguineo } : {}),
-      ...(form.codigo_siagie ? { codigo_siagie: form.codigo_siagie } : {}),
-      ...(form.direccion ? { direccion: form.direccion } : {}),
-      ...(form.distrito ? { distrito: form.distrito } : {}),
-      ...(form.telefono_emergencia ? { telefono_emergencia: form.telefono_emergencia } : {}),
-      ...(form.condicion_especial ? { condicion_especial: form.condicion_especial } : {}),
-    };
-
-    setSaving(true);
-    try {
-      await alumnosAdminApi.actualizar(editingId, payload);
-      if (form.password) {
-        await alumnosAdminApi.resetContrasena(editingId, {
-          password_nueva: form.password,
-          confirmacion: form.password,
-        });
-      }
-      await loadData();
-      setModal(false);
-      setForm(INIT_FORM);
-      setEditingId(null);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Error al actualizar');
-    } finally {
-      setSaving(false);
-    }
   }
 
   async function handleDesactivar(id: string) {
@@ -349,232 +204,33 @@ export default function SecretariaAlumnos() {
         )}
       </div>
 
-      {/* Modal */}
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-base font-semibold text-slate-800">
-                {modalMode === 'crear' ? 'Nuevo alumno' : 'Editar alumno'}
-              </h3>
-              <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100">
-                <X className="size-4 text-slate-500" />
-              </button>
-            </div>
+      {modal && modalMode === 'crear' && (
+        <UserFormModal
+          mode="create"
+          rol="Alumno"
+          lockRol={true}
+          onClose={() => setModal(false)}
+          onSuccess={() => { setModal(false); loadData(); }}
+        />
+      )}
 
-            <form onSubmit={modalMode === 'crear' ? handleCreate : handleActualizar} className="p-6 space-y-4">
-              {/* Datos personales */}
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  required
-                  placeholder="Nombre(s)"
-                  value={form.nombres}
-                  onChange={e => setForm({ ...form, nombres: e.target.value })}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-                <input
-                  required
-                  placeholder="Apellido paterno"
-                  value={form.apellido_paterno}
-                  onChange={e => setForm({ ...form, apellido_paterno: e.target.value })}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-              </div>
-
-              <input
-                required
-                placeholder="Apellido materno"
-                value={form.apellido_materno}
-                onChange={e => setForm({ ...form, apellido_materno: e.target.value })}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-              />
-
-              <input
-                required
-                placeholder="DNI (8 dígitos)"
-                maxLength={8}
-                value={form.dni}
-                onChange={e => setForm({ ...form, dni: e.target.value.replace(/\D/g, '').slice(0, 8) })}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
-              />
-
-              {modalMode === 'crear' && (
-                <DatePicker
-                  value={form.fecha_nacimiento}
-                  onChange={v => setForm({ ...form, fecha_nacimiento: v })}
-                  max={new Date().toISOString().split('T')[0]}
-                  placeholder="Fecha de nacimiento"
-                  color="teal"
-                />
-              )}
-
-              {modalMode === 'crear' && (
-                <div className="flex gap-2">
-                  {(['M', 'F'] as const).map(s => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setForm({ ...form, sexo: s })}
-                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                        form.sexo === s
-                          ? s === 'M'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-pink-600 text-white border-pink-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {s === 'M' ? 'Masculino' : 'Femenino'}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="relative">
-                <select
-                  required
-                  value={form.seccion_id}
-                  onChange={e => setForm({ ...form, seccion_id: e.target.value })}
-                  className="w-full appearance-none pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                >
-                  <option value="">Selecciona sección</option>
-                  {secciones.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.grado?.nivel?.nombre} — {s.grado?.nombre} "{s.nombre}"
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-              </div>
-
-              {/* Credenciales de acceso */}
-              <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                  Credenciales de acceso
-                </p>
-
-                <div className="flex gap-2 mb-3">
-                  <input
-                    type="email"
-                    required
-                    placeholder="correo@calasanz.edu.pe"
-                    value={form.usuario_login}
-                    onChange={e => setForm({ ...form, usuario_login: e.target.value })}
-                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={autoLogin}
-                    title="Generar desde nombres"
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
-                  >
-                    <RefreshCw className="size-4" />
-                  </button>
-                </div>
-
-                <div className="flex gap-2">
-                  <div className="flex-1 relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder={modalMode === 'crear' ? 'Contraseña' : 'Nueva contraseña (dejar vacío para no cambiar)'}
-                      value={form.password}
-                      onChange={e => setForm({ ...form, password: e.target.value })}
-                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(p => !p)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setForm(f => ({ ...f, password: generatePassword() })); setShowPassword(true); }}
-                    title="Generar contraseña"
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
-                  >
-                    <RefreshCw className="size-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Datos opcionales */}
-              <div className="pt-2 border-t border-slate-100 space-y-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Datos adicionales (opcional)
-                </p>
-
-                <input
-                  placeholder="Grupo sanguíneo"
-                  value={form.grupo_sanguineo}
-                  onChange={e => setForm({ ...form, grupo_sanguineo: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-
-                <input
-                  placeholder="Código SIAGIE"
-                  value={form.codigo_siagie}
-                  onChange={e => setForm({ ...form, codigo_siagie: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-
-                <input
-                  placeholder="Dirección"
-                  value={form.direccion}
-                  onChange={e => setForm({ ...form, direccion: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-
-                <input
-                  placeholder="Distrito"
-                  value={form.distrito}
-                  onChange={e => setForm({ ...form, distrito: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-
-                <input
-                  placeholder="Teléfono emergencia"
-                  value={form.telefono_emergencia}
-                  onChange={e => setForm({ ...form, telefono_emergencia: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-
-                <input
-                  placeholder="Condición especial"
-                  value={form.condicion_especial}
-                  onChange={e => setForm({ ...form, condicion_especial: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-              </div>
-
-              {formError && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-                  <AlertTriangle className="size-4 text-red-500 shrink-0" />
-                  <p className="text-xs text-red-700">{formError}</p>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setModal(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-                >
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-                  {modalMode === 'crear' ? 'Crear alumno' : 'Guardar cambios'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {modal && modalMode === 'editar' && editingAlumno && (
+        <UserFormModal
+          mode="edit"
+          rol="Alumno"
+          lockRol={true}
+          initialData={{
+            id: editingAlumno.id,
+            usuario_login: editingAlumno.usuario_login ?? '',
+            nombres: editingAlumno.nombres,
+            apellido_paterno: editingAlumno.apellido_paterno,
+            apellido_materno: editingAlumno.apellido_materno,
+            dni: editingAlumno.dni,
+            seccion_id: editingAlumno.seccion?.id ?? '',
+          }}
+          onClose={() => setModal(false)}
+          onSuccess={() => { setModal(false); loadData(); }}
+        />
       )}
     </div>
   );
