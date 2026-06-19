@@ -13,8 +13,16 @@ services:
       - "5432:5432"
     volumes:
       - sgei-db-data:/var/lib/postgresql/data
+      # PostgreSQL ejecuta los scripts de /docker-entrypoint-initdb.d en orden
+      # alfabético del nombre destino (solo al crear el volumen desde cero).
+      # Orden requerido: setup → DDL → migraciones (alteran/crean tablas del
+      # DDL) → seed (datos). Por eso las migraciones van como 01a/01b, después
+      # del DDL (01) y antes del seed (02).
       - "./SQL/00-setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
       - "./SQL/sgei_ddl_v2.1_auditado (1).sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+      - "./SQL/01_notificaciones_eventos.sql:/docker-entrypoint-initdb.d/01a-notificaciones.sql:ro"
+      - "./SQL/03-libretas-migration.sql:/docker-entrypoint-initdb.d/01b-libretas.sql:ro"
+      - "./SQL/04-fix-audit-trigger.sql:/docker-entrypoint-initdb.d/01c-fix-audit.sql:ro"
       - "./SQL/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sgei -d sgei_db"]

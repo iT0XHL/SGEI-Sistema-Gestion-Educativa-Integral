@@ -232,7 +232,17 @@ export default function UserFormModal({ mode, rol: initialRol, lockRol, initialD
 
   useEffect(() => {
     if (rol !== 'Alumno') return;
-    periodosApi.listar().then(res => setPeriodos(res.items ?? [])).catch(() => {});
+    periodosApi.listar().then(res => {
+      const lista = res.items ?? [];
+      setPeriodos(lista);
+      // Al crear, preselecciona el período ACTIVO (es donde se matricula al
+      // alumno). Así las secciones de ese período se cargan automáticamente y
+      // no quedan vacías por elegir un período sin secciones.
+      if (mode === 'create' && !form.periodo_id) {
+        const activo = lista.find(p => p.activo);
+        if (activo) set('periodo_id', activo.id);
+      }
+    }).catch(() => {});
   }, [rol]);
 
   useEffect(() => {

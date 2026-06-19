@@ -16,6 +16,14 @@ const nextConfig = {
   async headers() {
     return [{ source: '/api/:path*', headers: securityHeaders }];
   },
+  // pdfkit necesita cargar archivos .afm en runtime; externalizarlo evita
+  // que webpack intente empaquetar sus fuentes y rompa la ruta.
+  webpack(config, { isServer }) {
+    if (isServer) {
+      config.externals = [...(config.externals ?? []), 'pdfkit'];
+    }
+    return config;
+  },
 };
 
 module.exports = nextConfig;

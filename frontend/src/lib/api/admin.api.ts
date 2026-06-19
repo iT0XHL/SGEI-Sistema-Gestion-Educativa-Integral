@@ -220,7 +220,7 @@ export interface InstitucionDTO {
   nombre_ugel:         string;
   resolucion_creacion: string | null;
   modalidad:           string;
-  gestion:             'Publica' | 'Privada';
+  gestion:             string; // DB: VARCHAR(20) texto libre (Pública/Privada/Concertada…)
   departamento:        string;
   provincia:           string;
   distrito:            string;
@@ -492,9 +492,10 @@ export interface EstadisticasDTO {
 }
 
 // ── Helpers de conversión de parámetros ──────────────────────
-function toStr(p: Record<string, string | number | boolean | undefined>): Record<string, string | undefined> {
+// Genérico para aceptar interfaces de parámetros (que no tienen firma de índice).
+function toStr<T extends object>(p: T): Record<string, string | undefined> {
   return Object.fromEntries(
-    Object.entries(p).map(([k, v]) => [k, v !== undefined ? String(v) : undefined]),
+    Object.entries(p).map(([k, v]) => [k, v !== undefined && v !== null ? String(v) : undefined]),
   );
 }
 

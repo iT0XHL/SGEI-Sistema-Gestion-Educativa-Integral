@@ -34,9 +34,13 @@ export function useDescargarLibretaPdf() {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
-      a.download = `libreta_${(nombre ?? alumnoId).replace(/\s+/g, '_')}.pdf`;
+      a.download = `libreta_${(nombre ?? alumnoId).replace(/\s+/g, '_')}.docx`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 150);
     },
   });
 }

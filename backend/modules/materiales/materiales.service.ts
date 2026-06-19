@@ -8,6 +8,8 @@
 // ============================================================
 import { ForbiddenError, NotFoundError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
 import { AsistenciaAlumnosRepository } from '@/modules/asistencias/asistencia-alumnos.repository';
@@ -31,6 +33,26 @@ async function getAlumnoSeccionId(alumnoEntidadId: string): Promise<string> {
   });
   if (!alumno) throw new NotFoundError('Alumno');
   return alumno.seccion_id;
+}
+
+/**
+ * Notifica MATERIAL_PUBLICADO a los alumnos de la sección (§6).
+ * Solo se notifica si el material es visible (no borradores, §26.1).
+ */
+async function notificarMaterialPublicado(
+  material: { id: string; seccion_id: string; titulo: string; visible: boolean },
+  user: JwtClaims,
+): Promise<void> {
+  if (!material.visible) return;
+  await NotificacionService.notificarEvento({
+    evento: NotificationEvents.MATERIAL_PUBLICADO,
+    actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+    contexto: {
+      seccionId:      material.seccion_id,
+      materialId:     material.id,
+      materialTitulo: material.titulo,
+    },
+  });
 }
 
 export const MaterialesService = {
@@ -108,6 +130,7 @@ export const MaterialesService = {
       newValue: { titulo: material.titulo, tipo: material.tipo },
     });
 
+    await notificarMaterialPublicado(material, user);
     return material;
   },
 
@@ -151,6 +174,7 @@ export const MaterialesService = {
       newValue: { titulo: material.titulo, tipo: material.tipo },
     });
 
+    await notificarMaterialPublicado(material, user);
     return material;
   },
 

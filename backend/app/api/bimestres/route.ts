@@ -6,7 +6,9 @@ import { BimestreService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
+// Lectura del calendario académico: todos los roles autenticados (Docente y
+// Alumno necesitan el bimestre activo para notas/libreta). La escritura es Admin.
+export const GET = withRole(['Admin', 'Secretaria', 'Docente', 'Alumno'], async (req) => {
   const q = parseQuery(req, ListBimestresQuery);
   const data = await BimestreService.list(q);
   return ok(data, 'Listado de bimestres');

@@ -47,6 +47,11 @@ model PerfilUsuario {
   boletas_revisadas       BoletaPago[]
   notificaciones          Notificacion[]
   pagos_generados         Pago[]
+  libretas_generadas      Libreta[]         @relation("libretas_generadas")
+  libretas_aprobadas      Libreta[]         @relation("libretas_aprobadas")
+  libretas_publicadas     Libreta[]         @relation("libretas_publicadas")
+  libretas_conclusiones   LibretaConclusion[]
+  libretas_revisiones     LibretaRevision[]
 
   @@index([entidad_tipo, entidad_id], map: "idx_perfil_entidad")
   @@index([rol], map: "idx_perfil_rol")
@@ -136,6 +141,7 @@ model PeriodoAcademico {
   secciones    Seccion[]
   situaciones  SituacionFinalAlumno[]
   pagos        Pago[]
+  libretas     Libreta[]
 
   @@map("periodo_academico")
   @@schema("academic_schema")
@@ -223,6 +229,7 @@ model Alumno {
   notas               Nota[]
   situaciones         SituacionFinalAlumno[]
   pagos               Pago[]
+  libretas            Libreta[]
 
   @@unique([dni, periodo_id])
   @@index([codigo_siagie], map: "idx_alumno_codigo_siagie")
@@ -259,6 +266,9 @@ model Bimestre {
   cerrado      Boolean          @default(false)
   periodo      PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
   notas        Nota[]
+  libretas     Libreta[]
+  libreta_conclusiones LibretaConclusion[]
+  libreta_asistencias LibretaAsistenciaResumen[]
 
   @@unique([periodo_id, numero])
   @@index([periodo_id, numero], map: "idx_bimestre_periodo")
@@ -278,6 +288,7 @@ model Curso {
   competencias    Competencia[]
   nivel           Nivel               @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
   materiales      Material[]
+  libreta_detalles LibretaDetalle[]
 
   @@unique([nivel_id, nombre])
   @@map("curso")
@@ -293,6 +304,7 @@ model Competencia {
   orden       Int?    @db.SmallInt
   curso       Curso   @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
   notas       Nota[]
+  libreta_detalles LibretaDetalle[]
 
   @@map("competencia")
   @@schema("academic_schema")
@@ -531,18 +543,37 @@ model BoletaPago {
 }
 
 model Notificacion {
-  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  usuario_destino_id String           @db.Uuid
-  tipo               TipoNotificacion
-  titulo             String           @db.VarChar(150)
-  cuerpo             String
-  url_accion         String?
-  leida              Boolean          @default(false)
-  fecha_lectura      DateTime?        @db.Timestamptz(6)
-  created_at         DateTime         @default(now()) @db.Timestamptz(6)
-  destino            PerfilUsuario    @relation(fields: [usuario_destino_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_destino_id    String           @db.Uuid
+  tipo                  TipoNotificacion
+  titulo                String           @db.VarChar(150)
+  cuerpo                String
+  url_accion            String?
+  leida                 Boolean          @default(false)
+  fecha_lectura         DateTime?        @db.Timestamptz(6)
+  created_at            DateTime         @default(now()) @db.Timestamptz(6)
 
+  // ── Sistema de notificaciones por eventos (NOTIFICACIONES_REFACTORIZAR §8) ──
+  actor_id              String?          @db.Uuid
+  actor_rol             String?          @db.VarChar(20)
+  actor_nombre_snapshot String?          @db.VarChar(150)
+  evento                String?          @db.VarChar(50)
+  entidad_tipo          String?          @db.VarChar(40)
+  entidad_id            String?          @db.Uuid
+  prioridad             String           @default("normal") @db.VarChar(10)
+  metadata              Json?
+  canal                 String           @default("app") @db.VarChar(15)
+  idempotency_key       String?          @unique(map: "uq_notificacion_idempotency") @db.VarChar(200)
+  archivada             Boolean          @default(false)
+  expires_at            DateTime?        @db.Timestamptz(6)
+
+  destino               PerfilUsuario    @relation(fields: [usuario_destino_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([usuario_destino_id, leida, created_at(sort: Desc)], map: "idx_notificacion_destino_leida_created")
   @@index([usuario_destino_id, leida], map: "idx_notificacion_destino")
+  @@index([evento], map: "idx_notificacion_evento")
+  @@index([actor_id], map: "idx_notificacion_actor")
+  @@index([entidad_tipo, entidad_id], map: "idx_notificacion_entidad")
   @@map("notificacion")
   @@schema("financial_schema")
 }
@@ -720,5 +751,148 @@ enum AccionIntegracion {
   SYNC
 
   @@map("accion_integracion")
+  @@schema("audit_schema")
+}
+
+enum EstadoLibreta {
+  BORRADOR
+  EN_REVISION
+  OBSERVADA
+  APROBADA
+  PUBLICADA
+  BLOQUEADA
+  ANULADA
+
+  @@map("estado_libreta")
+  @@schema("academic_schema")
+}
+
+model PlantillaLibreta {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre      String   @db.VarChar(120)
+  descripcion String?
+  version     String   @default("1.0") @db.VarChar(20)
+  ruta_archivo String? @db.VarChar(255)
+  formato     String   @default("A4") @db.VarChar(20)
+  activa      Boolean  @default(false)
+  config_json Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  libretas    Libreta[]
+
+  @@map("plantilla_libreta")
+  @@schema("academic_schema")
+}
+
+model Libreta {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alumno_id        String        @db.Uuid
+  periodo_id       String        @db.Uuid
+  bimestre_id      String        @db.Uuid
+  plantilla_id     String?       @db.Uuid
+  estado           EstadoLibreta @default(BORRADOR)
+  version          Int           @default(1)
+  generada_por     String?       @db.Uuid
+  aprobada_por     String?       @db.Uuid
+  publicada_por    String?       @db.Uuid
+  fecha_generacion DateTime?     @db.Timestamptz(6)
+  fecha_aprobacion DateTime?     @db.Timestamptz(6)
+  fecha_publicacion DateTime?    @db.Timestamptz(6)
+  pdf_url          String?
+  pdf_hash         String?       @db.VarChar(64)
+  bloqueada        Boolean       @default(false)
+  motivo_bloqueo   String?
+  created_at       DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime      @default(now()) @db.Timestamptz(6)
+  alumno           Alumno        @relation(fields: [alumno_id], references: [id], onUpdate: NoAction)
+  periodo          PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  bimestre         Bimestre      @relation(fields: [bimestre_id], references: [id], onUpdate: NoAction)
+  plantilla        PlantillaLibreta? @relation(fields: [plantilla_id], references: [id], onUpdate: NoAction)
+  generador        PerfilUsuario? @relation("libretas_generadas", fields: [generada_por], references: [id], onUpdate: NoAction)
+  aprobador        PerfilUsuario? @relation("libretas_aprobadas", fields: [aprobada_por], references: [id], onUpdate: NoAction)
+  publicador       PerfilUsuario? @relation("libretas_publicadas", fields: [publicada_por], references: [id], onUpdate: NoAction)
+  detalles         LibretaDetalle[]
+  conclusiones     LibretaConclusion[]
+  asistencias      LibretaAsistenciaResumen[]
+  revisiones       LibretaRevision[]
+
+  @@unique([alumno_id, periodo_id, bimestre_id])
+  @@index([estado])
+  @@index([bimestre_id])
+  @@map("libreta")
+  @@schema("academic_schema")
+}
+
+model LibretaDetalle {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  libreta_id                String    @db.Uuid
+  curso_id                  String    @db.Uuid
+  curso_nombre_snapshot     String    @db.VarChar(120)
+  competencia_id            String    @db.Uuid
+  competencia_nombre_snapshot String  @db.VarChar(200)
+  tipo_competencia          String    @default("regular") @db.VarChar(20)
+  bimestre_numero           Int       @db.SmallInt
+  nota_vigesimal            Decimal?  @db.Decimal(4, 2)
+  nota_literal              NotaLiteral?
+  calificativo_area         Decimal?  @db.Decimal(4, 2)
+  orden_curso               Int       @default(0) @db.SmallInt
+  orden_competencia         Int       @default(0) @db.SmallInt
+  observacion               String?
+  libreta                   Libreta   @relation(fields: [libreta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  curso                     Curso     @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  competencia               Competencia @relation(fields: [competencia_id], references: [id], onUpdate: NoAction)
+
+  @@index([libreta_id])
+  @@map("libreta_detalle")
+  @@schema("academic_schema")
+}
+
+model LibretaConclusion {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  libreta_id             String   @db.Uuid
+  bimestre_id            String   @db.Uuid
+  conclusion_descriptiva String
+  registrado_por         String   @db.Uuid
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @default(now()) @db.Timestamptz(6)
+  libreta                Libreta  @relation(fields: [libreta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  bimestre               Bimestre @relation(fields: [bimestre_id], references: [id], onUpdate: NoAction)
+  registrador            PerfilUsuario @relation(fields: [registrado_por], references: [id], onUpdate: NoAction)
+
+  @@unique([libreta_id, bimestre_id])
+  @@map("libreta_conclusion")
+  @@schema("academic_schema")
+}
+
+model LibretaAsistenciaResumen {
+  id                          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  libreta_id                  String  @db.Uuid
+  bimestre_id                 String  @db.Uuid
+  inasistencias_justificadas  Int     @default(0) @db.SmallInt
+  inasistencias_injustificadas Int    @default(0) @db.SmallInt
+  tardanzas_justificadas      Int     @default(0) @db.SmallInt
+  tardanzas_injustificadas    Int     @default(0) @db.SmallInt
+  libreta                     Libreta @relation(fields: [libreta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  bimestre                    Bimestre @relation(fields: [bimestre_id], references: [id], onUpdate: NoAction)
+
+  @@unique([libreta_id, bimestre_id])
+  @@map("libreta_asistencia_resumen")
+  @@schema("academic_schema")
+}
+
+model LibretaRevision {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  libreta_id     String        @db.Uuid
+  estado_anterior EstadoLibreta?
+  estado_nuevo   EstadoLibreta
+  observacion    String?
+  usuario_id     String        @db.Uuid
+  created_at     DateTime      @default(now()) @db.Timestamptz(6)
+  libreta        Libreta       @relation(fields: [libreta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuario        PerfilUsuario @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
+
+  @@index([libreta_id])
+  @@index([usuario_id])
+  @@map("libreta_revision")
   @@schema("audit_schema")
 }

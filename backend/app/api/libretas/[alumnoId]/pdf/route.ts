@@ -2,7 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import { errorResponse } from '@/lib/response';
 import { LibretaService } from '@/modules/libretas/libreta.service';
-import { buildLibretaPdf } from '@/pdf/libreta.builder';
+// La libreta se exporta como Word EDITABLE (.docx) con el formato MINEDU,
+// para que el personal complete lo que falte (conclusiones, asistencia, firmas).
+import { buildLibretaDocx } from '@/word/libreta.docx.builder';
 
 export function GET(req: NextRequest, { params }: { params: { alumnoId: string } }) {
   return withAuth(req, async (ctx) => {
@@ -20,16 +22,18 @@ export function GET(req: NextRequest, { params }: { params: { alumnoId: string }
         userAgent ?? undefined,
       );
 
-      const pdfBuffer = await buildLibretaPdf(rows);
+      const meta = await LibretaService.metaPdf(params.alumnoId);
+      const docBuffer = await buildLibretaDocx(rows, meta);
       const alumnoNombre = rows[0]?.alumno_nombre ?? 'alumno';
-      const filename = `libreta_${alumnoNombre.replace(/\s+/g, '_')}.pdf`;
+      const safeName = alumnoNombre.replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ\s]/g, '').replace(/\s+/g, '_');
+      const filename = `libreta_${safeName}.docx`;
 
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(docBuffer, {
         status: 200,
         headers: {
-          'Content-Type':        'application/pdf',
+          'Content-Type':        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'Content-Disposition': `attachment; filename="${filename}"`,
-          'Content-Length':      String(pdfBuffer.length),
+          'Content-Length':      String(docBuffer.length),
         },
       });
     } catch (e) {

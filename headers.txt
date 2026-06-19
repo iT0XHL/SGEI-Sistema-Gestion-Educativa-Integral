@@ -1,0 +1,19 @@
+HTTP/1.1 200 OK
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+access-control-allow-credentials: true
+access-control-allow-headers: Content-Type, Authorization
+access-control-allow-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+access-control-allow-origin: http://localhost:3000
+access-control-max-age: 86400
+vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch
+content-type: application/json
+set-cookie: sgei_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMS0wMDAwMDAwMDAwMDEiLCJwZXJmaWxJZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAyLTAwMDAwMDAwMDAwMSIsInJvbCI6IkFkbWluIiwiZW50aWRhZElkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDItMDAwMDAwMDAwMDAxIiwiZW50aWRhZFRpcG8iOiJhZG1pbiIsIm5vbWJyZSI6ImRpcmVjdG9yQHNnZWkuZWR1LnBlIiwiaWF0IjoxNzgxNzQ4NjQ2LCJleHAiOjE3ODE3Nzc0NDZ9.aEcx789OTkqVS-WlmXN9dxFWaOlUZ-1V9DZ-l82Nu2U; Path=/; Expires=Thu, 18 Jun 2026 10:10:46 GMT; Max-Age=28800; HttpOnly; SameSite=strict
+x-middleware-set-cookie: sgei_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMS0wMDAwMDAwMDAwMDEiLCJwZXJmaWxJZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAyLTAwMDAwMDAwMDAwMSIsInJvbCI6IkFkbWluIiwiZW50aWRhZElkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDItMDAwMDAwMDAwMDAxIiwiZW50aWRhZFRpcG8iOiJhZG1pbiIsIm5vbWJyZSI6ImRpcmVjdG9yQHNnZWkuZWR1LnBlIiwiaWF0IjoxNzgxNzQ4NjQ2LCJleHAiOjE3ODE3Nzc0NDZ9.aEcx789OTkqVS-WlmXN9dxFWaOlUZ-1V9DZ-l82Nu2U; Path=/; Expires=Thu, 18 Jun 2026 10:10:46 GMT; Max-Age=28800; HttpOnly; SameSite=strict
+Date: Thu, 18 Jun 2026 02:10:46 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+

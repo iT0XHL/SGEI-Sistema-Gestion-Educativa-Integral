@@ -8,8 +8,16 @@ export interface Bimestre {
   periodo_id: string;
 }
 
+// El backend responde paginado ({ items, meta }). Desempaquetamos a Bimestre[]
+// para que los consumidores puedan usar .filter()/.find()/.map() directamente.
+interface Paginado<T> { items: T[]; meta?: unknown }
+
 export const bimestresApi = {
-  listar(periodoId?: string): Promise<Bimestre[]> {
-    return apiClient.get<Bimestre[]>('/api/bimestres', periodoId ? { periodoId } : undefined);
+  async listar(periodoId?: string): Promise<Bimestre[]> {
+    const data = await apiClient.get<Paginado<Bimestre> | Bimestre[]>(
+      '/api/bimestres',
+      periodoId ? { periodoId } : undefined,
+    );
+    return Array.isArray(data) ? data : (data.items ?? []);
   },
 };

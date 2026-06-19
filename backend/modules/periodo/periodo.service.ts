@@ -1,6 +1,8 @@
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { PeriodoRepository, BimestreRepository, type ListFilters, type BimestreFilters } from './periodo.repository';
 import type { CreatePeriodoInput, UpdatePeriodoInput, CreateBimestreInput, UpdateBimestreInput } from '@/schemas/periodo.schema';
 import { prisma } from '@/lib/prisma';
@@ -97,6 +99,16 @@ export const PeriodoService = {
       entidadId: id,
       newValue: { activo },
     });
+
+    // Al activar un período, notificar a docentes, secretarías y alumnos (§6 PERIODO_ACTUALIZADO).
+    if (activo) {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.PERIODO_ACTUALIZADO,
+        actor:  { perfilId },
+        contexto: { periodoNombre: result.nombre },
+        idempotencyExtra: id,
+      });
+    }
 
     return result;
   },

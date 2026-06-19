@@ -1,5 +1,7 @@
 import { ForbiddenError, NotFoundError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { NotaRepository } from './nota.repository';
 import type { JwtClaims } from '@/lib/jwt';
 import type {
@@ -81,6 +83,22 @@ export const NotaService = {
       newValue: { total: notas.length, bimestre_id: input.notas[0]?.bimestre_id },
     });
 
+    // Notificar a cada alumno con notas registradas (§6 NOTA_REGISTRADA).
+    // Se deduplica por (alumno, bimestre) para no enviar una notificación por
+    // cada competencia/registro del mismo bimestre (§26.1 evitar ruido).
+    const porAlumno = new Map<string, string>();
+    for (const n of input.notas) {
+      if (!porAlumno.has(n.alumno_id)) porAlumno.set(n.alumno_id, n.bimestre_id);
+    }
+    for (const [alumnoId, bimestreId] of porAlumno) {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.NOTA_REGISTRADA,
+        actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+        contexto: { alumnoId },
+        idempotencyExtra: bimestreId,
+      });
+    }
+
     return { registradas: notas.length, notas };
   },
 
@@ -98,7 +116,18 @@ export const NotaService = {
 
     // La nota cerrada será rechazada por el trigger tg_bloquear_nota_cerrada.
     // El error de PostgreSQL es capturado por errorResponse() como AppError.
-    return NotaRepository.update(id, input, user.perfilId);
+    const actualizada = await NotaRepository.update(id, input, user.perfilId);
+
+    // Notificar al alumno dueño de la nota (§6 NOTA_ACTUALIZADA).
+    // idempotencyExtra con timestamp: cada corrección genera un aviso nuevo.
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.NOTA_ACTUALIZADA,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: { alumnoId: nota.alumno_id, notaId: id },
+      idempotencyExtra: String(Date.now()),
+    });
+
+    return actualizada;
   },
 
   async desbloquear(id: string, input: DesbloquearNotaInput, user: JwtClaims) {

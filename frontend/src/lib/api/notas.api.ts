@@ -42,4 +42,9 @@ export const notasApi = {
   desbloquear(id: string, payload: DesbloquearNotaPayload): Promise<Nota> {
     return apiClient.post<Nota>(`/api/notas/${id}/desbloquear`, payload);
   },
+
+  /** Docente envía/cierra sus notas del bimestre → notifica a secretaría (§8). */
+  enviarASecretaria(docenteId: string, bimestreId: string): Promise<{ count: number }> {
+    return apiClient.post<{ count: number }>('/api/notas/enviar-a-secretaria', { docenteId, bimestreId });
+  },
 };

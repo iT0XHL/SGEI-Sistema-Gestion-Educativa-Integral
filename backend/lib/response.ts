@@ -50,6 +50,24 @@ function buildError(
   );
 }
 
+/** Extrae el mensaje legible de un RAISE EXCEPTION de PostgreSQL (P0001),
+ *  que Prisma envuelve en un ConnectorError verboso. */
+function extractPgMessage(raw: string): string {
+  const m = raw.match(/message:\s*"((?:[^"\\]|\\.)*)"/);
+  return m ? m[1].replace(/\\"/g, '"') : raw;
+}
+
+/** Mapea un mensaje de RAISE EXCEPTION (trigger/SP) a un error de negocio 4xx.
+ *  Devuelve null si el mensaje no corresponde a una regla conocida. */
+function mapSqlRaise(rawMsg: string): NextResponse<ApiError> | null {
+  const msg = extractPgMessage(rawMsg);
+  if (msg.includes('cruce de horario')) return buildError('SCHEDULE_CONFLICT', msg, 422);
+  if (msg.includes('está cerrada') || msg.includes('bimestre')) return buildError('NOTA_CERRADA', msg, 422);
+  if (msg.includes('Acceso denegado')) return buildError('FORBIDDEN', msg, 403);
+  if (msg.includes('escala literal') || msg.includes('observación de rechazo')) return buildError('BUSINESS_RULE', msg, 422);
+  return null;
+}
+
 /**
  * Traduce cualquier excepción a la respuesta de error estándar.
  * Reconoce: AppError, ZodError, errores conocidos de Prisma y los
@@ -105,6 +123,10 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
   }
 
   if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+    // Los RAISE EXCEPTION (P0001) de triggers/SP llegan aquí: primero se intenta
+    // mapearlos a una regla de negocio 4xx antes de caer en el 500 genérico.
+    const mapped = mapSqlRaise(error.message);
+    if (mapped) return mapped;
     console.error('[SGEI DB] Error Prisma desconocido:', error.message);
     const msg = process.env.NODE_ENV === 'development' ? error.message : 'Error interno del servidor';
     return buildError('DB_ERROR', msg, 500);
@@ -112,19 +134,8 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
 
   // 4. RAISE EXCEPTION desde triggers / stored procedures de la DB.
   if (error instanceof Error) {
-    const msg = error.message;
-    if (msg.includes('cruce de horario')) {
-      return buildError('SCHEDULE_CONFLICT', msg, 422);
-    }
-    if (msg.includes('está cerrada') || msg.includes('bimestre')) {
-      return buildError('NOTA_CERRADA', msg, 422);
-    }
-    if (msg.includes('Acceso denegado')) {
-      return buildError('FORBIDDEN', msg, 403);
-    }
-    if (msg.includes('escala literal') || msg.includes('observación de rechazo')) {
-      return buildError('BUSINESS_RULE', msg, 422);
-    }
+    const mapped = mapSqlRaise(error.message);
+    if (mapped) return mapped;
   }
 
   // 5. Fallback — error interno no previsto.

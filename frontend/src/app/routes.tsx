@@ -27,6 +27,9 @@ import SecretariaPagos from './pages/secretaria/SecretariaPagos';
 import SecretariaSIAGIE from './pages/secretaria/SecretariaSIAGIE';
 import SecretariaAlumnos from './pages/secretaria/SecretariaAlumnos';
 import SecretariaSituacionFinal from './pages/secretaria/SecretariaSituacionFinal';
+import SecretariaLibretas from './pages/secretaria/SecretariaLibretas';
+import SecretariaLibretasSeccion from './pages/secretaria/SecretariaLibretasSeccion';
+import SecretariaLibretaPreview from './pages/secretaria/SecretariaLibretaPreview';
 
 export const router = createBrowserRouter([
   { path: '/', Component: Login },
@@ -90,6 +93,9 @@ export const router = createBrowserRouter([
       { path: 'siagie',            Component: SecretariaSIAGIE },
       { path: 'alumnos',           Component: SecretariaAlumnos },
       { path: 'situacion-final',   Component: SecretariaSituacionFinal },
+      { path: 'libretas',                  Component: SecretariaLibretas },
+      { path: 'libretas/secciones/:seccionId', Component: SecretariaLibretasSeccion },
+      { path: 'libretas/:alumnoId',             Component: SecretariaLibretaPreview },
     ],
   },
 
