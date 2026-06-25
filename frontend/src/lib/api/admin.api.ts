@@ -220,7 +220,7 @@ export interface InstitucionDTO {
   nombre_ugel:         string;
   resolucion_creacion: string | null;
   modalidad:           string;
-  gestion:             string; // DB: VARCHAR(20) texto libre (Pública/Privada/Concertada…)
+  gestion:             'Publica' | 'Privada';
   departamento:        string;
   provincia:           string;
   distrito:            string;
@@ -310,9 +310,16 @@ export interface CoberturaEscalaDTO {
 // ── Estructura académica (Nivel / Grado / Sección / Curso) ────
 export interface NivelDTO {
   id:          string;
-  nombre:      'Primaria' | 'Secundaria';
+  nombre:      string;
   descripcion: string | null;
+  _count?:     { grados: number; cursos: number };
 }
+
+export interface CreateNivelPayload {
+  nombre:       string;
+  descripcion?: string | null;
+}
+export type UpdateNivelPayload = Partial<CreateNivelPayload>;
 
 export interface GradoDTO {
   id:      string;
@@ -320,6 +327,17 @@ export interface GradoDTO {
   nombre:  string;
   orden:   number;
   nivel:   { id: string; nombre: string };
+  _count?: { secciones: number; cursos: number };
+}
+
+export interface CreateGradoPayload {
+  nivel_id: string;
+  nombre:   string;
+  orden:    number;
+}
+export interface UpdateGradoPayload {
+  nombre?: string;
+  orden?:  number;
 }
 
 export interface SeccionDTO {
@@ -332,6 +350,25 @@ export interface SeccionDTO {
   docente_tutor_id: string | null;
   aula:             string | null;
   grado:            { id: string; nombre: string; nivel: { id: string; nombre: string } };
+  docente_tutor?:   { id: string; nombres: string; apellido_paterno: string; apellido_materno: string } | null;
+  _count?:          { alumnos: number };
+}
+
+export interface CreateSeccionPayload {
+  grado_id:          string;
+  periodo_id:        string;
+  nombre:            string;
+  turno?:            'Mañana' | 'Tarde' | 'Noche';
+  cupo_maximo:       number;
+  docente_tutor_id?: string | null;
+  aula?:             string | null;
+}
+export interface UpdateSeccionPayload {
+  nombre?:           string;
+  turno?:            'Mañana' | 'Tarde' | 'Noche';
+  cupo_maximo?:      number;
+  docente_tutor_id?: string | null;
+  aula?:             string | null;
 }
 
 export interface CursoDTO {
@@ -342,6 +379,15 @@ export interface CursoDTO {
   descripcion:      string | null;
   horas_semanales:  number | null;
 }
+
+export interface CreateCursoPayload {
+  nivel_id:         string;
+  nombre:           string;
+  codigo_cneb?:     string | null;
+  descripcion?:     string | null;
+  horas_semanales?: number | null;
+}
+export type UpdateCursoPayload = Partial<Omit<CreateCursoPayload, 'nivel_id'>>;
 
 // ── Competencias ──────────────────────────────────────────────
 export interface CompetenciaDTO {
@@ -492,10 +538,9 @@ export interface EstadisticasDTO {
 }
 
 // ── Helpers de conversión de parámetros ──────────────────────
-// Genérico para aceptar interfaces de parámetros (que no tienen firma de índice).
-function toStr<T extends object>(p: T): Record<string, string | undefined> {
+function toStr(p: Record<string, string | number | boolean | undefined>): Record<string, string | undefined> {
   return Object.fromEntries(
-    Object.entries(p).map(([k, v]) => [k, v !== undefined && v !== null ? String(v) : undefined]),
+    Object.entries(p).map(([k, v]) => [k, v !== undefined ? String(v) : undefined]),
   );
 }
 
@@ -708,20 +753,74 @@ export const escalaApi = {
 
 // ── Estructura académica ──────────────────────────────────────
 export const estructuraApi = {
+  // ── Niveles ──────────────────────────────────────────────
   niveles(): Promise<NivelDTO[]> {
     return apiClient.get<NivelDTO[]>('/api/niveles');
   },
+  crearNivel(payload: CreateNivelPayload): Promise<NivelDTO> {
+    return apiClient.post<NivelDTO>('/api/niveles', payload);
+  },
+  actualizarNivel(id: string, payload: UpdateNivelPayload): Promise<NivelDTO> {
+    return apiClient.patch<NivelDTO>(`/api/niveles/${id}`, payload);
+  },
+  eliminarNivel(id: string): Promise<{ id: string; eliminado: boolean }> {
+    return apiClient.delete<{ id: string; eliminado: boolean }>(`/api/niveles/${id}`);
+  },
 
+  // ── Grados ───────────────────────────────────────────────
   grados(nivelId?: string): Promise<GradoDTO[]> {
     return apiClient.get<GradoDTO[]>('/api/grados', nivelId ? { nivelId } : undefined);
   },
+  crearGrado(payload: CreateGradoPayload): Promise<GradoDTO> {
+    return apiClient.post<GradoDTO>('/api/grados', payload);
+  },
+  actualizarGrado(id: string, payload: UpdateGradoPayload): Promise<GradoDTO> {
+    return apiClient.patch<GradoDTO>(`/api/grados/${id}`, payload);
+  },
+  eliminarGrado(id: string): Promise<{ id: string; eliminado: boolean }> {
+    return apiClient.delete<{ id: string; eliminado: boolean }>(`/api/grados/${id}`);
+  },
 
+  // ── Cursos por grado (grado_curso) ───────────────────────
+  cursosDeGrado(gradoId: string): Promise<CursoDTO[]> {
+    return apiClient.get<CursoDTO[]>(`/api/grados/${gradoId}/cursos`);
+  },
+  asignarCursoAGrado(gradoId: string, cursoId: string): Promise<CursoDTO[]> {
+    return apiClient.post<CursoDTO[]>(`/api/grados/${gradoId}/cursos`, { curso_id: cursoId });
+  },
+  quitarCursoDeGrado(gradoId: string, cursoId: string): Promise<CursoDTO[]> {
+    return apiClient.delete<CursoDTO[]>(`/api/grados/${gradoId}/cursos/${cursoId}`);
+  },
+  aplicarCursosPredeterminados(gradoId: string): Promise<CursoDTO[]> {
+    return apiClient.post<CursoDTO[]>(`/api/grados/${gradoId}/cursos/defaults`, {});
+  },
+
+  // ── Secciones ────────────────────────────────────────────
   secciones(params: { periodoId?: string; gradoId?: string } = {}): Promise<SeccionDTO[]> {
     return apiClient.get<SeccionDTO[]>('/api/secciones', toStr(params));
   },
+  crearSeccion(payload: CreateSeccionPayload): Promise<SeccionDTO> {
+    return apiClient.post<SeccionDTO>('/api/secciones', payload);
+  },
+  actualizarSeccion(id: string, payload: UpdateSeccionPayload): Promise<SeccionDTO> {
+    return apiClient.patch<SeccionDTO>(`/api/secciones/${id}`, payload);
+  },
+  eliminarSeccion(id: string): Promise<{ id: string; eliminado: boolean }> {
+    return apiClient.delete<{ id: string; eliminado: boolean }>(`/api/secciones/${id}`);
+  },
 
+  // ── Cursos (catálogo por nivel) ──────────────────────────
   cursos(nivelId?: string): Promise<CursoDTO[]> {
     return apiClient.get<CursoDTO[]>('/api/cursos', nivelId ? { nivelId } : undefined);
+  },
+  crearCurso(payload: CreateCursoPayload): Promise<CursoDTO> {
+    return apiClient.post<CursoDTO>('/api/cursos', payload);
+  },
+  actualizarCurso(id: string, payload: UpdateCursoPayload): Promise<CursoDTO> {
+    return apiClient.put<CursoDTO>(`/api/cursos/${id}`, payload);
+  },
+  eliminarCurso(id: string): Promise<{ id: string; eliminado: boolean }> {
+    return apiClient.delete<{ id: string; eliminado: boolean }>(`/api/cursos/${id}`);
   },
 };
 

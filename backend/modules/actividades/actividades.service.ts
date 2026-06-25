@@ -8,8 +8,6 @@
 // ============================================================
 import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
-import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
-import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
 import { AsistenciaAlumnosRepository } from '@/modules/asistencias/asistencia-alumnos.repository';
@@ -38,22 +36,6 @@ async function assertDocenteEnSeccion(docenteId: string, seccionId: string) {
   if (!tiene) {
     throw new ForbiddenError('SECCION_NO_ASIGNADA', 'No tienes una asignación activa en esta sección.');
   }
-}
-
-/** Notifica ACTIVIDAD_PUBLICADA a los alumnos de la sección (§6). */
-async function notificarActividadPublicada(
-  actividad: { id: string; seccion_id: string; titulo: string },
-  user: JwtClaims,
-): Promise<void> {
-  await NotificacionService.notificarEvento({
-    evento: NotificationEvents.ACTIVIDAD_PUBLICADA,
-    actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
-    contexto: {
-      seccionId:       actividad.seccion_id,
-      actividadId:     actividad.id,
-      actividadTitulo: actividad.titulo,
-    },
-  });
 }
 
 export const ActividadesService = {
@@ -126,7 +108,6 @@ export const ActividadesService = {
       newValue: { titulo: actividad.titulo, tipo: actividad.tipo },
     });
 
-    await notificarActividadPublicada(actividad, user);
     return actividad;
   },
 
@@ -149,7 +130,7 @@ export const ActividadesService = {
       file,
     );
 
-    const actividad = await ActividadesRepository.create({
+    return ActividadesRepository.create({
       docente_id: user.entidadId,
       curso_id: data.curso_id,
       seccion_id: data.seccion_id,
@@ -160,9 +141,6 @@ export const ActividadesService = {
       puntaje_maximo: data.puntaje_maximo,
       url_adjunto: objectPath,
     });
-
-    await notificarActividadPublicada(actividad, user);
-    return actividad;
   },
 
   async update(id: string, input: UpdateActividadInput, user: JwtClaims) {
@@ -364,27 +342,12 @@ export const ActividadesService = {
       }
     }
 
-    const entregaCalificada = await ActividadesRepository.updateEntrega(entregaId, {
+    return ActividadesRepository.updateEntrega(entregaId, {
       ...(input.nota !== undefined ? { nota: input.nota } : {}),
       ...(input.observacion_docente !== undefined ? { observacion_docente: input.observacion_docente } : {}),
       estado: input.estado ?? 'calificado',
       fecha_calificacion: new Date(),
     });
-
-    // Notificar al alumno dueño de la entrega (§6 TAREA_CALIFICADA).
-    await NotificacionService.notificarEvento({
-      evento: NotificationEvents.TAREA_CALIFICADA,
-      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
-      contexto: {
-        alumnoId:        entrega.alumno_id,
-        entregaId,
-        actividadId:     actividad.id,
-        actividadTitulo: actividad.titulo,
-      },
-      idempotencyExtra: String(Date.now()),
-    });
-
-    return entregaCalificada;
   },
 
   /** URL firmada del archivo adjunto de la actividad (docente). */

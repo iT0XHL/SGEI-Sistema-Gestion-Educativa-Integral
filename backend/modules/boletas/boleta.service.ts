@@ -1,7 +1,5 @@
 import { ForbiddenError, NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
-import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
-import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
 import { BoletaRepository } from './boleta.repository';
@@ -88,17 +86,6 @@ export const BoletaService = {
       newValue: { pago_id: input.pago_id, nombre_archivo: archivo.name },
     });
 
-    // Notificar a secretarías y administradores para revisión (§6 BOLETA_SUBIDA).
-    await NotificacionService.notificarEvento({
-      evento: NotificationEvents.BOLETA_SUBIDA,
-      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
-      contexto: {
-        boletaId:     boleta.id,
-        alumnoId:     user.entidadId,
-        alumnoNombre: user.nombre,
-      },
-    });
-
     return boleta;
   },
 
@@ -137,22 +124,6 @@ export const BoletaService = {
       oldValue: { estado_revision: 'En_Revision' },
       newValue: { estado_revision: input.nuevo_estado, observacion: input.observacion_rechazo },
     });
-
-    // Notificar al alumno (§6 BOLETA_REVISADA).
-    // IMPORTANTE (§26.18): el SP financial_schema.revisar_boleta YA crea la
-    // notificación cuando la boleta es Rechazada. Para evitar duplicados, aquí
-    // solo se notifica el caso Aprobada; el caso Rechazada lo gestiona el SP.
-    if (input.nuevo_estado === 'Aprobada') {
-      await NotificacionService.notificarEvento({
-        evento: NotificationEvents.BOLETA_REVISADA,
-        actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
-        contexto: {
-          alumnoId: boleta.pago.alumno_id,
-          boletaId: input.boleta_id,
-        },
-        idempotencyExtra: input.nuevo_estado,
-      });
-    }
 
     return BoletaRepository.findOne(input.boleta_id);
   },

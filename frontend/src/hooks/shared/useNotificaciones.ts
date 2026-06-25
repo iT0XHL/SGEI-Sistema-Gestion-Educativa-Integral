@@ -8,11 +8,10 @@ import type { CrearNotificacionPayload } from '../../types/notificacion';
  */
 export function useNotificaciones(leida?: boolean) {
   return useQuery({
-    queryKey:             ['notificaciones', 'lista', leida],
-    queryFn:              () => notificacionesApi.listar(leida),
-    staleTime:            1000 * 30,
-    refetchInterval:      1000 * 60,   // respaldo si el canal SSE cae
-    refetchOnWindowFocus: true,        // recarga al volver a la pestaña (§26.9)
+    queryKey:        ['notificaciones', 'lista', leida],
+    queryFn:         () => notificacionesApi.listar(leida),
+    staleTime:       1000 * 30,
+    refetchInterval: 1000 * 60,
   });
 }
 
@@ -22,11 +21,10 @@ export function useNotificaciones(leida?: boolean) {
  */
 export function useContarNoLeidas() {
   return useQuery({
-    queryKey:             ['notificaciones', 'contar'],
-    queryFn:              () => notificacionesApi.contar(),
-    staleTime:            1000 * 20,
-    refetchInterval:      1000 * 30,   // respaldo si el canal SSE cae
-    refetchOnWindowFocus: true,        // recarga al volver a la pestaña (§26.9)
+    queryKey:        ['notificaciones', 'contar'],
+    queryFn:         () => notificacionesApi.contar(),
+    staleTime:       1000 * 20,
+    refetchInterval: 1000 * 30,
   });
 }
 

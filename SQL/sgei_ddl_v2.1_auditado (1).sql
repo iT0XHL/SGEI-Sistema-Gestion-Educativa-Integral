@@ -1483,3 +1483,83 @@ CREATE POLICY "docente_actualiza_entregas_de_su_curso" ON academic_schema.entreg
             )
         )
     );
+
+-- ============================================================
+--  grado_curso — Cursos asignados a un grado concreto.
+--  (Añadido: gestión de estructura académica desde el panel Admin.)
+--  Al crear un grado se copian los cursos de su nivel como
+--  predeterminados; las secciones heredan los cursos de su grado.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS academic_schema.grado_curso (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    grado_id   UUID NOT NULL REFERENCES academic_schema.grado(id) ON DELETE CASCADE,
+    curso_id   UUID NOT NULL REFERENCES academic_schema.curso(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT grado_curso_grado_curso_key UNIQUE (grado_id, curso_id)
+);
+
+-- ============================================================
+--  Módulo Simulacro de Admisión
+--  (Añadido: exámenes de simulacro de admisión por grado.)
+-- ============================================================
+DO $$ BEGIN
+  CREATE TYPE academic_schema.estado_simulacro AS ENUM ('Borrador','Activo','Concluido');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS academic_schema.simulacro (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    periodo_id  UUID NOT NULL REFERENCES academic_schema.periodo_academico(id),
+    bimestre_id UUID REFERENCES academic_schema.bimestre(id),
+    numero      SMALLINT NOT NULL CHECK (numero BETWEEN 1 AND 4),
+    nombre      VARCHAR(60) NOT NULL,
+    estado      academic_schema.estado_simulacro NOT NULL DEFAULT 'Borrador',
+    created_by  UUID,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_simulacro_periodo_numero UNIQUE (periodo_id, numero)
+);
+-- Solo un simulacro Activo por período:
+CREATE UNIQUE INDEX IF NOT EXISTS uq_simulacro_activo
+    ON academic_schema.simulacro (periodo_id) WHERE estado = 'Activo';
+-- Un simulacro como máximo por bimestre (cuando se asocia a uno):
+CREATE UNIQUE INDEX IF NOT EXISTS uq_simulacro_bimestre
+    ON academic_schema.simulacro (periodo_id, bimestre_id) WHERE bimestre_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS academic_schema.simulacro_pregunta (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    simulacro_id       UUID NOT NULL REFERENCES academic_schema.simulacro(id) ON DELETE CASCADE,
+    docente_id         UUID NOT NULL REFERENCES academic_schema.docente(id),
+    curso_id           UUID NOT NULL REFERENCES academic_schema.curso(id),
+    grado_id           UUID NOT NULL REFERENCES academic_schema.grado(id),
+    seccion_id         UUID REFERENCES academic_schema.seccion(id),
+    enunciado          TEXT NOT NULL,
+    imagen_url         TEXT,
+    alt_a              TEXT NOT NULL,
+    alt_b              TEXT NOT NULL,
+    alt_c              TEXT NOT NULL,
+    alt_d              TEXT NOT NULL,
+    alt_e              TEXT NOT NULL,
+    respuesta_correcta CHAR(1) NOT NULL CHECK (respuesta_correcta IN ('A','B','C','D','E')),
+    orden              SMALLINT NOT NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sim_pregunta_filtro
+    ON academic_schema.simulacro_pregunta (simulacro_id, grado_id, curso_id);
+
+CREATE TABLE IF NOT EXISTS academic_schema.simulacro_examen (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    simulacro_id UUID NOT NULL REFERENCES academic_schema.simulacro(id) ON DELETE CASCADE,
+    grado_id     UUID NOT NULL REFERENCES academic_schema.grado(id),
+    curso_id     UUID NOT NULL REFERENCES academic_schema.curso(id),
+    orden        SMALLINT NOT NULL,
+    CONSTRAINT uq_sim_examen_curso UNIQUE (simulacro_id, grado_id, curso_id),
+    CONSTRAINT uq_sim_examen_orden UNIQUE (simulacro_id, grado_id, orden)
+);
+
+CREATE TABLE IF NOT EXISTS academic_schema.simulacro_examen_pregunta (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    examen_id   UUID NOT NULL REFERENCES academic_schema.simulacro_examen(id) ON DELETE CASCADE,
+    pregunta_id UUID NOT NULL REFERENCES academic_schema.simulacro_pregunta(id),
+    orden       SMALLINT NOT NULL,
+    CONSTRAINT uq_sim_examen_preg_orden UNIQUE (examen_id, orden),
+    CONSTRAINT uq_sim_examen_preg_uniq  UNIQUE (examen_id, pregunta_id)
+);

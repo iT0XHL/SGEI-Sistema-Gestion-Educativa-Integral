@@ -81,7 +81,6 @@ export const AlumnosRepository = {
         condicion_especial: true,
         codigo_siagie: true,
         activo: true,
-        bloqueo_manual: true,
         seccion_id: true,
         periodo_id: true,
         perfil_usuario_id: true,
@@ -145,7 +144,6 @@ export const AlumnosRepository = {
           condicion_especial: true,
           codigo_siagie: true,
           activo: true,
-          bloqueo_manual: true,
         },
       });
     });
@@ -183,11 +181,11 @@ export const AlumnosRepository = {
     });
   },
 
-  async setBloqueoManual(alumnoId: string, bloqueoManual: boolean, perfilId: string) {
+  async setBloqueoManual(alumnoId: string, bloqueado: boolean, perfilId: string) {
     return withAuditContext(perfilId, async (tx) => {
       return tx.alumno.update({
         where: { id: alumnoId },
-        data: { bloqueo_manual: bloqueoManual },
+        data: { bloqueo_manual: bloqueado },
       });
     });
   },

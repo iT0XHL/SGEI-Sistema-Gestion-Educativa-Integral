@@ -11,6 +11,7 @@ import DocenteDashboard from './pages/docente/DocenteDashboard';
 import DocenteAsistencia from './pages/docente/DocenteAsistencia';
 import DocenteTareas from './pages/docente/DocenteTareas';
 import DocenteNotas from './pages/docente/DocenteNotas';
+import DocenteSimulacro from './pages/docente/DocenteSimulacro';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminCuentas from './pages/admin/AdminCuentas';
 import AdminHorarios from './pages/admin/AdminHorarios';
@@ -21,15 +22,15 @@ import AdminEscalaLiteral from './pages/admin/AdminEscalaLiteral';
 import AdminInstitucion from './pages/admin/AdminInstitucion';
 import AdminCompetencias from './pages/admin/AdminCompetencias';
 import AdminBloqueo from './pages/admin/AdminBloqueo';
+import AdminAsignaciones from './pages/admin/AdminAsignaciones';
+import AdminEstructura from './pages/admin/AdminEstructura';
+import AdminSimulacro from './pages/admin/AdminSimulacro';
 import SecretariaDashboard from './pages/secretaria/SecretariaDashboard';
 import SecretariaVouchers from './pages/secretaria/SecretariaVouchers';
 import SecretariaPagos from './pages/secretaria/SecretariaPagos';
 import SecretariaSIAGIE from './pages/secretaria/SecretariaSIAGIE';
 import SecretariaAlumnos from './pages/secretaria/SecretariaAlumnos';
 import SecretariaSituacionFinal from './pages/secretaria/SecretariaSituacionFinal';
-import SecretariaLibretas from './pages/secretaria/SecretariaLibretas';
-import SecretariaLibretasSeccion from './pages/secretaria/SecretariaLibretasSeccion';
-import SecretariaLibretaPreview from './pages/secretaria/SecretariaLibretaPreview';
 
 export const router = createBrowserRouter([
   { path: '/', Component: Login },
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
       { path: 'asistencia',  Component: DocenteAsistencia },
       { path: 'tareas',      Component: DocenteTareas },
       { path: 'notas',       Component: DocenteNotas },
+      { path: 'simulacro',   Component: DocenteSimulacro },
     ],
   },
 
@@ -69,6 +71,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: () => <Navigate to="inicio" replace /> },
       { path: 'inicio',        Component: AdminDashboard },
+      { path: 'estructura',    Component: AdminEstructura },
       { path: 'cuentas',       Component: AdminCuentas },
       { path: 'horarios',      Component: AdminHorarios },
       { path: 'asistencia',    Component: AdminAsistenciaDocente },
@@ -78,6 +81,9 @@ export const router = createBrowserRouter([
       { path: 'escala',        Component: AdminEscalaLiteral },
       { path: 'institucion',   Component: AdminInstitucion },
       { path: 'competencias',  Component: AdminCompetencias },
+      { path: 'asignaciones',  Component: AdminAsignaciones },
+      { path: 'bloqueo',       Component: AdminBloqueo },
+      { path: 'simulacro',     Component: AdminSimulacro },
     ],
   },
 
@@ -93,9 +99,6 @@ export const router = createBrowserRouter([
       { path: 'siagie',            Component: SecretariaSIAGIE },
       { path: 'alumnos',           Component: SecretariaAlumnos },
       { path: 'situacion-final',   Component: SecretariaSituacionFinal },
-      { path: 'libretas',                  Component: SecretariaLibretas },
-      { path: 'libretas/secciones/:seccionId', Component: SecretariaLibretasSeccion },
-      { path: 'libretas/:alumnoId',             Component: SecretariaLibretaPreview },
     ],
   },
 

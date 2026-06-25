@@ -46,10 +46,12 @@ async function main() {
   console.log('📚 Procesando docentes...');
   const docentesSinNombres = await prisma.docente.findMany({
     where: {
-      // nombres/apellidos son String NOT NULL en el schema: solo pueden estar vacíos.
       OR: [
+        { nombres: null },
         { nombres: '' },
+        { apellido_paterno: null },
         { apellido_paterno: '' },
+        { apellido_materno: null },
         { apellido_materno: '' },
       ],
     },
@@ -85,8 +87,11 @@ async function main() {
   const alumnosSinNombres = await prisma.alumno.findMany({
     where: {
       OR: [
+        { nombres: null },
         { nombres: '' },
+        { apellido_paterno: null },
         { apellido_paterno: '' },
+        { apellido_materno: null },
         { apellido_materno: '' },
       ],
     },

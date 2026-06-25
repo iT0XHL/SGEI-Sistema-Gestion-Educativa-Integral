@@ -22,7 +22,7 @@ export interface AsistenciaDTO {
 export const AsistenciaService = {
   async list(filters: ListFilters) {
     const { rows, total } = await AsistenciaRepository.list(filters);
-    const dtos: AsistenciaDTO[] = rows.map((r) => ({
+    const dtos = rows.map((r) => ({
       id: r.id,
       docente_id: r.docente_id,
       docente: r.docente,
@@ -30,8 +30,7 @@ export const AsistenciaService = {
       estado: r.estado,
       justificacion: r.justificacion,
       hora_registro: r.hora_registro,
-      // Aplanar registrador.credencial.usuario_login → { usuario_login }
-      registrador: r.registrador ? { usuario_login: r.registrador.credencial.usuario_login } : undefined,
+      registrador: r.registrador,
     }));
     return paginate(dtos, filters.page, filters.limit, total);
   },
@@ -47,7 +46,7 @@ export const AsistenciaService = {
       estado: row.estado,
       justificacion: row.justificacion,
       hora_registro: row.hora_registro,
-      registrador: row.registrador ? { usuario_login: row.registrador.credencial.usuario_login } : undefined,
+      registrador: row.registrador,
     };
   },
 

@@ -5,7 +5,7 @@
 //  · BASE_URL apunta al backend Next.js corriendo en :3001.
 // ============================================================
 
-export const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 export interface ApiSuccess<T> {
   success: true;

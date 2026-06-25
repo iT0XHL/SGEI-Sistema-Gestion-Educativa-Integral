@@ -108,13 +108,31 @@ export const EscalaRepo = {
 // ── Nivel ─────────────────────────────────────────────────────
 export const NivelRepo = {
   list() {
-    return prisma.nivel.findMany({ orderBy: { nombre: 'asc' } });
+    return prisma.nivel.findMany({
+      orderBy: { nombre: 'asc' },
+      include: { _count: { select: { grados: true, cursos: true } } },
+    });
   },
   findById(id: string) {
     return prisma.nivel.findUnique({ where: { id } });
   },
+  findByNombre(nombre: string) {
+    return prisma.nivel.findUnique({ where: { nombre } });
+  },
   create(data: Prisma.NivelCreateInput) {
     return prisma.nivel.create({ data });
+  },
+  update(id: string, data: Prisma.NivelUpdateInput) {
+    return prisma.nivel.update({ where: { id }, data });
+  },
+  delete(id: string) {
+    return prisma.nivel.delete({ where: { id } });
+  },
+  countDeps(id: string) {
+    return prisma.$transaction([
+      prisma.grado.count({ where: { nivel_id: id } }),
+      prisma.curso.count({ where: { nivel_id: id } }),
+    ]);
   },
 };
 
@@ -124,7 +142,10 @@ export const GradoRepo = {
     return prisma.grado.findMany({
       where: nivelId ? { nivel_id: nivelId } : undefined,
       orderBy: [{ nivel_id: 'asc' }, { orden: 'asc' }],
-      include: { nivel: { select: { nombre: true } } },
+      include: {
+        nivel: { select: { id: true, nombre: true } },
+        _count: { select: { secciones: true, cursos: true } },
+      },
     });
   },
   findById(id: string) {
@@ -132,6 +153,15 @@ export const GradoRepo = {
   },
   create(data: Prisma.GradoUncheckedCreateInput) {
     return prisma.grado.create({ data });
+  },
+  update(id: string, data: Prisma.GradoUpdateInput) {
+    return prisma.grado.update({ where: { id }, data });
+  },
+  delete(id: string) {
+    return prisma.grado.delete({ where: { id } });
+  },
+  countSecciones(id: string) {
+    return prisma.seccion.count({ where: { grado_id: id } });
   },
 };
 
@@ -153,6 +183,10 @@ export const SeccionRepo = {
             nivel:  { select: { id: true, nombre: true } },
           },
         },
+        docente_tutor: {
+          select: { id: true, nombres: true, apellido_paterno: true, apellido_materno: true },
+        },
+        _count: { select: { alumnos: true } },
       },
     });
   },
@@ -161,6 +195,18 @@ export const SeccionRepo = {
   },
   create(data: Prisma.SeccionUncheckedCreateInput) {
     return prisma.seccion.create({ data });
+  },
+  update(id: string, data: Prisma.SeccionUpdateInput) {
+    return prisma.seccion.update({ where: { id }, data });
+  },
+  delete(id: string) {
+    return prisma.seccion.delete({ where: { id } });
+  },
+  countDeps(id: string) {
+    return prisma.$transaction([
+      prisma.alumno.count({ where: { seccion_id: id } }),
+      prisma.asignacionDocente.count({ where: { seccion_id: id } }),
+    ]);
   },
 };
 
@@ -181,6 +227,51 @@ export const CursoRepo = {
   },
   update(id: string, data: Prisma.CursoUpdateInput) {
     return prisma.curso.update({ where: { id }, data });
+  },
+  delete(id: string) {
+    return prisma.curso.delete({ where: { id } });
+  },
+  countDeps(id: string) {
+    return prisma.$transaction([
+      prisma.asignacionDocente.count({ where: { curso_id: id } }),
+      prisma.competencia.count({ where: { curso_id: id } }),
+    ]);
+  },
+};
+
+// ── Grado ↔ Curso (cursos por grado) ──────────────────────────
+export const GradoCursoRepo = {
+  listByGrado(gradoId: string) {
+    return prisma.gradoCurso.findMany({
+      where: { grado_id: gradoId },
+      orderBy: { curso: { nombre: 'asc' } },
+      include: {
+        curso: {
+          select: {
+            id: true, nivel_id: true, nombre: true,
+            codigo_cneb: true, descripcion: true, horas_semanales: true,
+          },
+        },
+      },
+    });
+  },
+  add(gradoId: string, cursoId: string) {
+    return prisma.gradoCurso.create({ data: { grado_id: gradoId, curso_id: cursoId } });
+  },
+  remove(gradoId: string, cursoId: string) {
+    return prisma.gradoCurso.deleteMany({ where: { grado_id: gradoId, curso_id: cursoId } });
+  },
+  /** Copia todos los cursos del nivel al grado, ignorando los ya existentes. */
+  async addNivelDefaults(gradoId: string, nivelId: string) {
+    const cursos = await prisma.curso.findMany({
+      where: { nivel_id: nivelId },
+      select: { id: true },
+    });
+    if (cursos.length === 0) return { count: 0 };
+    return prisma.gradoCurso.createMany({
+      data: cursos.map((c) => ({ grado_id: gradoId, curso_id: c.id })),
+      skipDuplicates: true,
+    });
   },
 };
 

@@ -1,99 +1,78 @@
-import { useState } from 'react';
-import { Lock, Unlock, AlertCircle, CheckCircle2, Search, X } from 'lucide-react';
-import { ALL_PAYMENTS_SEC } from '../../data/mockData';
+import { useState, useEffect } from 'react';
+import { Lock, Unlock, AlertCircle, Search, X, Loader2 } from 'lucide-react';
+import { alumnosAdminApi, type AlumnoResumenDTO } from '../../../lib/api/admin.api';
 
 interface StudentBlock {
-  id: string; studentName: string; grade: string;
-  total: number; paid: number; pending: number;
-  status: 'paid' | 'partial' | 'overdue';
+  id: string;
+  studentName: string;
+  grade: string;
   blocked: boolean;
+}
+
+function toRow(a: AlumnoResumenDTO): StudentBlock {
+  const studentName = `${a.apellido_paterno} ${a.apellido_materno}, ${a.nombres}`.trim();
+  const grade = `${a.seccion?.grado?.nivel?.nombre ?? ''} · ${a.seccion?.grado?.nombre ?? ''} "${a.seccion?.nombre ?? ''}"`.trim();
+  return { id: a.id, studentName, grade, blocked: a.bloqueo_manual };
 }
 
 export default function AdminBloqueo() {
   const [search, setSearch] = useState('');
-  const [students, setStudents] = useState<StudentBlock[]>(
-    ALL_PAYMENTS_SEC.map(s => ({
-      ...s,
-      blocked: s.status === 'overdue' || (s.status === 'partial' && s.pending > 1050),
-    }))
-  );
+  const [students, setStudents] = useState<StudentBlock[]>([]);
+  const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // ── Carga inicial desde la API real ───────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await alumnosAdminApi.listar({ activo: 'true', limit: 200 });
+        if (!cancelled) setStudents(res.items.map(toRow));
+      } catch {
+        if (!cancelled) setErrorMsg('No se pudieron cargar los alumnos.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filtered = students.filter(s =>
     s.studentName.toLowerCase().includes(search.toLowerCase()) ||
     s.grade.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ── Corrección 3: toggleBlock con optimistic update + revert en fallo ─────
+  // ── Toggle individual con optimistic update + revert en fallo ─────────────
   async function toggleBlock(id: string) {
     const previousStudents = students;
-    setStudents(prev => prev.map(s => s.id === id ? { ...s, blocked: !s.blocked } : s));
+    const student = students.find(s => s.id === id);
+    if (!student) return;
+    const nuevoEstado = !student.blocked;
 
-    const student    = students.find(s => s.id === id);
-    const nuevoEstado = !student?.blocked;
+    setStudents(prev => prev.map(s => s.id === id ? { ...s, blocked: nuevoEstado } : s));
 
     try {
-      // En producción: descommentar la llamada real
-      // const res = await fetch(`/api/alumnos/${id}`, {
-      //   method: 'PATCH',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ bloqueo_manual: nuevoEstado }),
-      // });
-      // if (!res.ok) throw new Error('Error al actualizar bloqueo');
-
-      // Mock: simular latencia
-      await new Promise(r => setTimeout(r, 300));
-      void nuevoEstado;
+      await alumnosAdminApi.setBloqueo(id, nuevoEstado);
     } catch {
-      // Revertir si la API falla
       setStudents(previousStudents);
       setErrorMsg('No se pudo actualizar el estado de bloqueo.');
     }
   }
 
-  // ── Bloqueo masivo con optimistic update ──────────────────────────────────
-  async function blockAll() {
+  // ── Bloqueo masivo ────────────────────────────────────────────────────────
+  async function setAll(blocked: boolean) {
     const previousStudents = students;
-    setStudents(prev => prev.map(s => s.status !== 'paid' ? { ...s, blocked: true } : s));
+    const targets = students.filter(s => s.blocked !== blocked);
+    if (targets.length === 0) return;
+
+    setStudents(prev => prev.map(s => ({ ...s, blocked })));
 
     try {
-      // En producción: PATCH en lote o iteración
-      // await Promise.all(
-      //   students
-      //     .filter(s => s.status !== 'paid')
-      //     .map(s => fetch(`/api/alumnos/${s.id}`, {
-      //       method: 'PATCH',
-      //       headers: { 'Content-Type': 'application/json' },
-      //       body: JSON.stringify({ bloqueo_manual: true }),
-      //     }))
-      // );
-
-      await new Promise(r => setTimeout(r, 400));
+      await Promise.all(targets.map(s => alumnosAdminApi.setBloqueo(s.id, blocked)));
     } catch {
       setStudents(previousStudents);
-      setErrorMsg('No se pudo aplicar el bloqueo masivo. Intenta nuevamente.');
-    }
-  }
-
-  // ── Desbloqueo masivo con optimistic update ───────────────────────────────
-  async function unblockAll() {
-    const previousStudents = students;
-    setStudents(prev => prev.map(s => ({ ...s, blocked: false })));
-
-    try {
-      // En producción:
-      // await Promise.all(
-      //   students.map(s => fetch(`/api/alumnos/${s.id}`, {
-      //     method: 'PATCH',
-      //     headers: { 'Content-Type': 'application/json' },
-      //     body: JSON.stringify({ bloqueo_manual: false }),
-      //   }))
-      // );
-
-      await new Promise(r => setTimeout(r, 400));
-    } catch {
-      setStudents(previousStudents);
-      setErrorMsg('No se pudo aplicar el desbloqueo masivo. Intenta nuevamente.');
+      setErrorMsg(`No se pudo aplicar el ${blocked ? 'bloqueo' : 'desbloqueo'} masivo. Intenta nuevamente.`);
     }
   }
 
@@ -105,7 +84,7 @@ export default function AdminBloqueo() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Bloqueo de Documentos</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Control de descarga de libretas por estado de pago</p>
+          <p className="text-sm text-slate-500 mt-0.5">Control manual de descarga de libretas por alumno</p>
         </div>
         <div className="relative max-w-xs w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
@@ -120,7 +99,7 @@ export default function AdminBloqueo() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center">
           <p className="text-2xl font-bold text-red-700">{blockedCount}</p>
           <p className="text-sm font-medium text-red-600">Libretas bloqueadas</p>
@@ -128,10 +107,6 @@ export default function AdminBloqueo() {
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
           <p className="text-2xl font-bold text-emerald-700">{unblockedCount}</p>
           <p className="text-sm font-medium text-emerald-600">Con acceso activo</p>
-        </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
-          <p className="text-2xl font-bold text-amber-700">{students.filter(s=>s.status!=='paid').length}</p>
-          <p className="text-sm font-medium text-amber-600">Con deudas pendientes</p>
         </div>
       </div>
 
@@ -152,8 +127,8 @@ export default function AdminBloqueo() {
         <div>
           <p className="text-sm font-semibold text-blue-800">Política de bloqueo</p>
           <p className="text-sm text-blue-700 mt-0.5">
-            Los alumnos con estado <strong>Vencido</strong> o deuda mayor a 3 cuotas tienen la descarga de libreta bloqueada automáticamente.
-            El desbloqueo manual requiere confirmación del Director.
+            El bloqueo manual impide la descarga de la libreta del alumno aunque no tenga deuda.
+            El desbloqueo requiere confirmación del Director.
           </p>
         </div>
       </div>
@@ -161,14 +136,16 @@ export default function AdminBloqueo() {
       {/* Quick actions */}
       <div className="flex gap-3">
         <button
-          onClick={blockAll}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm font-medium transition-colors"
+          onClick={() => setAll(true)}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm font-medium transition-colors disabled:opacity-50"
         >
-          <Lock className="size-4" /> Bloquear todos con deuda
+          <Lock className="size-4" /> Bloquear todos
         </button>
         <button
-          onClick={unblockAll}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-medium transition-colors"
+          onClick={() => setAll(false)}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-medium transition-colors disabled:opacity-50"
         >
           <Unlock className="size-4" /> Desbloquear todos
         </button>
@@ -179,40 +156,25 @@ export default function AdminBloqueo() {
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
           <h2 className="text-sm font-semibold text-slate-700">Estado por alumno</h2>
         </div>
-        <div className="divide-y divide-slate-50">
-          {filtered.map(student => {
-            const pctPaid = Math.round(student.paid / student.total * 100);
-            return (
+
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-slate-400">
+            <Loader2 className="size-5 animate-spin" />
+            <span className="text-sm">Cargando alumnos…</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-400">No hay alumnos que coincidan.</div>
+        ) : (
+          <div className="divide-y divide-slate-50">
+            {filtered.map(student => (
               <div key={student.id} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors">
                 <div className="flex size-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 text-xs font-semibold shrink-0">
-                  {student.studentName.split(' ').map(n=>n[0]).slice(0,2).join('')}
+                  {student.studentName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">{student.studentName}</p>
-                  <p className="text-xs text-slate-400">{student.grade}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden max-w-[120px]">
-                      <div
-                        className={`h-full rounded-full ${
-                          pctPaid === 100 ? 'bg-emerald-500' :
-                          pctPaid > 50   ? 'bg-amber-400' : 'bg-red-400'
-                        }`}
-                        style={{ width: `${pctPaid}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-slate-500">
-                      S/ {student.paid.toLocaleString()} / S/ {student.total.toLocaleString()} ({pctPaid}%)
-                    </span>
-                  </div>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{student.studentName}</p>
+                  <p className="text-xs text-slate-400 truncate">{student.grade}</p>
                 </div>
-
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
-                  student.status === 'paid'    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                  student.status === 'partial' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                  'bg-red-50 text-red-700 border-red-200'
-                }`}>
-                  {student.status === 'paid' ? 'Al día' : student.status === 'partial' ? 'Parcial' : 'Vencido'}
-                </span>
 
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`flex items-center gap-1 text-xs font-medium ${student.blocked ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -231,9 +193,9 @@ export default function AdminBloqueo() {
                   </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

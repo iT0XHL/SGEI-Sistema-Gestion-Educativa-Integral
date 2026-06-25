@@ -4,21 +4,14 @@ import {
   LayoutDashboard, BookOpen, FileText, CalendarCheck, CreditCard,
   ClipboardList, PenLine, Users, Calendar, UserCheck,
   Receipt, DollarSign, FileOutput, Bell, Menu, X, ChevronRight,
-  LogOut, GraduationCap, AlertCircle, Info,
-  CalendarRange, BookMarked, Sliders, School, ListChecks,
+  LogOut, GraduationCap, CheckCircle, AlertCircle, Info,
+  CalendarRange, BookMarked, Sliders, School, ListChecks, Link2, Lock, Layers, FileQuestion,
 } from 'lucide-react';
 import type { Role } from '../../data/mockData';
+import { NOTIFICATIONS } from '../../data/mockData';
 import { useSession } from '../../../lib/hooks/useSession';
-import { periodosApi, bimestresApi } from '../../../lib/api/periodos.api';
+import { periodosApi } from '../../../lib/api/periodos.api';
 import { secretariaApi } from '../../../lib/api/secretaria.api';
-import {
-  useNotificaciones,
-  useContarNoLeidas,
-  useMarcarLeida,
-  useMarcarTodasLeidas,
-} from '../../../hooks/shared/useNotificaciones';
-import { useRealtimeNotifications } from '../../../hooks/shared/useRealtimeNotifications';
-import type { Notificacion, TipoNotificacion } from '../../../types/notificacion';
 
 function getInitials(nombre: string): string {
   return nombre.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -57,9 +50,11 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Registro Asistencia', path: '/docente/asistencia', icon: CalendarCheck },
     { label: 'Tareas y Materiales', path: '/docente/tareas',     icon: ClipboardList },
     { label: 'Ingreso de Notas',    path: '/docente/notas',      icon: PenLine },
+    { label: 'Simulacro Admisión',  path: '/docente/simulacro',  icon: FileQuestion },
   ],
   Admin: [
     { label: 'Inicio',                  path: '/admin/inicio',        icon: LayoutDashboard },
+    { label: 'Estructura Académica',    path: '/admin/estructura',    icon: Layers },
     { label: 'Gestión de Cuentas',      path: '/admin/cuentas',       icon: Users },
     { label: 'Horarios',                path: '/admin/horarios',      icon: Calendar },
     { label: 'Asistencia Docente',      path: '/admin/asistencia',    icon: UserCheck },
@@ -68,6 +63,9 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Escala de Calificaciones',path: '/admin/escala',        icon: Sliders },
     { label: 'Institución Educativa',   path: '/admin/institucion',   icon: School },
     { label: 'Competencias',            path: '/admin/competencias',  icon: ListChecks },
+    { label: 'Simulacro Admisión',      path: '/admin/simulacro',     icon: FileQuestion },
+    { label: 'Asignaciones',            path: '/admin/asignaciones',  icon: Link2 },
+    { label: 'Bloqueo de Documentos',   path: '/admin/bloqueo',       icon: Lock },
   ],
   Secretaria: [
     { label: 'Inicio',              path: '/secretaria/inicio',           icon: LayoutDashboard },
@@ -76,7 +74,6 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Estado de Pagos',     path: '/secretaria/pagos',            icon: DollarSign },
     { label: 'Situación Final',     path: '/secretaria/situacion-final',  icon: GraduationCap },
     { label: 'Exportar SIAGIE',     path: '/secretaria/siagie',           icon: FileOutput },
-    { label: 'Libretas',            path: '/secretaria/libretas',          icon: FileText },
   ],
 };
 
@@ -94,46 +91,18 @@ const ROLE_COLORS: Record<Role, string> = {
   Secretaria: 'from-teal-600 to-teal-800',
 };
 
-// Icono por tipo/prioridad de la notificación real del backend.
-function NotificationIcon({ n }: { n: Notificacion }) {
-  if (n.prioridad === 'alta' || n.prioridad === 'urgente') {
-    return <AlertCircle className="size-4 text-amber-500" />;
-  }
-  if (n.tipo === 'pago')       return <CreditCard className="size-4 text-emerald-500" />;
-  if (n.tipo === 'academico')  return <BookOpen className="size-4 text-blue-500" />;
-  if (n.tipo === 'comunicado') return <Info className="size-4 text-indigo-500" />;
-  return <Info className="size-4 text-slate-500" />;
+function NotificationIcon({ type }: { type: string }) {
+  if (type === 'success') return <CheckCircle className="size-4 text-emerald-500" />;
+  if (type === 'warning') return <AlertCircle className="size-4 text-amber-500" />;
+  return <Info className="size-4 text-blue-500" />;
 }
-
-// Tiempo relativo legible en español ("hace 5 min", "ayer", ...).
-function tiempoRelativo(iso: string): string {
-  const fecha = new Date(iso);
-  const seg = Math.floor((Date.now() - fecha.getTime()) / 1000);
-  if (seg < 60)     return 'ahora';
-  const min = Math.floor(seg / 60);
-  if (min < 60)     return `hace ${min} min`;
-  const horas = Math.floor(min / 60);
-  if (horas < 24)   return `hace ${horas} h`;
-  const dias = Math.floor(horas / 24);
-  if (dias === 1)   return 'ayer';
-  if (dias < 7)     return `hace ${dias} días`;
-  return fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
-}
-
-const FILTROS_NOTIF: { value: TipoNotificacion | 'todas'; label: string }[] = [
-  { value: 'todas',      label: 'Todas' },
-  { value: 'academico',  label: 'Académico' },
-  { value: 'pago',       label: 'Pago' },
-  { value: 'sistema',    label: 'Sistema' },
-  { value: 'comunicado', label: 'Comunicado' },
-];
 
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [filtroNotif, setFiltroNotif] = useState<TipoNotificacion | 'todas'>('todas');
+  const [notifications, setNotifications] = useState(NOTIFICATIONS);
   const notifRef = useRef<HTMLDivElement>(null);
   const [periodoActivo, setPeriodoActivo] = useState<string>('');
   const [bimestreActivo, setBimestreActivo] = useState<string>('');
@@ -150,28 +119,7 @@ export function AppShell() {
   const { session } = useSession();
   const displayName = session?.nombre ?? '…';
   const initials = session ? getInitials(session.nombre) : '…';
-
-  // ── Notificaciones reales del backend (con polling de respaldo) ──
-  const { data: notifData }   = useNotificaciones();
-  const { data: contadorData } = useContarNoLeidas();
-  const marcarLeida           = useMarcarLeida();
-  const marcarTodas           = useMarcarTodasLeidas();
-  const notifications: Notificacion[] = notifData ?? [];
-  const unread = contadorData?.no_leidas ?? 0;
-  const notificacionesFiltradas = filtroNotif === 'todas'
-    ? notifications
-    : notifications.filter(n => n.tipo === filtroNotif);
-
-  // Canal en vivo (SSE): toast + refresco de la campana sin recargar.
-  useRealtimeNotifications({ enabled: !!session });
-
-  function handleNotifClick(n: Notificacion) {
-    if (!n.leida) marcarLeida.mutate(n.id);
-    if (n.url_accion && n.url_accion.startsWith('/')) {
-      setNotifOpen(false);
-      navigate(n.url_accion);
-    }
-  }
+  const unread = notifications.filter(n => !n.read).length;
 
   // Guard: redirige al portal correcto si el rol del JWT no coincide con la URL
   useEffect(() => {
@@ -192,16 +140,11 @@ export function AppShell() {
   useEffect(() => {
     async function loadPeriodoYBimestre() {
       try {
-        const periodosRes = await periodosApi.listar({ activo: true, limit: 1 });
-        const periodo = periodosRes.items[0];
-        if (periodo) {
-          setPeriodoActivo(periodo.nombre);
-          const bimestresRes = await bimestresApi.listar({ periodoId: periodo.id, limit: 100 });
-          const bimestreAct = bimestresRes.items.find(b => !b.cerrado);
-          if (bimestreAct) {
-            setBimestreActivo(bimestreAct.nombre);
-          }
-        }
+        // Endpoint global accesible por cualquier rol (Admin, Docente,
+        // Alumno, Secretaria) — el período activo no depende del rol.
+        const { periodo, bimestre } = await periodosApi.activo();
+        if (periodo) setPeriodoActivo(periodo.nombre);
+        if (bimestre) setBimestreActivo(bimestre.nombre);
       } catch (err) {
         // Silently fail if unable to load
         console.error('Error cargando período/bimestre activo:', err);
@@ -233,7 +176,7 @@ export function AppShell() {
   }, []);
 
   function markAllRead() {
-    if (unread > 0) marcarTodas.mutate();
+    setNotifications(ns => ns.map(n => ({ ...n, read: true })));
   }
 
   const isActive = (path: string) => location.pathname === path || (path !== `/${role}/inicio` && location.pathname.startsWith(path));
@@ -388,57 +331,27 @@ export function AppShell() {
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                   <h3 className="text-sm font-semibold text-slate-800">Notificaciones</h3>
                   {unread > 0 && (
-                    <button
-                      onClick={markAllRead}
-                      disabled={marcarTodas.isPending}
-                      className="text-xs text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50"
-                    >
+                    <button onClick={markAllRead} className="text-xs text-blue-600 hover:text-blue-800 transition-colors">
                       Marcar todas como leídas
                     </button>
                   )}
                 </div>
-
-                {/* Filtros por tipo (§17.9) */}
-                <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-slate-100">
-                  {FILTROS_NOTIF.map(f => (
-                    <button
-                      key={f.value}
-                      onClick={() => setFiltroNotif(f.value)}
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-xs transition-colors ${
-                        filtroNotif === f.value
-                          ? 'bg-slate-800 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
-                  {notificacionesFiltradas.length === 0 ? (
-                    <p className="px-4 py-8 text-center text-sm text-slate-400">
-                      No tienes notificaciones{filtroNotif !== 'todas' ? ' de este tipo' : ''}.
-                    </p>
-                  ) : (
-                    notificacionesFiltradas.map(n => (
-                      <button
-                        key={n.id}
-                        onClick={() => handleNotifClick(n)}
-                        className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 ${!n.leida ? 'bg-blue-50/40' : ''}`}
-                      >
-                        <div className="mt-0.5 shrink-0"><NotificationIcon n={n} /></div>
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-sm leading-snug ${!n.leida ? 'text-slate-800 font-medium' : 'text-slate-600'}`}>
-                            {n.titulo}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.cuerpo}</p>
-                          <p className="text-xs text-slate-400 mt-1">{tiempoRelativo(n.created_at)}</p>
-                        </div>
-                        {!n.leida && <div className="mt-2 shrink-0 size-2 rounded-full bg-blue-500" />}
-                      </button>
-                    ))
-                  )}
+                  {notifications.map(n => (
+                    <div
+                      key={n.id}
+                      className={`flex gap-3 px-4 py-3 transition-colors hover:bg-slate-50 ${!n.read ? 'bg-blue-50/40' : ''}`}
+                    >
+                      <div className="mt-0.5 shrink-0"><NotificationIcon type={n.type} /></div>
+                      <div className="min-w-0">
+                        <p className={`text-sm leading-snug ${!n.read ? 'text-slate-800 font-medium' : 'text-slate-600'}`}>
+                          {n.message}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">{n.time}</p>
+                      </div>
+                      {!n.read && <div className="mt-2 shrink-0 size-2 rounded-full bg-blue-500" />}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

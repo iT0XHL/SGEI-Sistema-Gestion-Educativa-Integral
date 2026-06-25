@@ -3,11 +3,7 @@ import { hashPassword } from '@/lib/password';
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
-import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
-import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { DocentesRepository, type ListFilters } from './docentes.repository';
-import { AsignacionService, HorarioService } from '@/modules/academic/asignacion.service';
-import { withAuditContext } from '@/lib/audit-context';
 import type { CreateDocenteInput, UpdateDocenteInput } from '@/schemas/personas.schema';
 import { randomUUID } from 'crypto';
 
@@ -116,16 +112,6 @@ export const DocentesService = {
       newValue: { nombres: input.nombres, dni: input.dni },
     });
 
-    // Notificar: secretarías, administradores y el docente creado (§6 DOCENTE_CREADO).
-    await NotificacionService.notificarEvento({
-      evento: NotificationEvents.DOCENTE_CREADO,
-      actor:  { perfilId: adminPerfilId },
-      contexto: {
-        docenteId:     docente.id,
-        docenteNombre: `${input.nombres} ${input.apellido_paterno}`,
-      },
-    });
-
     return { ...docente, usuario_login: input.usuario_login };
   },
 
@@ -165,17 +151,6 @@ export const DocentesService = {
       entidadId: docenteId,
     });
 
-    // Notificar a administradores y secretarías (§6 DOCENTE_ACTUALIZADO).
-    await NotificacionService.notificarEvento({
-      evento: NotificationEvents.DOCENTE_ACTUALIZADO,
-      actor:  { perfilId: adminPerfilId },
-      contexto: {
-        docenteId:     docenteId,
-        docenteNombre: `${input.nombres ?? current.nombres} ${input.apellido_paterno ?? current.apellido_paterno}`,
-      },
-      idempotencyExtra: String(Date.now()),
-    });
-
     return this.get(docenteId);
   },
 
@@ -197,41 +172,15 @@ export const DocentesService = {
     return this.get(docenteId);
   },
 
-  /** Asignaciones docente–curso–sección activas del docente. */
-  async asignaciones(docenteId: string) {
-    const docente = await DocentesRepository.findById(docenteId);
-    if (!docente) throw new NotFoundError('Docente');
-    return AsignacionService.list({ docenteId });
+  async asignaciones(_docenteId: string) {
+    throw new Error('No implementado en FASE 1');
   },
 
-  /** Bloques de horario del docente (todas sus secciones/cursos). */
-  async horario(docenteId: string) {
-    const docente = await DocentesRepository.findById(docenteId);
-    if (!docente) throw new NotFoundError('Docente');
-    return HorarioService.list({ docenteId });
+  async horario(_docenteId: string) {
+    throw new Error('No implementado en FASE 1');
   },
 
-  /**
-   * Admin resetea la contraseña del docente sin conocer la actual y
-   * desbloquea la cuenta (intentos fallidos / bloqueado_hasta).
-   * El UPDATE de credencial dispara tg_audit_credencial → withAuditContext.
-   */
-  async adminResetPassword(
-    docenteId: string,
-    input: { password_nueva: string },
-    adminPerfilId: string,
-  ): Promise<void> {
-    const current = await DocentesRepository.findById(docenteId);
-    if (!current) throw new NotFoundError('Docente');
-    const credencialId = current.perfil?.credencial.id;
-    if (!credencialId) throw new NotFoundError('Credencial del docente');
-
-    const hash = await hashPassword(input.password_nueva);
-    await withAuditContext(adminPerfilId, (tx) =>
-      tx.credencial.update({
-        where: { id: credencialId },
-        data: { password_hash: hash, intentos_fallidos: 0, bloqueado_hasta: null },
-      }),
-    );
+  async adminResetPassword(_docenteId: string, _input: unknown, _adminPerfilId: string) {
+    throw new Error('No implementado en FASE 1');
   },
 };

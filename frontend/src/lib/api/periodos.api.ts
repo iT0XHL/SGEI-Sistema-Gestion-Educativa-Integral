@@ -25,7 +25,17 @@ export interface ApiPaginatedResponse<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
+export interface PeriodoActivoResponse {
+  periodo: PeriodoRow | null;
+  bimestre: BimestreRow | null;
+}
+
 export const periodosApi = {
+  /** Período + bimestre activos. Accesible por cualquier rol autenticado. */
+  activo(): Promise<PeriodoActivoResponse> {
+    return apiClient.get<PeriodoActivoResponse>('/api/periodos/activo');
+  },
+
   listar(params: { activo?: boolean; page?: number; limit?: number } = {}): Promise<ApiPaginatedResponse<PeriodoRow>> {
     const q: Record<string, string> = {};
     if (params.activo !== undefined) q.activo = String(params.activo);

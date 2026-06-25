@@ -1,8 +1,6 @@
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
-import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
-import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { PeriodoRepository, BimestreRepository, type ListFilters, type BimestreFilters } from './periodo.repository';
 import type { CreatePeriodoInput, UpdatePeriodoInput, CreateBimestreInput, UpdateBimestreInput } from '@/schemas/periodo.schema';
 import { prisma } from '@/lib/prisma';
@@ -37,6 +35,37 @@ export const PeriodoService = {
     const row = await PeriodoRepository.findById(id);
     if (!row) throw new NotFoundError('Período académico');
     return row;
+  },
+
+  /**
+   * Período + bimestre activos (configuración global).
+   * Accesible por CUALQUIER rol autenticado (Admin, Docente, Alumno,
+   * Secretaria): el período activo es un ajuste global, no depende de la
+   * sesión. Devuelve null si no hay período activo configurado.
+   */
+  async getActivo(): Promise<{ periodo: PeriodoDTO | null; bimestre: BimestreDTO | null }> {
+    const periodo = await prisma.periodoAcademico.findFirst({
+      where: { activo: true },
+      orderBy: { anio: 'desc' },
+    });
+    if (!periodo) return { periodo: null, bimestre: null };
+
+    const bimestre = await prisma.bimestre.findFirst({
+      where: { periodo_id: periodo.id, cerrado: false },
+      orderBy: { numero: 'asc' },
+    });
+
+    return {
+      periodo: {
+        id: periodo.id,
+        anio: periodo.anio,
+        nombre: periodo.nombre,
+        fecha_inicio: periodo.fecha_inicio,
+        fecha_fin: periodo.fecha_fin,
+        activo: periodo.activo,
+      },
+      bimestre: bimestre ?? null,
+    };
   },
 
   async create(input: CreatePeriodoInput, perfilId: string): Promise<PeriodoDTO> {
@@ -99,16 +128,6 @@ export const PeriodoService = {
       entidadId: id,
       newValue: { activo },
     });
-
-    // Al activar un período, notificar a docentes, secretarías y alumnos (§6 PERIODO_ACTUALIZADO).
-    if (activo) {
-      await NotificacionService.notificarEvento({
-        evento: NotificationEvents.PERIODO_ACTUALIZADO,
-        actor:  { perfilId },
-        contexto: { periodoNombre: result.nombre },
-        idempotencyExtra: id,
-      });
-    }
 
     return result;
   },

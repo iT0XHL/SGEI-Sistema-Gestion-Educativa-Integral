@@ -1,7 +1,5 @@
 import { ForbiddenError, NotFoundError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
-import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
-import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { PagoRepository } from './pago.repository';
 import type { JwtClaims } from '@/lib/jwt';
 import type { CreatePagoInput, ListarPagosQueryInput } from './pago.schema';
@@ -44,14 +42,6 @@ export const PagoService = {
       entidadAfectada: 'pago',
       entidadId:       pago.id,
       newValue: { alumno_id: input.alumno_id, monto: input.monto, mes: input.mes },
-    });
-
-    // Notificar al alumno correspondiente (§6 PAGO_REGISTRADO).
-    // No se expone el monto en el mensaje por privacidad (§26.16).
-    await NotificacionService.notificarEvento({
-      evento: NotificationEvents.PAGO_REGISTRADO,
-      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
-      contexto: { alumnoId: input.alumno_id, pagoId: pago.id },
     });
     return pago;
   },

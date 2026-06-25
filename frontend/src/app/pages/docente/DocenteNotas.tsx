@@ -247,20 +247,9 @@ export default function DocenteNotas() {
     }
   }
 
-  // Cierra las notas del bimestre en la BD (cerrada=true) y notifica a
-  // secretaría (§8). Antes solo bloqueaba la UI sin persistir ni avisar.
-  async function handleLock() {
-    if (!saved || !session || !bimestreSel) return;
-    try {
-      setSaving(true);
-      setError(null);
-      await notasApi.enviarASecretaria(session.entidadId, bimestreSel.id);
-      setLocked(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudieron enviar las notas a secretaría.');
-    } finally {
-      setSaving(false);
-    }
+  function handleLock() {
+    if (!saved) return;
+    setLocked(true);
   }
 
   if (loading || sessionLoading) {
@@ -511,10 +500,9 @@ export default function DocenteNotas() {
               {saved && !locked && (
                 <button
                   onClick={handleLock}
-                  disabled={saving}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                 >
-                  <Lock className="size-4" /> {saving ? 'Enviando…' : 'Cerrar y enviar a secretaría'}
+                  <Lock className="size-4" /> Cerrar calificaciones
                 </button>
               )}
             </div>

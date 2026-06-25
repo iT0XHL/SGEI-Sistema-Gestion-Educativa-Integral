@@ -118,11 +118,16 @@ export const UpsertEscalaSchema = z
 export type UpsertEscalaInput = z.infer<typeof UpsertEscalaSchema>;
 
 // ── Nivel y grado ─────────────────────────────────────────────
+// Nombre libre (máx. 30, alineado con VarChar(30)) para permitir crear
+// cualquier nivel más adelante (p. ej. "Inicial") sin tocar el código.
 export const CreateNivelSchema = z.object({
-  nombre: z.enum(['Primaria', 'Secundaria']),
-  descripcion: z.string().trim().optional().nullable(),
+  nombre: z.string().trim().min(3, 'Mínimo 3 caracteres').max(30),
+  descripcion: z.string().trim().max(255).optional().nullable(),
 });
 export type CreateNivelInput = z.infer<typeof CreateNivelSchema>;
+
+export const UpdateNivelSchema = CreateNivelSchema.partial();
+export type UpdateNivelInput = z.infer<typeof UpdateNivelSchema>;
 
 export const CreateGradoSchema = z.object({
   nivel_id: uuid,
@@ -130,6 +135,18 @@ export const CreateGradoSchema = z.object({
   orden: z.coerce.number().int().positive(),
 });
 export type CreateGradoInput = z.infer<typeof CreateGradoSchema>;
+
+export const UpdateGradoSchema = z.object({
+  nombre: z.string().trim().min(1).max(30).optional(),
+  orden: z.coerce.number().int().positive().optional(),
+});
+export type UpdateGradoInput = z.infer<typeof UpdateGradoSchema>;
+
+// Asignación de un curso del catálogo del nivel a un grado concreto.
+export const AssignGradoCursoSchema = z.object({
+  curso_id: uuid,
+});
+export type AssignGradoCursoInput = z.infer<typeof AssignGradoCursoSchema>;
 
 // ── Sección ───────────────────────────────────────────────────
 export const CreateSeccionSchema = z.object({
@@ -142,6 +159,15 @@ export const CreateSeccionSchema = z.object({
   aula: z.string().trim().max(20).optional().nullable(),
 });
 export type CreateSeccionInput = z.infer<typeof CreateSeccionSchema>;
+
+export const UpdateSeccionSchema = z.object({
+  nombre: z.string().trim().min(1).max(5).optional(),
+  turno: z.enum(['Mañana', 'Tarde', 'Noche']).optional(),
+  cupo_maximo: z.coerce.number().int().min(1).max(45).optional(),
+  docente_tutor_id: uuid.optional().nullable(),
+  aula: z.string().trim().max(20).optional().nullable(),
+});
+export type UpdateSeccionInput = z.infer<typeof UpdateSeccionSchema>;
 
 // ── Curso ─────────────────────────────────────────────────────
 export const CreateCursoSchema = z.object({

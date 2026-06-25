@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const ADMIN_LOGIN = 'director@sgei.edu.pe';
-  const ADMIN_PASSWORD = 'demo1234';
+  const ADMIN_PASSWORD = 'Admin1234';
 
   const existing = await prisma.credencial.findUnique({
     where: { usuario_login: ADMIN_LOGIN },

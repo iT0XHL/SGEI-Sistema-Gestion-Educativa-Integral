@@ -6,9 +6,7 @@ import { PeriodoService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';
 
-// Lectura del calendario académico: todos los roles autenticados (el período
-// activo se muestra en el AppShell de cada portal). La escritura sigue siendo Admin.
-export const GET = withRole(['Admin', 'Secretaria', 'Docente', 'Alumno'], async (req) => {
+export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
   const q = parseQuery(req, ListPeriodosQuery);
   const data = await PeriodoService.list(q);
   return ok(data, 'Listado de períodos');

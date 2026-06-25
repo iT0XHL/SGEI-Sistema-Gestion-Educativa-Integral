@@ -4,7 +4,6 @@ import { useSession } from '../../../lib/hooks/useSession';
 import { libretasApi } from '../../../lib/api/libretas.api';
 import { bimestresApi as bimestresApiClient } from '../../../lib/api/bimestres.api';
 import { apiClient, ApiError } from '../../../lib/api/client';
-import { useDescargarLibretaPdf } from '../../../hooks/alumno/useAlumnoLibreta';
 import { getCourseColor, gradeToLiteral, literalColor } from '../../../lib/courseColors';
 import type { LibretaRow, NotaLiteral } from '../../../types/nota';
 import type { Bimestre } from '../../../lib/api/bimestres.api';
@@ -46,9 +45,9 @@ export default function AlumnoLibreta() {
   const [bimestreSeleccionado, setBimestreSeleccionado] = useState<number | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [bloqueada,     setBloqueada]     = useState(false);
-  const [noPublicada,   setNoPublicada]   = useState(false);
   const [error,         setError]         = useState<string | null>(null);
-  const descargarMutation = useDescargarLibretaPdf();
+  const [downloading,   setDownloading]   = useState(false);
+  const [errorDescarga, setErrorDescarga] = useState<string | null>(null);
 
   // ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -63,7 +62,6 @@ export default function AlumnoLibreta() {
         setLoading(true);
         setError(null);
         setBloqueada(false);
-        setNoPublicada(false);
 
         // Parallel: libreta rows + bimestres
         const [libretaRows, bimestresData] = await Promise.all([
@@ -86,8 +84,6 @@ export default function AlumnoLibreta() {
         if (aborted) return;
         if (err instanceof ApiError && err.code === 'LIBRETA_BLOQUEADA') {
           setBloqueada(true);
-        } else if (err instanceof ApiError && err.code === 'LIBRETA_NO_PUBLICADA') {
-          setNoPublicada(true);
         } else {
           setError(err instanceof Error ? err.message : 'Error al cargar la libreta.');
         }
@@ -201,19 +197,30 @@ export default function AlumnoLibreta() {
   // ── PDF download ──────────────────────────────────────────────────────────────
 
   async function handleDownload() {
-    if (bloqueada || descargarMutation.isPending || !session) return;
-    const bimestreId = bimestresList.find(b => b.numero === bimestreSeleccionado)?.id;
-    descargarMutation.mutate(
-      { alumnoId: session.entidadId, bimestreId, nombre: alumnoNombre },
-      {
-        onError: (err) => {
-          const msg = err.message.toLowerCase();
-          if (msg.includes('bloqueada') || msg.includes('bloqueado')) {
-            setBloqueada(true);
-          }
-        },
-      },
-    );
+    if (bloqueada || downloading || !session) return;
+    setDownloading(true);
+    setErrorDescarga(null);
+    try {
+      const bimestreId = bimestresList.find(b => b.numero === bimestreSeleccionado)?.id;
+      const blob = await libretasApi.descargarPdf(session.entidadId, bimestreId);
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `libreta_${alumnoNombre.replace(/\s+/g, '_')}_${nombreBimestreActual}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      if (msg.includes('bloqueada') || msg.includes('bloqueado')) {
+        setBloqueada(true);
+      } else {
+        setErrorDescarga('No se pudo generar el PDF. Intenta de nuevo.');
+      }
+    } finally {
+      setDownloading(false);
+    }
   }
 
   // ── Table rows (built imperatively to handle rowspan) ─────────────────────────
@@ -324,7 +331,7 @@ export default function AlumnoLibreta() {
           {/* Botón descarga */}
           <button
             onClick={handleDownload}
-            disabled={bloqueada || descargarMutation.isPending || loading}
+            disabled={bloqueada || downloading || loading}
             title={bloqueada ? 'Bloqueado: deuda pendiente' : ''}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
               bloqueada
@@ -332,7 +339,7 @@ export default function AlumnoLibreta() {
                 : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/20 disabled:opacity-60'
             }`}
           >
-            {descargarMutation.isPending ? (
+            {downloading ? (
               <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -342,26 +349,20 @@ export default function AlumnoLibreta() {
             ) : (
               <Download className="size-4" />
             )}
-            {descargarMutation.isPending ? 'Generando Word…' : bloqueada ? 'Bloqueado' : 'Descargar Word'}
+            {downloading ? 'Generando PDF…' : bloqueada ? 'Bloqueado' : 'Descargar PDF'}
           </button>
         </div>
       </div>
 
       {/* Error de descarga */}
-      {descargarMutation.isError && !bloqueada && (() => {
-        const msg = descargarMutation.error?.message ?? '';
-        if (msg.toLowerCase().includes('bloqueada') || msg.toLowerCase().includes('bloqueado')) {
-          return null;
-        }
-        return (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-            No se pudo generar el PDF. Intenta de nuevo.
-          </p>
-        );
-      })()}
+      {errorDescarga && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          {errorDescarga}
+        </p>
+      )}
 
       {/* Error genérico */}
-      {error && !bloqueada && !noPublicada && (
+      {error && !bloqueada && (
         <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
           <p className="text-slate-600">{error}</p>
         </div>
@@ -389,24 +390,8 @@ export default function AlumnoLibreta() {
         </div>
       )}
 
-      {/* Libreta aún no publicada por secretaría (§14/§25) */}
-      {noPublicada && !bloqueada && (
-        <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-amber-50 border border-amber-200">
-            <Lock className="size-8 text-amber-500" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">Libreta aún no disponible</h2>
-            <p className="text-sm text-slate-500 mt-1 max-w-sm">
-              Tu libreta todavía no ha sido publicada por la secretaría. Vuelve a
-              consultar más adelante; te notificaremos cuando esté lista.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Skeleton de carga */}
-      {loading && !bloqueada && !noPublicada && (
+      {loading && !bloqueada && (
         <div className="space-y-4 animate-pulse">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="sm:col-span-2 h-32 rounded-2xl bg-slate-200" />
@@ -418,7 +403,7 @@ export default function AlumnoLibreta() {
       )}
 
       {/* Contenido principal */}
-      {!loading && !bloqueada && !noPublicada && !error && (
+      {!loading && !bloqueada && !error && (
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
