@@ -23,6 +23,29 @@ export async function parseBody<T extends z.ZodTypeAny>(
   return result.data;
 }
 
+/**
+ * Como `parseBody`, pero tolera un cuerpo vacío o ausente: en ese caso valida
+ * un objeto vacío `{}`. Útil para endpoints cuyo body es totalmente opcional
+ * (p. ej. cambiar estado de libreta con observación opcional).
+ */
+export async function parseBodyOptional<T extends z.ZodTypeAny>(
+  req: NextRequest,
+  schema: T,
+): Promise<z.infer<T>> {
+  let raw: unknown = {};
+  try {
+    const text = await req.text();
+    raw = text ? JSON.parse(text) : {};
+  } catch {
+    raw = {};
+  }
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    throw new ValidationError(result.error.flatten().fieldErrors);
+  }
+  return result.data;
+}
+
 /** Valida los query params (req.nextUrl.searchParams) con Zod. */
 export function parseQuery<T extends z.ZodTypeAny>(
   req: NextRequest,

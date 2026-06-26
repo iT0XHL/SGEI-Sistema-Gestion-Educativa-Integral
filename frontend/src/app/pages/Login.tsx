@@ -146,6 +146,7 @@ export default function Login() {
                 key={r.role}
                 type="button"
                 onClick={() => handleSelectRole(r.role)}
+                aria-pressed={selected === r.role}
                 className={`flex items-center gap-2.5 p-3 rounded-xl border-2 transition-all duration-150 text-left
                   ${selected === r.role
                     ? r.borderActive

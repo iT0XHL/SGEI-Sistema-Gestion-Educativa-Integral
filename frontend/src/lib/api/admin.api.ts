@@ -538,9 +538,9 @@ export interface EstadisticasDTO {
 }
 
 // ── Helpers de conversión de parámetros ──────────────────────
-function toStr(p: Record<string, string | number | boolean | undefined>): Record<string, string | undefined> {
+function toStr<T extends object>(p: T): Record<string, string | undefined> {
   return Object.fromEntries(
-    Object.entries(p).map(([k, v]) => [k, v !== undefined ? String(v) : undefined]),
+    Object.entries(p).map(([k, v]) => [k, v != null ? String(v) : undefined]),
   );
 }
 

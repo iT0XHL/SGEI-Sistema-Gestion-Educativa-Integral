@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { boletasApi } from '../../lib/api/boletas.api';
 import { pagosApi } from '../../lib/api/pagos.api';
-import type { RevisarBoletaPayload, EstadoRevisionBoleta } from '../../types/pago';
+import type { RevisarBoletaPayload, EstadoRevisionBoleta, EstadoPago } from '../../types/pago';
 
 /** Lista boletas para revisión (Secretaria/Admin). */
 export function useBoletasPendientes(estadoRevision?: EstadoRevisionBoleta) {
@@ -37,7 +37,7 @@ export function useArchivoBoletaRevisor(boletaId: string, enabled = false) {
 }
 
 /** Pagos de todos los alumnos (Admin/Secretaria). */
-export function useTodosPagos(params: { alumnoId?: string; estado?: string } = {}) {
+export function useTodosPagos(params: { alumnoId?: string; estado?: EstadoPago } = {}) {
   return useQuery({
     queryKey: ['pagos', 'secretaria', params],
     queryFn:  () => pagosApi.listar(params),

@@ -23,7 +23,10 @@ services:
       - "./SQL/01_notificaciones_eventos.sql:/docker-entrypoint-initdb.d/01a-notificaciones.sql:ro"
       - "./SQL/03-libretas-migration.sql:/docker-entrypoint-initdb.d/01b-libretas.sql:ro"
       - "./SQL/04-fix-audit-trigger.sql:/docker-entrypoint-initdb.d/01c-fix-audit.sql:ro"
+      - "./SQL/05-simulacro-banco.sql:/docker-entrypoint-initdb.d/01d-simulacro-banco.sql:ro"
       - "./SQL/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
+      - "./SQL/06-grados-niveles.sql:/docker-entrypoint-initdb.d/03-grados-niveles.sql:ro"
+      - "./SQL/06-grados-niveles.sql:/docker-entrypoint-initdb.d/03-grados-niveles.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sgei -d sgei_db"]
       interval: 5s

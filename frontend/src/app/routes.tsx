@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AppShell } from './components/layout/AppShell';
+import { RouteErrorBoundary } from './components/feedback/ErrorBoundary';
 import Login from './pages/Login';
 import AlumnoDashboard from './pages/alumno/AlumnoDashboard';
 import AlumnoCursos from './pages/alumno/AlumnoCursos';
@@ -31,14 +32,18 @@ import SecretariaPagos from './pages/secretaria/SecretariaPagos';
 import SecretariaSIAGIE from './pages/secretaria/SecretariaSIAGIE';
 import SecretariaAlumnos from './pages/secretaria/SecretariaAlumnos';
 import SecretariaSituacionFinal from './pages/secretaria/SecretariaSituacionFinal';
+import SecretariaLibretas from './pages/secretaria/SecretariaLibretas';
+import SecretariaLibretasSeccion from './pages/secretaria/SecretariaLibretasSeccion';
+import SecretariaLibretaPreview from './pages/secretaria/SecretariaLibretaPreview';
 
 export const router = createBrowserRouter([
-  { path: '/', Component: Login },
+  { path: '/', Component: Login, errorElement: <RouteErrorBoundary /> },
 
   // ── Alumno Portal ────────────────────────────────────────
   {
     path: '/alumno',
     Component: AppShell,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, Component: () => <Navigate to="inicio" replace /> },
       { path: 'inicio',        Component: AlumnoDashboard },
@@ -54,6 +59,7 @@ export const router = createBrowserRouter([
   {
     path: '/docente',
     Component: AppShell,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, Component: () => <Navigate to="inicio" replace /> },
       { path: 'inicio',      Component: DocenteDashboard },
@@ -68,6 +74,7 @@ export const router = createBrowserRouter([
   {
     path: '/admin',
     Component: AppShell,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, Component: () => <Navigate to="inicio" replace /> },
       { path: 'inicio',        Component: AdminDashboard },
@@ -82,7 +89,6 @@ export const router = createBrowserRouter([
       { path: 'institucion',   Component: AdminInstitucion },
       { path: 'competencias',  Component: AdminCompetencias },
       { path: 'asignaciones',  Component: AdminAsignaciones },
-      { path: 'bloqueo',       Component: AdminBloqueo },
       { path: 'simulacro',     Component: AdminSimulacro },
     ],
   },
@@ -91,6 +97,7 @@ export const router = createBrowserRouter([
   {
     path: '/secretaria',
     Component: AppShell,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, Component: () => <Navigate to="inicio" replace /> },
       { path: 'inicio',            Component: SecretariaDashboard },
@@ -99,6 +106,9 @@ export const router = createBrowserRouter([
       { path: 'siagie',            Component: SecretariaSIAGIE },
       { path: 'alumnos',           Component: SecretariaAlumnos },
       { path: 'situacion-final',   Component: SecretariaSituacionFinal },
+      { path: 'libretas',                       Component: SecretariaLibretas },
+      { path: 'libretas/secciones/:seccionId',  Component: SecretariaLibretasSeccion },
+      { path: 'libretas/:alumnoId',             Component: SecretariaLibretaPreview },
     ],
   },
 

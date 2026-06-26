@@ -1,6 +1,10 @@
 // ============================================================
 //  modules/simulacros/simulacro.repository.ts
 //  Acceso a datos del módulo Simulacro de Admisión.
+//  · Las preguntas pertenecen a un SIMULACRO ACTIVO: el docente sube su
+//    bloque de 5 por (curso, grado) que enseña, solo si hay simulacro activo.
+//  · El examen armado guarda un SNAPSHOT del contenido (documento inmutable
+//    para imprimir; no se rompe aunque luego cambie la pregunta original).
 // ============================================================
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -31,6 +35,17 @@ export const SimulacroRepo = {
     });
   },
 
+  /** Próximo simulacro pendiente de activar (primer Borrador del período). */
+  findPendiente(periodoId: string) {
+    return prisma.simulacro.findFirst({
+      where: { periodo_id: periodoId, estado: 'Borrador' },
+      orderBy: { numero: 'asc' },
+      include: {
+        bimestre: { select: { id: true, numero: true, nombre: true } },
+      },
+    });
+  },
+
   countByPeriodo(periodoId: string) {
     return prisma.simulacro.count({ where: { periodo_id: periodoId } });
   },
@@ -45,7 +60,7 @@ export const SimulacroRepo = {
 };
 
 export const PreguntaRepo = {
-  /** Banco completo del simulacro con filtros (curaduría Admin). */
+  /** Banco de preguntas del simulacro con filtros (curaduría Admin). */
   listCuraduria(simulacroId: string, filters: { gradoId?: string; seccionId?: string; cursoId?: string; nivelId?: string }) {
     return prisma.simulacroPregunta.findMany({
       where: {
@@ -81,7 +96,8 @@ export const PreguntaRepo = {
 
   /**
    * Reemplaza atómicamente el bloque de 5 preguntas del docente para un
-   * curso+grado del simulacro (idempotente: borra las previas e inserta 5).
+   * curso+grado del simulacro. Borrar es seguro aunque el examen ya esté
+   * armado: conserva su snapshot (FK ON DELETE SET NULL).
    */
   replaceBlock(input: {
     simulacroId: string;
@@ -130,7 +146,7 @@ export const PreguntaRepo = {
 };
 
 export const ExamenRepo = {
-  /** Examen armado de un grado: cursos (con orden) y sus 5 preguntas. */
+  /** Examen armado de un grado: cursos (con orden) y sus 5 preguntas (snapshot). */
   getByGrado(simulacroId: string, gradoId: string) {
     return prisma.simulacroExamen.findMany({
       where: { simulacro_id: simulacroId, grado_id: gradoId },
@@ -139,14 +155,11 @@ export const ExamenRepo = {
         curso: { select: { id: true, nombre: true } },
         preguntas: {
           orderBy: { orden: 'asc' },
-          include: {
-            pregunta: {
-              select: {
-                id: true, enunciado: true, imagen_url: true,
-                alt_a: true, alt_b: true, alt_c: true, alt_d: true, alt_e: true,
-                respuesta_correcta: true,
-              },
-            },
+          select: {
+            id: true, orden: true, pregunta_id: true,
+            enunciado: true, imagen_url: true,
+            alt_a: true, alt_b: true, alt_c: true, alt_d: true, alt_e: true,
+            respuesta_correcta: true,
           },
         },
       },
@@ -161,7 +174,10 @@ export const ExamenRepo = {
     });
   },
 
-  /** Reemplaza atómicamente el examen del grado (todos sus cursos). */
+  /**
+   * Reemplaza atómicamente el examen del grado, copiando (snapshot) el contenido
+   * de cada pregunta para que el documento impreso sea inmutable.
+   */
   replaceExamenGrado(
     simulacroId: string,
     gradoId: string,
@@ -170,12 +186,33 @@ export const ExamenRepo = {
     return prisma.$transaction(async (tx) => {
       // Borra exámenes previos del grado (cascada elimina sus preguntas).
       await tx.simulacroExamen.deleteMany({ where: { simulacro_id: simulacroId, grado_id: gradoId } });
+
+      // Contenido de todas las preguntas seleccionadas (para el snapshot).
+      const allIds = cursos.flatMap((c) => c.pregunta_ids);
+      const banco = await tx.simulacroPregunta.findMany({
+        where: { id: { in: allIds } },
+        select: {
+          id: true, enunciado: true, imagen_url: true,
+          alt_a: true, alt_b: true, alt_c: true, alt_d: true, alt_e: true, respuesta_correcta: true,
+        },
+      });
+      const byId = new Map(banco.map((b) => [b.id, b]));
+
       for (const c of cursos) {
         const examen = await tx.simulacroExamen.create({
           data: { simulacro_id: simulacroId, grado_id: gradoId, curso_id: c.curso_id, orden: c.orden },
         });
         await tx.simulacroExamenPregunta.createMany({
-          data: c.pregunta_ids.map((pid, i) => ({ examen_id: examen.id, pregunta_id: pid, orden: i + 1 })),
+          data: c.pregunta_ids.map((pid, i) => {
+            const q = byId.get(pid);
+            return {
+              examen_id: examen.id, pregunta_id: pid, orden: i + 1,
+              enunciado: q?.enunciado ?? null, imagen_url: q?.imagen_url ?? null,
+              alt_a: q?.alt_a ?? null, alt_b: q?.alt_b ?? null, alt_c: q?.alt_c ?? null,
+              alt_d: q?.alt_d ?? null, alt_e: q?.alt_e ?? null,
+              respuesta_correcta: q?.respuesta_correcta ?? null,
+            };
+          }),
         });
       }
       return tx.simulacroExamen.count({ where: { simulacro_id: simulacroId, grado_id: gradoId } });
@@ -184,7 +221,7 @@ export const ExamenRepo = {
 };
 
 export const CargaRepo = {
-  /** Asignaciones del docente en el período → base de la cascada Nivel▸Grado▸Sección▸Curso. */
+  /** Asignaciones del docente en el período → cascada Nivel▸Grado▸Sección▸Curso. */
   listAsignaciones(docenteId: string, periodoId: string) {
     return prisma.asignacionDocente.findMany({
       where: { docente_id: docenteId, periodo_id: periodoId, activo: true },

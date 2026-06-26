@@ -58,11 +58,11 @@ export default function AdminInstitucion() {
         departamento: form.departamento,
         provincia: form.provincia,
         distrito: form.distrito,
-        resolucion_creacion: form.resolucion_creacion || undefined,
-        centro_poblado: form.centro_poblado || undefined,
-        direccion: form.direccion || undefined,
-        telefono: form.telefono || undefined,
-        email_institucional: form.email_institucional || undefined,
+        resolucion_creacion: form.resolucion_creacion || null,
+        centro_poblado: form.centro_poblado || null,
+        direccion: form.direccion || null,
+        telefono: form.telefono || null,
+        email_institucional: form.email_institucional || null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -184,8 +184,9 @@ export default function AdminInstitucion() {
             </div>
             <div>
               <label className={labelCls}>Gestión</label>
-              <select value={form.gestion} onChange={e => setField('gestion', e.target.value)} className={selectCls}>
-                {['Pública', 'Privada', 'Concertada'].map(o => <option key={o}>{o}</option>)}
+              <select value={form.gestion} onChange={e => setField('gestion', e.target.value as InstitucionDTO['gestion'])} className={selectCls}>
+                <option value="Publica">Pública</option>
+                <option value="Privada">Privada</option>
               </select>
             </div>
           </div>
@@ -214,12 +215,12 @@ export default function AdminInstitucion() {
               <textarea
                 maxLength={500}
                 rows={3}
-                value={form.direccion}
+                value={form.direccion ?? ''}
                 onChange={e => setField('direccion', e.target.value)}
                 placeholder="Jr. Las Flores 123, Urb. Los Jardines"
                 className={`${inputCls} resize-none`}
               />
-              <p className={`text-xs text-right mt-1 ${form.direccion.length >= 500 ? 'text-red-500' : 'text-slate-400'}`}>{form.direccion.length}/500</p>
+              <p className={`text-xs text-right mt-1 ${(form.direccion ?? '').length >= 500 ? 'text-red-500' : 'text-slate-400'}`}>{(form.direccion ?? '').length}/500</p>
             </div>
           </div>
         </div>

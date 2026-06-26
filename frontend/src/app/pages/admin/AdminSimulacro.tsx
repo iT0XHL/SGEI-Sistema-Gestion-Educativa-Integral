@@ -4,6 +4,7 @@ import {
   X, ChevronDown, Save, Filter, ListChecks, GripVertical, FileText, KeyRound,
 } from 'lucide-react';
 import { estructuraApi, type NivelDTO, type GradoDTO } from '../../../lib/api/admin.api';
+import { bimestresApi, type Bimestre } from '../../../lib/api/bimestres.api';
 import {
   simulacrosAdminApi, examenPdfUrl,
   type SimulacroDTO, type PreguntaDTO, type ExamenCursoDTO,
@@ -25,6 +26,7 @@ export default function AdminSimulacro() {
   const [simId, setSimId]   = useState('');
   const [niveles, setNiveles] = useState<NivelDTO[]>([]);
   const [grados, setGrados]   = useState<GradoDTO[]>([]);
+  const [bimestres, setBimestres] = useState<Bimestre[]>([]);
   const [nivelId, setNivelId] = useState('');
   const [gradoId, setGradoId] = useState('');
 
@@ -44,9 +46,14 @@ export default function AdminSimulacro() {
   async function init() {
     try {
       setLoading(true); setError('');
-      const [sims, nivs] = await Promise.all([simulacrosAdminApi.listar(), estructuraApi.niveles()]);
+      const [sims, nivs, bims] = await Promise.all([
+        simulacrosAdminApi.listar(),
+        estructuraApi.niveles(),
+        bimestresApi.listar(),
+      ]);
       setSimulacros(sims);
       setNiveles(nivs);
+      setBimestres(bims);
       const activo = sims.find(s => s.estado === 'Activo') ?? sims[0];
       if (activo) setSimId(activo.id);
     } catch (e) {
@@ -80,7 +87,10 @@ export default function AdminSimulacro() {
         // Prefijar selección con el examen ya armado
         const inicial: Record<string, Seleccion> = {};
         examen.forEach((ex: ExamenCursoDTO) => {
-          inicial[ex.curso_id] = { orden: ex.orden, ids: ex.preguntas.map(p => p.pregunta.id) };
+          inicial[ex.curso_id] = {
+            orden: ex.orden,
+            ids: ex.preguntas.map(p => p.pregunta_id).filter((id): id is string => Boolean(id)),
+          };
         });
         setSel(inicial);
       } catch (e) {
@@ -195,12 +205,6 @@ export default function AdminSimulacro() {
               </div>
               <p className="text-xs text-slate-400 mt-1">{s.bimestre?.nombre ?? 'Sin bimestre'} · {s._count?.preguntas ?? 0} preguntas</p>
               <div className="flex gap-2 mt-3">
-                {s.estado !== 'Activo' && s.estado !== 'Concluido' && (
-                  <button onClick={(e) => { e.stopPropagation(); cambiarEstado(s, 'Activo'); }} disabled={busy}
-                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 disabled:opacity-50">
-                    <Play className="size-3" /> Activar
-                  </button>
-                )}
                 {s.estado === 'Activo' && (
                   <button onClick={(e) => { e.stopPropagation(); cambiarEstado(s, 'Concluido'); }} disabled={busy}
                     className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:opacity-50">
@@ -328,7 +332,7 @@ export default function AdminSimulacro() {
         </>
       )}
 
-      {modal && <NuevoSimulacroModal busy={busy} onClose={() => setModal(false)}
+      {modal && <NuevoSimulacroModal busy={busy} bimestres={bimestres} onClose={() => setModal(false)}
         onCreate={async (payload) => {
           try {
             setBusy(true); setError('');
@@ -345,10 +349,26 @@ export default function AdminSimulacro() {
 }
 
 // ── Modal nuevo simulacro ─────────────────────────────────────────
-function NuevoSimulacroModal(props: { busy: boolean; onClose: () => void; onCreate: (p: { numero: number; nombre: string }) => Promise<void> }) {
+function NuevoSimulacroModal(props: {
+  busy: boolean;
+  bimestres: Bimestre[];
+  onClose: () => void;
+  onCreate: (p: { numero: number; nombre: string; bimestre_id: string }) => Promise<void>;
+}) {
+  // El simulacro se rinde al culminar un bimestre → se elige el bimestre.
+  const opciones = useMemo(() => [...props.bimestres].sort((a, b) => a.numero - b.numero), [props.bimestres]);
   const [numero, setNumero] = useState('1');
   const [nombre, setNombre] = useState('Simulacro 1');
+  const [nombreEditado, setNombreEditado] = useState(false);
+  const [bimestreId, setBimestreId] = useState(opciones[0]?.id ?? '');
   const [err, setErr] = useState('');
+
+  // El nombre por defecto sigue al número (evita «Simulacro 1» duplicados);
+  // si el usuario lo edita a mano, se respeta su texto.
+  function cambiarNumero(v: string) {
+    setNumero(v);
+    if (!nombreEditado) setNombre(`Simulacro ${v || '1'}`);
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -357,21 +377,47 @@ function NuevoSimulacroModal(props: { busy: boolean; onClose: () => void; onCrea
           <h3 className="text-base font-semibold text-slate-800">Nuevo simulacro</h3>
           <button onClick={props.onClose} className="p-1.5 rounded-lg hover:bg-slate-100"><X className="size-4 text-slate-500" /></button>
         </div>
-        <form onSubmit={async (e) => { e.preventDefault(); setErr(''); if (!nombre.trim()) { setErr('El nombre es obligatorio.'); return; } await props.onCreate({ numero: Number(numero), nombre: nombre.trim() }); }}
-          className="p-6 space-y-4">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault(); setErr('');
+            if (!nombre.trim()) { setErr('El nombre es obligatorio.'); return; }
+            if (!bimestreId) { setErr('Selecciona el bimestre en el que se rinde el simulacro.'); return; }
+            await props.onCreate({ numero: Number(numero), nombre: nombre.trim(), bimestre_id: bimestreId });
+          }}
+          className="p-6 space-y-4"
+        >
           {err && <p className="text-xs text-red-500">{err}</p>}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Número (1–4)</label>
-            <input type="number" min={1} max={4} value={numero} onChange={e => setNumero(e.target.value)} className={input} />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label htmlFor="sim-numero" className="block text-xs font-medium text-slate-600 mb-1.5">N.º (1–4)</label>
+              <input id="sim-numero" type="number" min={1} max={4} value={numero} onChange={e => cambiarNumero(e.target.value)} className={input} />
+            </div>
+            <div className="col-span-2">
+              <label htmlFor="sim-nombre" className="block text-xs font-medium text-slate-600 mb-1.5">Nombre</label>
+              <input id="sim-nombre" value={nombre} onChange={e => { setNombre(e.target.value); setNombreEditado(true); }} maxLength={60} className={input} />
+            </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Nombre</label>
-            <input value={nombre} onChange={e => setNombre(e.target.value)} maxLength={60} className={input} />
+            <label htmlFor="sim-bimestre" className="block text-xs font-medium text-slate-600 mb-1.5">Bimestre</label>
+            {opciones.length === 0 ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No hay bimestres en el período activo. Crea uno en «Bimestres» antes de programar el simulacro.
+              </p>
+            ) : (
+              <div className="relative">
+                <select id="sim-bimestre" value={bimestreId} onChange={e => setBimestreId(e.target.value)} className={selectCls}>
+                  {opciones.map(b => (
+                    <option key={b.id} value={b.id}>{b.nombre}{b.cerrado ? ' (cerrado)' : ''}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+              </div>
+            )}
           </div>
-          <p className="text-xs text-slate-400">Se crea en estado «Borrador». Actívalo desde el panel cuando quieras que los docentes suban preguntas.</p>
+          <p className="text-xs text-slate-400">El simulacro se rinde al culminar el bimestre. Se crea en estado «Borrador»; los docentes lo activarán cuando estén listos para subir sus preguntas.</p>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={props.onClose} disabled={props.busy} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
-            <button type="submit" disabled={props.busy} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+            <button type="submit" disabled={props.busy || opciones.length === 0} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
               {props.busy && <Loader2 className="size-4 animate-spin" />} Crear
             </button>
           </div>

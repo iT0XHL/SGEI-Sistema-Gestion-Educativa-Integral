@@ -1,6 +1,10 @@
 // ============================================================
 //  modules/simulacros/simulacro.service.ts
-//  Lógica del módulo Simulacro de Admisión (Fase 1).
+//  Lógica del módulo Simulacro de Admisión.
+//  · El docente sube su bloque de 5 preguntas por (curso, grado) que enseña,
+//    SOLO cuando hay un simulacro ACTIVO. La activación la hace Admin o Docente.
+//  · El Admin cura (elige 5 del banco por curso) y arma el examen por grado.
+//  · El examen guarda un SNAPSHOT (documento inmutable, listo para imprimir).
 // ============================================================
 import { prisma } from '@/lib/prisma';
 import { NotFoundError, ConflictError, BusinessRuleError } from '@/errors/http-errors';
@@ -84,33 +88,47 @@ export const SimulacroService = {
   async getCargaDocente(docenteId: string) {
     const periodo = await getPeriodoActivo();
     const simulacro = await SimulacroRepo.findActivo(periodo.id);
+    // Si no hay uno activo, se ofrece el próximo Borrador para que el docente lo active.
+    const proximoSimulacro = simulacro ? null : await SimulacroRepo.findPendiente(periodo.id);
     const asignaciones = await CargaRepo.listAsignaciones(docenteId, periodo.id);
 
-    // Aplanar a items {nivel, grado, seccion, curso}
-    const items = asignaciones.map((a) => ({
-      nivel:   a.seccion.grado.nivel,
-      grado:   { id: a.seccion.grado.id, nombre: a.seccion.grado.nombre, orden: a.seccion.grado.orden },
-      seccion: { id: a.seccion.id, nombre: a.seccion.nombre },
-      curso:   { id: a.curso.id, nombre: a.curso.nombre },
-    }));
+    // Cursos y grados que enseña el docente (la asignatura y el grado que lleva).
+    const cursosMap = new Map<string, { id: string; nombre: string }>();
+    const gradosMap = new Map<string, { id: string; nombre: string; orden: number; nivel: { id: string; nombre: string } }>();
+    for (const a of asignaciones) {
+      cursosMap.set(a.curso.id, { id: a.curso.id, nombre: a.curso.nombre });
+      const g = a.seccion.grado;
+      gradosMap.set(g.id, { id: g.id, nombre: g.nombre, orden: g.orden, nivel: g.nivel });
+    }
 
-    return { simulacro, periodo: { id: periodo.id, nombre: periodo.nombre }, asignaciones: items };
+    return {
+      simulacro,
+      proximoSimulacro,
+      periodo: { id: periodo.id, nombre: periodo.nombre },
+      cursos: Array.from(cursosMap.values()),
+      grados: Array.from(gradosMap.values()).sort((a, b) => a.orden - b.orden),
+    };
   },
 
-  /** Preguntas ya guardadas por el docente (para editar el bloque). */
+  /** Preguntas ya guardadas por el docente para el simulacro activo (para editar). */
   async getPreguntasDocente(docenteId: string, filters: { cursoId?: string; gradoId?: string; seccionId?: string }) {
     const sim = await this.getActivo();
     if (!sim) return [];
     return PreguntaRepo.listByDocente(sim.id, docenteId, filters);
   },
 
-  /** Guarda (reemplaza) el bloque de 5 preguntas del docente para curso+grado. */
+  /**
+   * Guarda (reemplaza) el bloque de 5 preguntas del docente para curso+grado.
+   * Requiere un simulacro ACTIVO y que el docente dicte ese curso en ese grado.
+   */
   async guardarPreguntas(docenteId: string, input: GuardarPreguntasInput) {
     const periodo = await getPeriodoActivo();
     const sim = await SimulacroRepo.findActivo(periodo.id);
-    if (!sim) throw new BusinessRuleError('SIN_SIMULACRO_ACTIVO', 'No hay simulacros activos.');
+    if (!sim) {
+      throw new BusinessRuleError('SIN_SIMULACRO_ACTIVO', 'No hay un simulacro activo. Actívalo para subir tus preguntas.');
+    }
 
-    // El docente debe enseñar ese curso en ese grado durante el período.
+    // El docente debe dictar ese curso en ese grado durante el período.
     const dicta = await prisma.asignacionDocente.count({
       where: {
         docente_id: docenteId,
@@ -185,6 +203,7 @@ export const SimulacroService = {
   /**
    * Estructura del examen de un grado lista para el PDF, con numeración
    * global continua según el orden de cursos (curso 1 → 1..5, curso 2 → 6..10).
+   * Lee del SNAPSHOT del examen (no del banco), así el documento es inmutable.
    */
   async getExamenPdfData(simulacroId: string, gradoId: string) {
     const sim = await SimulacroRepo.findById(simulacroId);
@@ -204,12 +223,12 @@ export const SimulacroService = {
       desde: n,
       preguntas: ex.preguntas.map((ep) => ({
         numero:     n++,
-        enunciado:  ep.pregunta.enunciado,
-        imagen_url: ep.pregunta.imagen_url,
+        enunciado:  ep.enunciado ?? '',
+        imagen_url: ep.imagen_url,
         alternativas: [
-          ep.pregunta.alt_a, ep.pregunta.alt_b, ep.pregunta.alt_c, ep.pregunta.alt_d, ep.pregunta.alt_e,
+          ep.alt_a ?? '', ep.alt_b ?? '', ep.alt_c ?? '', ep.alt_d ?? '', ep.alt_e ?? '',
         ],
-        respuesta:  ep.pregunta.respuesta_correcta,
+        respuesta:  ep.respuesta_correcta ?? '',
       })),
       hasta: 0, // se completa abajo
     }));

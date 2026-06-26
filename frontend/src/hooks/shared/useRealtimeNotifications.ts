@@ -32,22 +32,18 @@ interface Options {
   onNotificacion?: (n: NotificacionRealtime) => void;
 }
 
-/** Convierte el payload SSE en una Notificacion completa para el historial. */
+/** Convierte el payload SSE en la Notificacion persistida (para el historial). */
 function toNotificacion(n: NotificacionRealtime): Notificacion {
   return {
     id:                 n.id,
     usuario_destino_id: n.usuario_destino_id,
-    tipo:               n.tipo,
+    tipo:               n.tipo as Notificacion['tipo'],
     titulo:             n.titulo,
     cuerpo:             n.cuerpo,
     url_accion:         n.url_accion,
     leida:              n.leida,
     fecha_lectura:      null,
     created_at:         n.created_at,
-    prioridad:          n.prioridad,
-    evento:             n.evento,
-    metadata:           (n.metadata as Record<string, unknown> | null) ?? null,
-    archivada:          false,
   };
 }
 

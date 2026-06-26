@@ -565,7 +565,7 @@ function FormModal(props: {
   const { modal, grados, docentes, busy, onClose, onSubmit } = props;
   const d = modal.data as Record<string, unknown> | undefined;
 
-  const [form, setForm] = useState<Record<string, string>>(() => {
+  const [form, setForm] = useState<Record<string, string>>((): Record<string, string> => {
     if (modal.kind === 'nivel')  return { nombre: (d?.nombre as string) ?? '', descripcion: (d?.descripcion as string) ?? '' };
     if (modal.kind === 'grado')  return { nombre: (d?.nombre as string) ?? '', orden: d?.orden != null ? String(d.orden) : String(grados.length + 1) };
     if (modal.kind === 'curso')  return { nombre: (d?.nombre as string) ?? '', horas: d?.horas_semanales != null ? String(d.horas_semanales) : '', codigo: (d?.codigo_cneb as string) ?? '' };

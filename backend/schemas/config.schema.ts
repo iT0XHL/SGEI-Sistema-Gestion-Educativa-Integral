@@ -5,7 +5,7 @@ const uuid = z.string().uuid();
 // Escala Literal
 export const CreateEscalaSchema = z.object({
   periodo_id: uuid,
-  escala: z.enum(['A', 'B', 'C', 'D']),
+  escala: z.enum(['AD', 'A', 'B', 'C']),
   rango_inferior: z.coerce.number().min(0).max(20),
   rango_superior: z.coerce.number().min(0).max(20),
 }).refine((d) => d.rango_superior >= d.rango_inferior);

@@ -66,6 +66,7 @@ export default function DocenteDashboard() {
 
   useEffect(() => {
     if (sessionLoading || !session) return;
+    const entidadId = session.entidadId;
 
     let aborted = false;
 
@@ -77,7 +78,7 @@ export default function DocenteDashboard() {
         // Phase 1: asignaciones + bimestres + actividades — parallel
         const [asigs, bimestres, acts] = await Promise.all([
           apiClient.get<AsignacionDocente[]>('/api/asignaciones', {
-            docenteId: session.entidadId,
+            docenteId: entidadId,
           }),
           bimestresApi.listar(),
           actividadesApi.listar({}).catch((): Actividad[] => []),
@@ -109,7 +110,7 @@ export default function DocenteDashboard() {
         // Phase 3: notas del bimestre activo
         if (bimestre) {
           const notasData = await notasApi.listar({
-            docenteId:  session.entidadId,
+            docenteId:  entidadId,
             bimestreId: bimestre.id,
           }).catch((): Nota[] => []);
           if (!aborted) setNotas(notasData);

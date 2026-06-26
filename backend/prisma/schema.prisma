@@ -331,7 +331,7 @@ model Simulacro {
 // Banco de preguntas que suben los docentes (por curso y grado).
 model SimulacroPregunta {
   id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  simulacro_id       String   @db.Uuid
+  simulacro_id       String?  @db.Uuid
   docente_id         String   @db.Uuid
   curso_id           String   @db.Uuid
   grado_id           String   @db.Uuid
@@ -346,7 +346,7 @@ model SimulacroPregunta {
   respuesta_correcta String   @db.Char(1)
   orden              Int      @db.SmallInt
   created_at         DateTime @default(now()) @db.Timestamptz(6)
-  simulacro          Simulacro          @relation(fields: [simulacro_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  simulacro          Simulacro?         @relation(fields: [simulacro_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   docente            Docente            @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
   curso              Curso              @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
   grado              Grado              @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
@@ -378,13 +378,23 @@ model SimulacroExamen {
 }
 
 // Las exactamente 5 preguntas seleccionadas para un examen (grado+curso).
+// Guarda un SNAPSHOT del contenido: el examen armado es un documento inmutable
+// que no se rompe si luego el docente edita o borra la pregunta del banco.
 model SimulacroExamenPregunta {
-  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  examen_id   String            @db.Uuid
-  pregunta_id String            @db.Uuid
-  orden       Int               @db.SmallInt
-  examen      SimulacroExamen   @relation(fields: [examen_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  pregunta    SimulacroPregunta @relation(fields: [pregunta_id], references: [id], onUpdate: NoAction)
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  examen_id          String             @db.Uuid
+  pregunta_id        String?            @db.Uuid
+  orden              Int                @db.SmallInt
+  enunciado          String?
+  imagen_url         String?
+  alt_a              String?
+  alt_b              String?
+  alt_c              String?
+  alt_d              String?
+  alt_e              String?
+  respuesta_correcta String?            @db.Char(1)
+  examen             SimulacroExamen    @relation(fields: [examen_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pregunta           SimulacroPregunta? @relation(fields: [pregunta_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([examen_id, orden])
   @@unique([examen_id, pregunta_id])

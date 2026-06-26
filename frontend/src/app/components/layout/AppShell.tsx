@@ -8,10 +8,16 @@ import {
   CalendarRange, BookMarked, Sliders, School, ListChecks, Link2, Lock, Layers, FileQuestion,
 } from 'lucide-react';
 import type { Role } from '../../data/mockData';
-import { NOTIFICATIONS } from '../../data/mockData';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../../../lib/hooks/useSession';
+import { authApi } from '../../../lib/api/auth.api';
 import { periodosApi } from '../../../lib/api/periodos.api';
 import { secretariaApi } from '../../../lib/api/secretaria.api';
+import {
+  useNotificaciones, useContarNoLeidas, useMarcarTodasLeidas, useMarcarLeida,
+} from '../../../hooks/shared/useNotificaciones';
+import { useRealtimeNotifications } from '../../../hooks/shared/useRealtimeNotifications';
+import type { Notificacion } from '../../../types/notificacion';
 
 function getInitials(nombre: string): string {
   return nombre.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -72,6 +78,7 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Gestión de Alumnos',  path: '/secretaria/alumnos',          icon: GraduationCap },
     { label: 'Validar Vouchers',    path: '/secretaria/vouchers',         icon: Receipt },
     { label: 'Estado de Pagos',     path: '/secretaria/pagos',            icon: DollarSign },
+    { label: 'Libretas',            path: '/secretaria/libretas',         icon: FileText },
     { label: 'Situación Final',     path: '/secretaria/situacion-final',  icon: GraduationCap },
     { label: 'Exportar SIAGIE',     path: '/secretaria/siagie',           icon: FileOutput },
   ],
@@ -91,18 +98,33 @@ const ROLE_COLORS: Record<Role, string> = {
   Secretaria: 'from-teal-600 to-teal-800',
 };
 
-function NotificationIcon({ type }: { type: string }) {
-  if (type === 'success') return <CheckCircle className="size-4 text-emerald-500" />;
-  if (type === 'warning') return <AlertCircle className="size-4 text-amber-500" />;
-  return <Info className="size-4 text-blue-500" />;
+function NotificationIcon({ tipo }: { tipo: string }) {
+  if (tipo === 'pago')       return <CreditCard className="size-4 text-amber-500" />;
+  if (tipo === 'academico')  return <FileText className="size-4 text-blue-500" />;
+  if (tipo === 'comunicado') return <Bell className="size-4 text-indigo-500" />;
+  return <Info className="size-4 text-slate-400" />;
+}
+
+/** Tiempo relativo en español para la fecha de la notificación. */
+function formatRelative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'ahora';
+  if (min < 60) return `hace ${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `hace ${hr} h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `hace ${day} d`;
+  return new Date(iso).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
 }
 
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [loggingOut, setLoggingOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState(NOTIFICATIONS);
   const notifRef = useRef<HTMLDivElement>(null);
   const [periodoActivo, setPeriodoActivo] = useState<string>('');
   const [bimestreActivo, setBimestreActivo] = useState<string>('');
@@ -119,7 +141,14 @@ export function AppShell() {
   const { session } = useSession();
   const displayName = session?.nombre ?? '…';
   const initials = session ? getInitials(session.nombre) : '…';
-  const unread = notifications.filter(n => !n.read).length;
+
+  // Notificaciones reales: polling (React Query) + tiempo real (SSE) + toasts.
+  const { data: notificaciones = [] } = useNotificaciones();
+  const { data: contador } = useContarNoLeidas();
+  const marcarTodas = useMarcarTodasLeidas();
+  const marcarUna = useMarcarLeida();
+  useRealtimeNotifications({ enabled: Boolean(session) });
+  const unread = contador?.no_leidas ?? 0;
 
   // Guard: redirige al portal correcto si el rol del JWT no coincide con la URL
   useEffect(() => {
@@ -176,7 +205,23 @@ export function AppShell() {
   }, []);
 
   function markAllRead() {
-    setNotifications(ns => ns.map(n => ({ ...n, read: true })));
+    if (unread > 0) marcarTodas.mutate();
+  }
+
+  // Cierra sesión de verdad: invalida la cookie HttpOnly en el backend y limpia
+  // la cache de React Query para no filtrar datos del usuario anterior. Aunque
+  // el logout falle (red caída o sesión ya expirada), igual salimos al login.
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await authApi.logout();
+    } catch {
+      // Silencioso a propósito: el objetivo es salir; el detalle no aporta al usuario.
+    } finally {
+      queryClient.clear();
+      navigate('/', { replace: true });
+    }
   }
 
   const isActive = (path: string) => location.pathname === path || (path !== `/${role}/inicio` && location.pathname.startsWith(path));
@@ -280,11 +325,12 @@ export function AppShell() {
         {/* Logout */}
         <div className="px-3 pb-5">
           <button
-            onClick={() => navigate('/')}
-            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/70 hover:bg-white/10 hover:text-white transition-all"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/70 hover:bg-white/10 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <LogOut className="size-4" />
-            Cerrar sesión
+            {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
           </button>
         </div>
       </aside>
@@ -316,6 +362,8 @@ export function AppShell() {
               onClick={() => setNotifOpen(o => !o)}
               className="relative p-2 rounded-xl hover:bg-slate-100 transition-colors"
               aria-label={`Notificaciones${unread > 0 ? ` (${unread} sin leer)` : ''}`}
+              aria-expanded={notifOpen}
+              aria-haspopup="true"
             >
               <Bell className="size-5 text-slate-600" />
               {unread > 0 && (
@@ -337,21 +385,31 @@ export function AppShell() {
                   )}
                 </div>
                 <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
-                  {notifications.map(n => (
-                    <div
-                      key={n.id}
-                      className={`flex gap-3 px-4 py-3 transition-colors hover:bg-slate-50 ${!n.read ? 'bg-blue-50/40' : ''}`}
-                    >
-                      <div className="mt-0.5 shrink-0"><NotificationIcon type={n.type} /></div>
-                      <div className="min-w-0">
-                        <p className={`text-sm leading-snug ${!n.read ? 'text-slate-800 font-medium' : 'text-slate-600'}`}>
-                          {n.message}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-1">{n.time}</p>
-                      </div>
-                      {!n.read && <div className="mt-2 shrink-0 size-2 rounded-full bg-blue-500" />}
-                    </div>
-                  ))}
+                  {notificaciones.length === 0 ? (
+                    <p className="px-4 py-8 text-sm text-slate-400 text-center">No tienes notificaciones.</p>
+                  ) : (
+                    notificaciones.map((n: Notificacion) => (
+                      <button
+                        type="button"
+                        key={n.id}
+                        onClick={() => {
+                          if (!n.leida) marcarUna.mutate(n.id);
+                          if (n.url_accion) { setNotifOpen(false); navigate(n.url_accion); }
+                        }}
+                        className={`flex w-full text-left gap-3 px-4 py-3 transition-colors hover:bg-slate-50 ${!n.leida ? 'bg-blue-50/40' : ''}`}
+                      >
+                        <div className="mt-0.5 shrink-0"><NotificationIcon tipo={n.tipo} /></div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm leading-snug ${!n.leida ? 'text-slate-800 font-medium' : 'text-slate-600'}`}>
+                            {n.titulo}
+                          </p>
+                          {n.cuerpo && <p className="text-xs text-slate-500 mt-0.5 leading-snug line-clamp-2">{n.cuerpo}</p>}
+                          <p className="text-xs text-slate-400 mt-1">{formatRelative(n.created_at)}</p>
+                        </div>
+                        {!n.leida && <div className="mt-2 shrink-0 size-2 rounded-full bg-blue-500" />}
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             )}

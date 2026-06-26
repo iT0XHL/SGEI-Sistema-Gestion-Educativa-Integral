@@ -34,6 +34,7 @@ export default function AlumnoAsistencias() {
 
   useEffect(() => {
     if (sessionLoading || !session) return;
+    const entidadId = session.entidadId;
 
     let aborted = false;
 
@@ -44,7 +45,7 @@ export default function AlumnoAsistencias() {
 
         const [regs, asigs] = await Promise.all([
           asistenciasApi.listar({}),
-          alumnosApi.cursos(session.entidadId),
+          alumnosApi.cursos(entidadId),
         ]);
         if (aborted) return;
 

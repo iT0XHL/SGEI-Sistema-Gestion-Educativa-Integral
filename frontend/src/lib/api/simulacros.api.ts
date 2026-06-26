@@ -23,22 +23,26 @@ export interface SimulacroDTO {
   _count?:     { preguntas: number; examenes: number };
 }
 
-export interface CargaItem {
-  nivel:   { id: string; nombre: string };
-  grado:   { id: string; nombre: string; orden: number };
-  seccion: { id: string; nombre: string };
-  curso:   { id: string; nombre: string };
+export interface CursoSimple { id: string; nombre: string }
+export interface GradoSimple {
+  id: string; nombre: string; orden: number;
+  nivel: { id: string; nombre: string };
 }
 
 export interface CargaDocente {
-  simulacro:    SimulacroDTO | null;
-  periodo:      { id: string; nombre: string };
-  asignaciones: CargaItem[];
+  /** Simulacro activo (si lo hay). */
+  simulacro:        SimulacroDTO | null;
+  /** Primer simulacro en Borrador que el docente puede activar (si no hay activo). */
+  proximoSimulacro: SimulacroDTO | null;
+  periodo:          { id: string; nombre: string };
+  /** Cursos (asignaturas) y grados que enseña el docente. */
+  cursos:           CursoSimple[];
+  grados:           GradoSimple[];
 }
 
 export interface PreguntaDTO {
   id:                 string;
-  simulacro_id:       string;
+  simulacro_id:       string | null;
   docente_id:         string;
   curso_id:           string;
   grado_id:           string;
@@ -96,17 +100,23 @@ export const simulacrosApi = {
     fd.append('file', file);
     return apiClient.postFormData<{ url: string }>('/api/simulacros/activo/preguntas/imagen', fd);
   },
+
+  /** Cambia estado del simulacro (Docente solo puede activar). */
+  cambiarEstado(id: string, estado: EstadoSimulacro): Promise<SimulacroDTO> {
+    return apiClient.patch<SimulacroDTO>(`/api/simulacros/${id}/estado`, { estado });
+  },
 };
 
 // ── Examen oficial (curaduría Admin) ──────────────────────────────
+// El examen guarda un snapshot del contenido (documento inmutable).
 export interface ExamenPreguntaDTO {
-  id:       string;
-  orden:    number;
-  pregunta: {
-    id: string; enunciado: string; imagen_url: string | null;
-    alt_a: string; alt_b: string; alt_c: string; alt_d: string; alt_e: string;
-    respuesta_correcta: Letra;
-  };
+  id:                 string;
+  orden:              number;
+  pregunta_id:        string | null;
+  enunciado:          string | null;
+  imagen_url:         string | null;
+  alt_a: string | null; alt_b: string | null; alt_c: string | null; alt_d: string | null; alt_e: string | null;
+  respuesta_correcta: Letra | null;
 }
 export interface ExamenCursoDTO {
   id:        string;

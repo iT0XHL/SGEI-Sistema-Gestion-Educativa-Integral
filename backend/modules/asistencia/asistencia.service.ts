@@ -30,7 +30,7 @@ export const AsistenciaService = {
       estado: r.estado,
       justificacion: r.justificacion,
       hora_registro: r.hora_registro,
-      registrador: r.registrador,
+      registrador: r.registrador ? { usuario_login: r.registrador.credencial.usuario_login } : undefined,
     }));
     return paginate(dtos, filters.page, filters.limit, total);
   },
@@ -46,7 +46,7 @@ export const AsistenciaService = {
       estado: row.estado,
       justificacion: row.justificacion,
       hora_registro: row.hora_registro,
-      registrador: row.registrador,
+      registrador: row.registrador ? { usuario_login: row.registrador.credencial.usuario_login } : undefined,
     };
   },
 

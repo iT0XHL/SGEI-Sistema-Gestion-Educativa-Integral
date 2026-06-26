@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   ClipboardList, ChevronDown, Loader2, AlertTriangle, CheckCircle2, Save,
-  ImagePlus, X, FileQuestion, Info, Trash2,
+  ImagePlus, X, Info, Trash2, Play,
 } from 'lucide-react';
 import {
   simulacrosApi,
-  type CargaDocente, type CargaItem, type PreguntaInput, type Letra,
+  type CargaDocente, type PreguntaInput, type Letra,
 } from '../../../lib/api/simulacros.api';
 
 const LETRAS: Letra[] = ['A', 'B', 'C', 'D', 'E'];
@@ -19,11 +19,6 @@ const nuevoBloque = (): PreguntaInput[] => Array.from({ length: 5 }, () => ({ ..
 const input = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400';
 const selectCls = 'w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50';
 
-function uniqBy<T>(arr: T[], key: (x: T) => string): T[] {
-  const seen = new Set<string>();
-  return arr.filter(x => { const k = key(x); if (seen.has(k)) return false; seen.add(k); return true; });
-}
-
 export default function DocenteSimulacro() {
   const [carga, setCarga]     = useState<CargaDocente | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,10 +26,8 @@ export default function DocenteSimulacro() {
   const [saving, setSaving]   = useState(false);
   const [toast, setToast]     = useState('');
 
-  const [nivelId, setNivelId]     = useState('');
-  const [gradoId, setGradoId]     = useState('');
-  const [seccionId, setSeccionId] = useState('');
-  const [cursoId, setCursoId]     = useState('');
+  const [cursoId, setCursoId] = useState('');
+  const [gradoId, setGradoId] = useState('');
 
   const [preguntas, setPreguntas] = useState<PreguntaInput[]>(nuevoBloque);
   const [cargandoBloque, setCargandoBloque] = useState(false);
@@ -47,28 +40,36 @@ export default function DocenteSimulacro() {
       setLoading(true); setError('');
       setCarga(await simulacrosApi.carga());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando el simulacro');
+      setError(e instanceof Error ? e.message : 'Error cargando datos del simulacro');
     } finally {
       setLoading(false);
     }
   }
 
-  const asignaciones: CargaItem[] = carga?.asignaciones ?? [];
+  // El docente activa el próximo simulacro (Borrador) para abrir la carga.
+  async function activarSimulacro() {
+    const sim = carga?.proximoSimulacro;
+    if (!sim) return;
+    try {
+      setSaving(true); setError('');
+      await simulacrosApi.cambiarEstado(sim.id, 'Activo');
+      setCarga(await simulacrosApi.carga());
+      flash('Simulacro activado. Ahora puedes cargar tus preguntas.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo activar el simulacro');
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  // ── Opciones en cascada ──────────────────────────────────────────
-  const niveles  = useMemo(() => uniqBy(asignaciones.map(a => a.nivel), n => n.id), [asignaciones]);
-  const grados   = useMemo(() => uniqBy(asignaciones.filter(a => a.nivel.id === nivelId).map(a => a.grado), g => g.id).sort((a, b) => a.orden - b.orden), [asignaciones, nivelId]);
-  const secciones = useMemo(() => uniqBy(asignaciones.filter(a => a.grado.id === gradoId).map(a => a.seccion), s => s.id), [asignaciones, gradoId]);
-  const cursos   = useMemo(() => uniqBy(asignaciones.filter(a => a.grado.id === gradoId && a.seccion.id === seccionId).map(a => a.curso), c => c.id), [asignaciones, gradoId, seccionId]);
+  const simulacro        = carga?.simulacro ?? null;
+  const proximoSimulacro = carga?.proximoSimulacro ?? null;
+  const cursos           = carga?.cursos ?? [];
+  const grados           = carga?.grados ?? [];
 
-  // Reset en cascada
-  useEffect(() => { setGradoId(''); setSeccionId(''); setCursoId(''); }, [nivelId]);
-  useEffect(() => { setSeccionId(''); setCursoId(''); }, [gradoId]);
-  useEffect(() => { setCursoId(''); }, [seccionId]);
-
-  // Cargar preguntas existentes al elegir curso (por curso + grado)
+  // Cargar el bloque ya guardado al elegir curso+grado (solo con simulacro activo).
   useEffect(() => {
-    if (!cursoId || !gradoId) { setPreguntas(nuevoBloque()); return; }
+    if (!simulacro || !cursoId || !gradoId) { setPreguntas(nuevoBloque()); return; }
     let cancel = false;
     (async () => {
       try {
@@ -91,7 +92,7 @@ export default function DocenteSimulacro() {
       }
     })();
     return () => { cancel = true; };
-  }, [cursoId, gradoId]);
+  }, [simulacro, cursoId, gradoId]);
 
   function setPreg(i: number, patch: Partial<PreguntaInput>) {
     setPreguntas(prev => prev.map((p, idx) => idx === i ? { ...p, ...patch } : p));
@@ -111,7 +112,7 @@ export default function DocenteSimulacro() {
       await simulacrosApi.guardarPreguntas({
         curso_id: cursoId,
         grado_id: gradoId,
-        seccion_id: seccionId || null,
+        seccion_id: null,
         preguntas: preguntas.map(p => ({
           enunciado: p.enunciado.trim(),
           imagen_url: p.imagen_url?.trim() || null,
@@ -133,28 +134,6 @@ export default function DocenteSimulacro() {
     return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 text-slate-400 animate-spin" /></div>;
   }
 
-  const simulacro = carga?.simulacro ?? null;
-
-  // Estado vacío: sin simulacros activos
-  if (!simulacro) {
-    return (
-      <div className="p-6 lg:p-8 max-w-3xl mx-auto">
-        <div className="bg-white rounded-2xl border border-dashed border-slate-200 py-20 flex flex-col items-center text-center px-6">
-          <span className="flex size-16 items-center justify-center rounded-2xl bg-slate-100 mb-4">
-            <FileQuestion className="size-8 text-slate-300" />
-          </span>
-          <h1 className="text-xl font-bold text-slate-800">Sin simulacros activos</h1>
-          <p className="text-sm text-slate-500 mt-1 max-w-md">
-            El administrador aún no ha activado ningún simulacro de admisión. Cuando lo haga,
-            aquí podrás registrar tus preguntas por curso.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const listo = nivelId && gradoId && seccionId && cursoId;
-
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -162,16 +141,23 @@ export default function DocenteSimulacro() {
         <div>
           <p className="text-sm text-slate-500 mb-1">Simulacro de Admisión</p>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <ClipboardList className="size-6 text-slate-700" /> {simulacro.nombre}
+            <ClipboardList className="size-6 text-slate-700" /> Mis preguntas
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Registra <strong>5 preguntas por curso</strong> que dictas. Se guardan solo al pulsar «Guardar».
+            Con un simulacro activo, registra <strong>5 preguntas por curso y grado</strong> que enseñas.
+            El administrador seleccionará de entre todas para armar el examen.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200 self-start">
-          <span className="size-1.5 rounded-full bg-emerald-500" /> Activo
-          {simulacro.bimestre && <> · {simulacro.bimestre.nombre}</>}
-        </span>
+        {simulacro ? (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200 self-start shrink-0">
+            <span className="size-1.5 rounded-full bg-emerald-500" /> {simulacro.nombre} activo
+            {simulacro.bimestre && <> · {simulacro.bimestre.nombre}</>}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 text-slate-500 text-xs font-medium border border-slate-200 self-start shrink-0">
+            Sin simulacro activo
+          </span>
+        )}
       </div>
 
       {toast && (
@@ -187,77 +173,97 @@ export default function DocenteSimulacro() {
         </div>
       )}
 
-      {asignaciones.length === 0 ? (
-        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
-          <Info className="size-5 text-amber-600 shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-800">No tienes cursos asignados en el período activo, por lo que no puedes registrar preguntas.</p>
-        </div>
-      ) : (
-        <>
-          {/* Cascada */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Selector label="Nivel" value={nivelId} onChange={setNivelId}
-              options={niveles.map(n => ({ value: n.id, label: n.nombre }))} placeholder="Selecciona…" />
-            <Selector label="Grado" value={gradoId} onChange={setGradoId} disabled={!nivelId}
-              options={grados.map(g => ({ value: g.id, label: g.nombre }))} placeholder="Selecciona…" />
-            <Selector label="Sección" value={seccionId} onChange={setSeccionId} disabled={!gradoId}
-              options={secciones.map(s => ({ value: s.id, label: s.nombre }))} placeholder="Selecciona…" />
-            <Selector label="Curso" value={cursoId} onChange={setCursoId} disabled={!seccionId}
-              options={cursos.map(c => ({ value: c.id, label: c.nombre }))} placeholder="Selecciona…" />
-          </div>
-
-          {!listo ? (
-            <div className="bg-white rounded-2xl border border-dashed border-slate-200 py-14 text-center">
-              <ClipboardList className="size-9 text-slate-200 mx-auto mb-2" />
-              <p className="text-sm text-slate-400">Selecciona Nivel ▸ Grado ▸ Sección ▸ Curso para registrar las 5 preguntas.</p>
+      {/* Sin simulacro activo → ofrecer activar el próximo, o avisar */}
+      {!simulacro && (
+        proximoSimulacro ? (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <Info className="size-5 text-amber-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm text-amber-800 font-medium">
+                {proximoSimulacro.nombre} está en borrador{proximoSimulacro.bimestre ? ` · ${proximoSimulacro.bimestre.nombre}` : ''}
+              </p>
+              <p className="text-sm text-amber-700 mt-0.5">Actívalo para empezar a registrar tus 5 preguntas por curso y grado.</p>
             </div>
-          ) : cargandoBloque ? (
-            <div className="flex items-center justify-center py-14"><Loader2 className="size-6 text-slate-400 animate-spin" /></div>
-          ) : (
-            <div className="space-y-4">
-              {preguntas.map((p, i) => (
-                <PreguntaCard key={i} index={i} value={p} onChange={(patch) => setPreg(i, patch)} />
-              ))}
+            <button onClick={activarSimulacro} disabled={saving}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium shrink-0 disabled:opacity-50 transition-colors">
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Activar simulacro
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+            <Info className="size-5 text-slate-500 shrink-0 mt-0.5" />
+            <p className="text-sm text-slate-600">No hay un simulacro activo ni pendiente. Pide al administrador que cree uno para este bimestre.</p>
+          </div>
+        )
+      )}
 
-              {/* Barra guardar */}
-              <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 bg-white/95 backdrop-blur rounded-2xl border border-slate-200 shadow-lg px-4 py-3">
-                <p className={`text-sm ${bloqueCompleto ? 'text-emerald-600' : 'text-slate-500'}`}>
-                  {bloqueCompleto ? '✓ Las 5 preguntas están completas' : 'Completa el enunciado y las 5 alternativas de cada pregunta'}
-                </p>
-                <button onClick={guardar} disabled={saving || !bloqueCompleto}
-                  className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                  Guardar 5 preguntas
-                </button>
+      {/* Con simulacro activo → formulario de carga (5 preguntas por curso+grado) */}
+      {simulacro && (
+        cursos.length === 0 ? (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <Info className="size-5 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800">No tienes cursos asignados en el período activo, por lo que no puedes registrar preguntas.</p>
+          </div>
+        ) : (
+          <>
+            {/* Selectores: Curso → Grado (de lo que enseña el docente) */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Curso (tu asignatura)</label>
+                <div className="relative">
+                  <select value={cursoId} onChange={e => setCursoId(e.target.value)} className={selectCls}>
+                    <option value="">Selecciona un curso…</option>
+                    {cursos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Grado</label>
+                <div className="relative">
+                  <select value={gradoId} onChange={e => setGradoId(e.target.value)} disabled={!cursoId} className={selectCls}>
+                    <option value="">Selecciona un grado…</option>
+                    {grados.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+                </div>
               </div>
             </div>
-          )}
-        </>
+
+            {!cursoId || !gradoId ? (
+              <div className="bg-white rounded-2xl border border-dashed border-slate-200 py-14 text-center">
+                <ClipboardList className="size-9 text-slate-200 mx-auto mb-2" />
+                <p className="text-sm text-slate-400">Selecciona Curso ▸ Grado para registrar las 5 preguntas.</p>
+              </div>
+            ) : cargandoBloque ? (
+              <div className="flex items-center justify-center py-14"><Loader2 className="size-6 text-slate-400 animate-spin" /></div>
+            ) : (
+              <div className="space-y-4">
+                {preguntas.map((p, i) => (
+                  <PreguntaCard key={i} index={i} value={p} onChange={(patch) => setPreg(i, patch)} />
+                ))}
+
+                {/* Barra guardar */}
+                <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 bg-white/95 backdrop-blur rounded-2xl border border-slate-200 shadow-lg px-4 py-3">
+                  <p className={`text-sm ${bloqueCompleto ? 'text-emerald-600' : 'text-slate-500'}`}>
+                    {bloqueCompleto ? '✓ Las 5 preguntas están completas' : 'Completa el enunciado y las 5 alternativas de cada pregunta'}
+                  </p>
+                  <button onClick={guardar} disabled={saving || !bloqueCompleto}
+                    className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
+                    {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                    Guardar 5 preguntas
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )
       )}
     </div>
   );
 }
 
-// ── Selector con chevron ──────────────────────────────────────────
-function Selector(props: {
-  label: string; value: string; onChange: (v: string) => void; disabled?: boolean;
-  options: { value: string; label: string }[]; placeholder: string;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">{props.label}</label>
-      <div className="relative">
-        <select value={props.value} disabled={props.disabled} onChange={e => props.onChange(e.target.value)} className={selectCls}>
-          <option value="">{props.placeholder}</option>
-          {props.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-      </div>
-    </div>
-  );
-}
-
-// ── Tarjeta de pregunta ───────────────────────────────────────────
+// ── Tarjeta de pregunta (con imagen opcional) ────────────────────────
 function PreguntaCard(props: { index: number; value: PreguntaInput; onChange: (patch: Partial<PreguntaInput>) => void }) {
   const { index, value, onChange } = props;
   const altKeys: Array<keyof PreguntaInput> = ['alt_a', 'alt_b', 'alt_c', 'alt_d', 'alt_e'];
