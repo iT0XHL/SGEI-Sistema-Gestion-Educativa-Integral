@@ -50,8 +50,11 @@ export const BoletaService = {
 
     // Si ya existe boleta anterior (re-envío), eliminar del Storage y de BD
     const existente = await BoletaRepository.findByPagoId(input.pago_id);
-    if (existente && StorageService.isConfigured()) {
-      await StorageService.delete(BUCKETS.BOLETAS_PAGOS, existente.url_archivo).catch(() => {});
+    if (existente) {
+      if (StorageService.isConfigured()) {
+        await StorageService.delete(BUCKETS.BOLETAS_PAGOS, existente.url_archivo).catch(() => {});
+      }
+      await BoletaRepository.delete(existente.id, user.perfilId);
     }
 
     // Subir archivo a Storage

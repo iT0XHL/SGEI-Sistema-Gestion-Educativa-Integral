@@ -122,6 +122,12 @@ export const BoletaRepository = {
     });
   },
 
+  async delete(id: string, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
+      return tx.boletaPago.delete({ where: { id } });
+    });
+  },
+
   /**
    * Llama al SP financial_schema.revisar_boleta.
    * El SP valida rol, gestiona transiciones, sincroniza pago y crea notificaciones.

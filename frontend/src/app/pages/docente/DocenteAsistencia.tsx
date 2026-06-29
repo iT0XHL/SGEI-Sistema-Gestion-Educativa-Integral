@@ -179,8 +179,9 @@ export default function DocenteAsistencia() {
 
     try {
       await asistenciasApi.guardar({
-        seccion_id: asignacionSeleccionada.seccionId,
-        fecha:      date,
+        seccion_id:    asignacionSeleccionada.seccionId,
+        asignacion_id: asignacionSeleccionada.id,
+        fecha:         date,
         registros,
       });
       setSaved(true);

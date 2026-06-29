@@ -1,7 +1,5 @@
-import { apiClient } from './client';
+import { apiClient, BASE_URL } from './client';
 import type { BoletaPago, RevisarBoletaPayload, EstadoRevisionBoleta } from '../../types/pago';
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 export interface ListarBoletasParams {
   alumnoId?:       string;

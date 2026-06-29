@@ -80,15 +80,17 @@ function areaCalif(comps: AreaGroup['competencias'], periodo: number): string {
 }
 
 function areaCalifFinal(comps: AreaGroup['competencias'], periodos: number[]): string {
-  const vals: number[] = [];
-  for (const c of comps) {
-    for (const p of periodos) {
-      const v = c.notas.get(p)?.vigesimal;
-      if (v !== null && v !== undefined) vals.push(v);
+  const periodAvgs: number[] = [];
+  for (const p of periodos) {
+    const vals = comps
+      .map((c) => c.notas.get(p)?.vigesimal)
+      .filter((v): v is number => v !== null && v !== undefined);
+    if (vals.length > 0) {
+      periodAvgs.push(vals.reduce((a, b) => a + b, 0) / vals.length);
     }
   }
-  if (vals.length === 0) return '';
-  return vigToLiteral(vals.reduce((a, b) => a + b, 0) / vals.length);
+  if (periodAvgs.length === 0) return '';
+  return vigToLiteral(periodAvgs.reduce((a, b) => a + b, 0) / periodAvgs.length);
 }
 
 export async function buildLibretaDocx(

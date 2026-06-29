@@ -14,8 +14,8 @@ const EnvSchema = z.object({
   // DIRECT_URL: si no se define, se usa DATABASE_URL (válido en local).
   DIRECT_URL: z.string().min(1).optional(),
 
-  // JWT — requerido a partir de la Fase 2 (Auth). Opcional aquí.
-  JWT_SECRET: z.string().min(32).optional(),
+  // JWT — requerido para auth.
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET es obligatorio (mín. 32 caracteres)'),
   JWT_EXPIRES_IN: z.string().default('8h'),
   JWT_COOKIE_NAME: z.string().default('sgei_token'),
 

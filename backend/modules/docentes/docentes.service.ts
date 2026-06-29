@@ -5,7 +5,6 @@ import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { DocentesRepository, type ListFilters } from './docentes.repository';
 import type { CreateDocenteInput, UpdateDocenteInput } from '@/schemas/personas.schema';
-import { randomUUID } from 'crypto';
 
 export interface DocenteDTO {
   id: string;
@@ -78,41 +77,73 @@ export const DocentesService = {
     if (existingLogin) throw new ConflictError('Ya existe una cuenta con ese correo');
 
     const passwordHash = await hashPassword(input.password);
-    const cred = await prisma.credencial.create({
-      data: { usuario_login: input.usuario_login, password_hash: passwordHash },
-      select: { id: true },
+
+    return prisma.$transaction(async (tx) => {
+      const cred = await tx.credencial.create({
+        data: { usuario_login: input.usuario_login, password_hash: passwordHash },
+        select: { id: true },
+      });
+
+      const perfil = await tx.perfilUsuario.create({
+        data: {
+          credencial_id: cred.id,
+          rol: 'Docente',
+          entidad_tipo: 'docente',
+          entidad_id: '00000000-0000-0000-0000-000000000000',
+        },
+        select: { id: true },
+      });
+
+      await tx.$executeRaw`SELECT set_config('app.current_user_id', ${adminPerfilId}, true)`;
+
+      const docente = await tx.docente.create({
+        data: {
+          perfil_usuario_id: perfil.id,
+          dni: input.dni,
+          nombres: input.nombres,
+          apellido_paterno: input.apellido_paterno,
+          apellido_materno: input.apellido_materno,
+          especialidad: input.especialidad,
+          telefono: input.telefono,
+          email_institucional: input.email_institucional ?? null,
+          fecha_nacimiento: input.fecha_nacimiento ?? null,
+          sexo: input.sexo ?? null,
+          titulo_profesional: input.titulo_profesional ?? null,
+          fecha_ingreso: input.fecha_ingreso ?? null,
+        },
+        select: {
+          id: true,
+          dni: true,
+          nombres: true,
+          apellido_paterno: true,
+          apellido_materno: true,
+          especialidad: true,
+          telefono: true,
+          email_institucional: true,
+          fecha_nacimiento: true,
+          sexo: true,
+          titulo_profesional: true,
+          fecha_ingreso: true,
+          activo: true,
+        },
+      });
+
+      await tx.perfilUsuario.update({
+        where: { id: perfil.id },
+        data: { entidad_id: docente.id },
+      });
+
+      await AuditService.logWithinTx(tx, {
+        usuarioId: adminPerfilId,
+        tipo: 'CREATE',
+        modulo: 'docentes',
+        entidadAfectada: 'docente',
+        entidadId: docente.id,
+        newValue: { nombres: input.nombres, dni: input.dni },
+      });
+
+      return { ...docente, usuario_login: input.usuario_login };
     });
-
-    const perfil = await prisma.perfilUsuario.create({
-      data: {
-        credencial_id: cred.id,
-        rol: 'Docente',
-        entidad_tipo: 'docente',
-        entidad_id: randomUUID(),
-      },
-      select: { id: true },
-    });
-
-    const docente = await DocentesRepository.create(
-      { ...input, perfilUsuarioId: perfil.id },
-      adminPerfilId,
-    );
-
-    await prisma.perfilUsuario.update({
-      where: { id: perfil.id },
-      data: { entidad_id: docente.id },
-    });
-
-    await AuditService.log({
-      usuarioId: adminPerfilId,
-      tipo: 'CREATE',
-      modulo: 'docentes',
-      entidadAfectada: 'docente',
-      entidadId: docente.id,
-      newValue: { nombres: input.nombres, dni: input.dni },
-    });
-
-    return { ...docente, usuario_login: input.usuario_login };
   },
 
   async update(
@@ -128,30 +159,49 @@ export const DocentesService = {
       if (existing) throw new ConflictError('Ya existe otro docente con ese DNI');
     }
 
-    if (input.usuario_login && input.usuario_login !== current.perfil?.credencial.usuario_login) {
-      const existing = await prisma.credencial.findUnique({
-        where: { usuario_login: input.usuario_login },
-        select: { id: true },
-      });
-      if (existing) throw new ConflictError('Ya existe otra cuenta con ese correo');
-      
-      await prisma.credencial.update({
-        where: { id: current.perfil.credencial.id },
-        data: { usuario_login: input.usuario_login },
-      });
-    }
+    return prisma.$transaction(async (tx) => {
+      if (input.usuario_login && input.usuario_login !== current.perfil?.credencial.usuario_login) {
+        const existing = await tx.credencial.findUnique({
+          where: { usuario_login: input.usuario_login },
+          select: { id: true },
+        });
+        if (existing) throw new ConflictError('Ya existe otra cuenta con ese correo');
 
-    await DocentesRepository.update(docenteId, input, adminPerfilId);
+        await tx.$executeRaw`SELECT set_config('app.current_user_id', ${adminPerfilId}, true)`;
+        await tx.credencial.update({
+          where: { id: current.perfil.credencial.id },
+          data: { usuario_login: input.usuario_login },
+        });
+      }
 
-    await AuditService.log({
-      usuarioId: adminPerfilId,
-      tipo: 'UPDATE',
-      modulo: 'docentes',
-      entidadAfectada: 'docente',
-      entidadId: docenteId,
+      await tx.$executeRaw`SELECT set_config('app.current_user_id', ${adminPerfilId}, true)`;
+      await tx.docente.update({
+        where: { id: docenteId },
+        data: {
+          ...(input.nombres && { nombres: input.nombres }),
+          ...(input.apellido_paterno && { apellido_paterno: input.apellido_paterno }),
+          ...(input.apellido_materno && { apellido_materno: input.apellido_materno }),
+          ...(input.dni && { dni: input.dni }),
+          ...(input.especialidad && { especialidad: input.especialidad }),
+          ...(input.telefono && { telefono: input.telefono }),
+          ...(input.email_institucional !== undefined && { email_institucional: input.email_institucional }),
+          ...(input.fecha_nacimiento !== undefined && { fecha_nacimiento: input.fecha_nacimiento }),
+          ...(input.sexo !== undefined && { sexo: input.sexo }),
+          ...(input.titulo_profesional !== undefined && { titulo_profesional: input.titulo_profesional }),
+          ...(input.fecha_ingreso !== undefined && { fecha_ingreso: input.fecha_ingreso }),
+        },
+      });
+
+      await AuditService.logWithinTx(tx, {
+        usuarioId: adminPerfilId,
+        tipo: 'UPDATE',
+        modulo: 'docentes',
+        entidadAfectada: 'docente',
+        entidadId: docenteId,
+      });
+
+      return this.get(docenteId);
     });
-
-    return this.get(docenteId);
   },
 
   async setActivo(docenteId: string, activo: boolean, adminPerfilId: string): Promise<DocenteDTO> {

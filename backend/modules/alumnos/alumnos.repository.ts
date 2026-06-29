@@ -8,16 +8,29 @@ export interface ListFilters {
   activo?: boolean;
   page: number;
   limit: number;
+  nivelId?: string;
+  gradoId?: string;
+  seccionId?: string;
+  periodoId?: string;
 }
 
 export const AlumnosRepository = {
   buildWhere(filters: ListFilters): Prisma.AlumnoWhereInput {
     const where: Prisma.AlumnoWhereInput = {};
     if (filters.activo !== undefined) where.activo = filters.activo;
+    if (filters.seccionId) where.seccion_id = filters.seccionId;
+    if (filters.periodoId) where.periodo_id = filters.periodoId;
+    if (filters.gradoId || filters.nivelId) {
+      const gradoWhere: Prisma.GradoWhereInput = {};
+      if (filters.gradoId) gradoWhere.id = filters.gradoId;
+      if (filters.nivelId) gradoWhere.nivel_id = filters.nivelId;
+      where.seccion = { grado: gradoWhere };
+    }
     if (filters.q) {
       where.OR = [
         { nombres: { contains: filters.q, mode: 'insensitive' } },
         { apellido_paterno: { contains: filters.q, mode: 'insensitive' } },
+        { apellido_materno: { contains: filters.q, mode: 'insensitive' } },
         { dni: { contains: filters.q } },
       ];
     }

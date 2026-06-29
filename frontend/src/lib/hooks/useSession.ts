@@ -37,22 +37,23 @@ export function useSession(): UseSessionResult {
     staleTime: 0,
   });
 
-  const isUnauthorized = error != null && statusOf(error) === 401;
-
-  // Sesión inválida/expirada → de vuelta al login (mismo comportamiento previo).
+  const httpStatus = error != null ? statusOf(error) : undefined;
+  // Solo redirigir al login si es un 401 (sesión expirada / no autenticado).
+  // Errores 500 o de red no deben forzar un logout — se notifican como error de UI.
   useEffect(() => {
-    if (isUnauthorized) navigate('/');
-  }, [isUnauthorized, navigate]);
+    if (httpStatus === 401) navigate('/');
+  }, [httpStatus, navigate]);
 
   return {
     session: data ?? null,
     loading: isLoading,
-    // El 401 se resuelve con la redirección, no se expone como error de UI.
     error:
-      error && !isUnauthorized
-        ? error instanceof Error
-          ? error.message
-          : 'Error al obtener la sesión.'
+      error != null && httpStatus !== 401
+        ? httpStatus === 500
+          ? 'El servidor no está disponible en este momento. Intenta más tarde.'
+          : error instanceof Error
+            ? error.message
+            : 'Error al obtener la sesión.'
         : null,
   };
 }

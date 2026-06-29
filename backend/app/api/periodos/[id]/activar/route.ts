@@ -4,11 +4,11 @@
 // ============================================================
 import { withRole } from '@/lib/auth';
 import { ok } from '@/lib/response';
-import { PeriodoService } from '@/modules/academic/periodo.service';
+import { PeriodoService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';
 
 export const PATCH = withRole(['Admin'], async (_req, { params, user }) => {
-  const periodo = await PeriodoService.activar(params.id, user.perfilId);
+  const periodo = await PeriodoService.setActivo(params.id, true, user.perfilId);
   return ok(periodo, 'Período activado');
 });

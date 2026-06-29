@@ -117,4 +117,12 @@ export const AsistenciaRepository = {
       select: { id: true },
     });
   },
+
+  async delete(id: string, registradoPorId: string) {
+    return withAuditContext(registradoPorId, async (tx) => {
+      return tx.asistenciaDocente.delete({
+        where: { id },
+      });
+    });
+  },
 };

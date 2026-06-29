@@ -151,9 +151,10 @@ export const SiagieRepository = {
   },
 
   /**
-   * Devuelve los registros del MV agregados a nivel (alumno, curso): un
-   * promedio anual de la nota_vigesimal (a través de todos los bimestres
-   * y competencias). Usado por el builder de "Acta Consolidada".
+   * Devuelve los registros del MV agregados a nivel (alumno, curso):
+   * primero promedia nota_vigesimal por (alumno, curso, bimestre),
+   * luego promedia esos promedios bimestrales por (alumno, curso).
+   * Usado por el builder de "Acta Consolidada".
    */
   async obtenerNotasFinales(periodoId?: string): Promise<NotaFinalSiagie[]> {
     const where = periodoId
@@ -178,12 +179,12 @@ export const SiagieRepository = {
         sexo,
         curso,
         codigo_cneb,
-        AVG(nota_vigesimal)::numeric(5,2)  AS nota_promedio,
-        comportamiento,
-        numero_areas_desaprobadas,
-        situacion_final,
-        motivo_retiro,
-        observaciones,
+        ROUND(AVG(bimestre_avg), 2) AS nota_promedio,
+        MAX(comportamiento) AS comportamiento,
+        MAX(numero_areas_desaprobadas) AS numero_areas_desaprobadas,
+        MAX(situacion_final) AS situacion_final,
+        MAX(motivo_retiro) AS motivo_retiro,
+        MAX(observaciones) AS observaciones,
         codigo_ugel,
         nombre_ugel,
         nombre_ie,
@@ -198,16 +199,66 @@ export const SiagieRepository = {
         fecha_inicio_periodo,
         fecha_fin_periodo,
         anio_escolar
-      FROM  audit_schema.formato_siagie
-      ${where}
+      FROM (
+        SELECT
+          periodo_id,
+          seccion_id,
+          alumno_id,
+          grado,
+          seccion,
+          turno,
+          nivel_educativo,
+          numero_orden,
+          codigo_estudiante,
+          numero_documento,
+          apellido_paterno,
+          apellido_materno,
+          nombres,
+          sexo,
+          curso,
+          codigo_cneb,
+          numero_bimestre,
+          comportamiento,
+          numero_areas_desaprobadas,
+          situacion_final,
+          motivo_retiro,
+          observaciones,
+          codigo_ugel,
+          nombre_ugel,
+          nombre_ie,
+          codigo_modular,
+          resolucion_creacion,
+          modalidad,
+          gestion,
+          departamento,
+          provincia,
+          distrito,
+          centro_poblado,
+          fecha_inicio_periodo,
+          fecha_fin_periodo,
+          anio_escolar,
+          AVG(nota_vigesimal) AS bimestre_avg
+        FROM  audit_schema.formato_siagie
+        ${where}
+        GROUP BY
+          periodo_id, seccion_id, alumno_id,
+          grado, seccion, turno, nivel_educativo,
+          numero_orden, codigo_estudiante, numero_documento,
+          apellido_paterno, apellido_materno, nombres, sexo,
+          curso, codigo_cneb, numero_bimestre,
+          comportamiento, numero_areas_desaprobadas, situacion_final,
+          motivo_retiro, observaciones,
+          codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
+          resolucion_creacion, modalidad, gestion,
+          departamento, provincia, distrito, centro_poblado,
+          fecha_inicio_periodo, fecha_fin_periodo, anio_escolar
+      ) sub
       GROUP BY
         periodo_id, seccion_id, alumno_id,
         grado, seccion, turno, nivel_educativo,
         numero_orden, codigo_estudiante, numero_documento,
         apellido_paterno, apellido_materno, nombres, sexo,
         curso, codigo_cneb,
-        comportamiento, numero_areas_desaprobadas, situacion_final,
-        motivo_retiro, observaciones,
         codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
         resolucion_creacion, modalidad, gestion,
         departamento, provincia, distrito, centro_poblado,

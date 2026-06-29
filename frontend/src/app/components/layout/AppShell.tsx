@@ -6,6 +6,7 @@ import {
   Receipt, DollarSign, FileOutput, Bell, Menu, X, ChevronRight,
   LogOut, GraduationCap, CheckCircle, AlertCircle, Info,
   CalendarRange, BookMarked, Sliders, School, ListChecks, Link2, Lock, Layers, FileQuestion,
+  CalendarSearch,
 } from 'lucide-react';
 import type { Role } from '../../data/mockData';
 import { useQueryClient } from '@tanstack/react-query';
@@ -54,6 +55,7 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
   Docente: [
     { label: 'Inicio',              path: '/docente/inicio',     icon: LayoutDashboard },
     { label: 'Registro Asistencia', path: '/docente/asistencia', icon: CalendarCheck },
+    { label: 'Historial Asistencia', path: '/docente/historial-asistencia', icon: CalendarSearch },
     { label: 'Tareas y Materiales', path: '/docente/tareas',     icon: ClipboardList },
     { label: 'Ingreso de Notas',    path: '/docente/notas',      icon: PenLine },
     { label: 'Simulacro Admisión',  path: '/docente/simulacro',  icon: FileQuestion },
@@ -64,6 +66,7 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Gestión de Cuentas',      path: '/admin/cuentas',       icon: Users },
     { label: 'Horarios',                path: '/admin/horarios',      icon: Calendar },
     { label: 'Asistencia Docente',      path: '/admin/asistencia',    icon: UserCheck },
+    { label: 'Asistencia Alumnos',      path: '/admin/asistencia-alumnos', icon: CalendarCheck },
     { label: 'Período Académico',       path: '/admin/periodo',       icon: CalendarRange },
     { label: 'Bimestres',               path: '/admin/bimestres',     icon: BookMarked },
     { label: 'Escala de Calificaciones',path: '/admin/escala',        icon: Sliders },

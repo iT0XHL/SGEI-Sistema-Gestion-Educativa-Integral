@@ -17,6 +17,9 @@ const RegistroAsistenciaItem = z.object({
 /** POST /api/asistencias/alumnos — guarda asistencia de toda la sección. */
 export const GuardarAsistenciaSchema = z.object({
   seccion_id: z.string().uuid('seccion_id debe ser UUID'),
+  // Asignación (curso–sección) desde la que el docente toma asistencia.
+  // Opcional para compatibilidad, refuerza la validación de horario.
+  asignacion_id: z.string().uuid('asignacion_id debe ser UUID').optional(),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe ser YYYY-MM-DD'),
   registros: z
     .array(RegistroAsistenciaItem)
@@ -34,9 +37,13 @@ export const ActualizarAsistenciaSchema = z.object({
 export const ListarAsistenciaQuery = z.object({
   seccionId: z.string().uuid().optional(),
   alumnoId: z.string().uuid().optional(),
+  estado: EstadoAsistenciaEnum.optional(),
   fechaDesde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   fechaHasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // Paginación: acota el resultado para escalar con grandes volúmenes.
+  limit: z.coerce.number().int().positive().max(5000).default(1000),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export type GuardarAsistenciaInput = z.infer<typeof GuardarAsistenciaSchema>;

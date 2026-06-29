@@ -1,8 +1,6 @@
-import { apiClient } from './client';
+import { apiClient, BASE_URL } from './client';
 import type { LibretaRow } from '../../types/nota';
 import type { ResumenAlumnoLibreta, RecepcionRow, LibretaDTO } from '../../types/libreta';
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 export const libretasApi = {
   obtener(alumnoId: string, bimestreId?: string): Promise<LibretaRow[]> {

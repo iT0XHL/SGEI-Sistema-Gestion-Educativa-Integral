@@ -4,11 +4,13 @@
 //  ni en localStorage). Algoritmo HS256.
 // ============================================================
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { env } from '@/config/env';
 import { UnauthorizedError } from '@/errors/http-errors';
+import { isTokenRevoked } from '@/lib/token-blacklist';
 import type { RolUsuario } from '@/types/roles';
 
-/** Datos que viajan dentro del JWT. */
+/** Datos que viajan dentro del JWT. jti se añade automáticamente en signToken. */
 export interface JwtPayload {
   sub: string; // credencial.id
   perfilId: string; // perfil_usuario.id
@@ -20,6 +22,7 @@ export interface JwtPayload {
 
 /** Payload ya decodificado (incluye claims estándar). */
 export interface JwtClaims extends JwtPayload {
+  jti: string;
   iat: number;
   exp: number;
 }
@@ -36,16 +39,25 @@ function getSecret(): string {
 }
 
 export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, getSecret(), {
-    algorithm: 'HS256',
-    expiresIn: env.JWT_EXPIRES_IN,
-  });
+  return jwt.sign(
+    { ...payload, jti: randomUUID() },
+    getSecret(),
+    {
+      algorithm: 'HS256',
+      expiresIn: env.JWT_EXPIRES_IN,
+    },
+  );
 }
 
 export function verifyToken(token: string): JwtClaims {
   try {
-    return jwt.verify(token, getSecret(), { algorithms: ['HS256'] }) as JwtClaims;
-  } catch {
+    const payload = jwt.verify(token, getSecret(), { algorithms: ['HS256'] }) as JwtClaims;
+    if (isTokenRevoked(payload.perfilId, payload.iat)) {
+      throw new UnauthorizedError('TOKEN_REVOKED', 'Sesión revocada. Inicia sesión de nuevo.');
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof UnauthorizedError) throw error;
     throw new UnauthorizedError('TOKEN_INVALID', 'Sesión inválida o expirada');
   }
 }

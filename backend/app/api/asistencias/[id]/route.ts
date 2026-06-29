@@ -1,6 +1,7 @@
 // ============================================================
-//  PATCH /api/asistencias/:id — Edita asistencia (Admin, Secretaria)
-//  DELETE /api/asistencias/:id — Elimina asistencia (Admin)
+//  Asistencia del PERSONAL DOCENTE (gestión solo Admin)
+//  PATCH  /api/asistencias/:id — Edita asistencia docente (Admin)
+//  DELETE /api/asistencias/:id — Elimina asistencia docente (Admin)
 // ============================================================
 import { withRole } from '@/lib/auth';
 import { ok } from '@/lib/response';
@@ -10,7 +11,7 @@ import { AsistenciaService } from '@/modules/asistencia/asistencia.service';
 
 export const dynamic = 'force-dynamic';
 
-export const PATCH = withRole(['Admin', 'Secretaria'], async (req, { params, user }) => {
+export const PATCH = withRole(['Admin'], async (req, { params, user }) => {
   const input = await parseBody(req, UpdateAsistenciaSchema);
   const result = await AsistenciaService.update(params.id, input, user.perfilId);
   return ok(result, 'Asistencia actualizada');

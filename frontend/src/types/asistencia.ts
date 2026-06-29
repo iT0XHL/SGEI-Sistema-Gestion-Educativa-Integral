@@ -44,10 +44,25 @@ export interface AsistenciaRegistro {
   registrado_por: string;
   hora_registro: string;
   alumno?: AlumnoResumen;
+  /** Docente que registró el dato (incluido en consultas de historial). */
+  registrador?: {
+    id: string;
+    nombres: string;
+    apellido_paterno: string;
+    apellido_materno: string;
+  };
+  /** Sección con su grado (incluido en consultas de historial). */
+  seccion?: {
+    id: string;
+    nombre: string;
+    grado?: { nombre: string };
+  };
 }
 
 export interface GuardarAsistenciaPayload {
   seccion_id: string;
+  /** Asignación (curso–sección) desde la que se toma asistencia. */
+  asignacion_id?: string;
   fecha: string;
   registros: Array<{
     alumno_id: string;

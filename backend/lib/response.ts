@@ -91,6 +91,9 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
         409,
       );
     }
+    if (error.code === 'P0001') {
+      return buildError('BUSINESS_RULE', error.message, 422);
+    }
   }
 
   if (error instanceof Prisma.PrismaClientInitializationError) {
@@ -116,8 +119,11 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
     if (msg.includes('cruce de horario')) {
       return buildError('SCHEDULE_CONFLICT', msg, 422);
     }
-    if (msg.includes('está cerrada') || msg.includes('bimestre')) {
+    if (msg.includes('está cerrada')) {
       return buildError('NOTA_CERRADA', msg, 422);
+    }
+    if (msg.includes('no se encontr')) {
+      return buildError('NOT_FOUND', msg, 404);
     }
     if (msg.includes('Acceso denegado')) {
       return buildError('FORBIDDEN', msg, 403);

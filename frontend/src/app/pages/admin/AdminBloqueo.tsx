@@ -137,14 +137,14 @@ export default function AdminBloqueo() {
       <div className="flex gap-3">
         <button
           onClick={() => setAll(true)}
-          disabled={loading}
+          disabled={loading || students.length === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm font-medium transition-colors disabled:opacity-50"
         >
           <Lock className="size-4" /> Bloquear todos
         </button>
         <button
           onClick={() => setAll(false)}
-          disabled={loading}
+          disabled={loading || students.length === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-medium transition-colors disabled:opacity-50"
         >
           <Unlock className="size-4" /> Desbloquear todos

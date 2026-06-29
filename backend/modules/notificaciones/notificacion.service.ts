@@ -1,4 +1,5 @@
 import { ForbiddenError } from '@/errors/http-errors';
+import { prisma } from '@/lib/prisma';
 import { NotificacionRepository } from './notificacion.repository';
 import { resolverDestinatarios } from './notificacion-recipient-resolver';
 import { buildNotificationMessage, type NotificacionContexto } from './notificacion-message-builder';
@@ -90,17 +91,38 @@ export const NotificacionService = {
         actorRol:    params.actor.rol,
       });
 
-      for (const perfilId of destinatarios) {
-        await crearYPublicar(
-          {
+      const notificaciones = await prisma.$transaction(async (tx) => {
+        const results: Array<{
+          id: string; usuario_destino_id: string; tipo: string; titulo: string;
+          cuerpo: string; url_accion: string | null; leida: boolean; created_at: Date;
+        }> = [];
+        for (const perfilId of destinatarios) {
+          const notif = await NotificacionRepository.crearConTx(tx, {
             usuario_destino_id: perfilId,
             tipo:               msg.tipo,
             titulo:             msg.titulo,
             cuerpo:             msg.cuerpo,
             url_accion:         msg.url_accion,
-          },
-          { prioridad: msg.prioridad, evento: params.evento, metadata: msg.metadata },
-        );
+          });
+          results.push(notif);
+        }
+        return results;
+      });
+
+      for (const notif of notificaciones) {
+        notificationBus.publish({
+          id:                 notif.id,
+          usuario_destino_id: notif.usuario_destino_id,
+          tipo:               notif.tipo,
+          titulo:             notif.titulo,
+          cuerpo:             notif.cuerpo,
+          url_accion:         notif.url_accion,
+          leida:              notif.leida,
+          prioridad:          msg.prioridad,
+          evento:             params.evento,
+          metadata:           msg.metadata,
+          created_at:         notif.created_at.toISOString(),
+        });
       }
     } catch (err) {
       // La notificación es accesoria: nunca debe romper el flujo de negocio.

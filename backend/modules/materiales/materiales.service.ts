@@ -6,7 +6,7 @@
 //    Admin    → lectura global, puede editar/eliminar cualquiera
 //    Secretaria → sin acceso
 // ============================================================
-import { ForbiddenError, NotFoundError } from '@/errors/http-errors';
+import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
@@ -16,6 +16,39 @@ import { MaterialesRepository } from './materiales.repository';
 import { TIPOS_CON_ARCHIVO } from './materiales.types';
 import type { JwtClaims } from '@/lib/jwt';
 import type { CreateMaterialInput, UpdateMaterialInput, ListMaterialesQuery } from './materiales.schema';
+
+function validateUpload(
+  file: File,
+  maxSizeMB: number = 10,
+  allowedMimes: string[] = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'application/zip',
+    'application/x-rar-compressed',
+  ],
+): void {
+  const maxBytes = maxSizeMB * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new BusinessRuleError(
+      'FILE_TOO_LARGE',
+      `El archivo excede el tamaño máximo de ${maxSizeMB} MB.`,
+    );
+  }
+  if (!allowedMimes.includes(file.type)) {
+    throw new BusinessRuleError(
+      'INVALID_FILE_TYPE',
+      `Tipo de archivo "${file.type}" no permitido. Tipos aceptados: ${allowedMimes.join(', ')}.`,
+    );
+  }
+}
 
 async function assertDocenteEnSeccion(docenteId: string, seccionId: string) {
   const tieneAcceso = await AsistenciaAlumnosRepository.docenteTieneAsignacion(docenteId, seccionId);
@@ -124,6 +157,8 @@ export const MaterialesService = {
     if (user.rol === 'Docente') {
       await assertDocenteEnSeccion(docenteId, data.seccion_id);
     }
+
+    validateUpload(file);
 
     const objectPath = await StorageService.upload(
       BUCKETS.MATERIALES,

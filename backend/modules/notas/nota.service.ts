@@ -1,5 +1,6 @@
-import { ForbiddenError, NotFoundError } from '@/errors/http-errors';
+import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
+import { prisma } from '@/lib/prisma';
 import { NotaRepository } from './nota.repository';
 import type { JwtClaims } from '@/lib/jwt';
 import type {
@@ -56,17 +57,31 @@ export const NotaService = {
     }
 
     const docenteId = user.entidadId;
+    const bimestreId = input.notas[0]?.bimestre_id;
+
+    if (bimestreId) {
+      const bimestre = await prisma.bimestre.findUnique({
+        where: { id: bimestreId },
+        select: { cerrado: true },
+      });
+      if (bimestre?.cerrado) {
+        throw new BusinessRuleError(
+          'BIMESTRE_CERRADO',
+          'No se pueden registrar notas en un bimestre cerrado.',
+        );
+      }
+    }
 
     if (user.rol === 'Docente') {
-      // Verificar acceso para el primer alumno — todos los items del batch deben
-      // pertenecer a secciones donde el docente tiene asignación activa.
-      const primerAlumnoId = input.notas[0].alumno_id;
-      const tieneAcceso = await NotaRepository.docenteTieneAcceso(docenteId, primerAlumnoId);
-      if (!tieneAcceso) {
-        throw new ForbiddenError(
-          'SECCION_NO_ASIGNADA',
-          'No tienes una asignación activa para el alumno indicado.',
-        );
+      const idsUnicos = [...new Set(input.notas.map((n) => n.alumno_id))];
+      for (const alumnoId of idsUnicos) {
+        const tieneAcceso = await NotaRepository.docenteTieneAcceso(docenteId, alumnoId);
+        if (!tieneAcceso) {
+          throw new ForbiddenError(
+            'SECCION_NO_ASIGNADA',
+            'No tienes una asignación activa para uno de los alumnos indicados.',
+          );
+        }
       }
     }
 
@@ -78,7 +93,7 @@ export const NotaService = {
       modulo:            'notas',
       entidadAfectada:   'nota',
       entidadId:         null,
-      newValue: { total: notas.length, bimestre_id: input.notas[0]?.bimestre_id },
+      newValue: { total: notas.length, bimestreId },
     });
 
     return { registradas: notas.length, notas };

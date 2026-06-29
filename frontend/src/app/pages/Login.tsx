@@ -233,13 +233,16 @@ export default function Login() {
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={fillDemo}
-              className="w-full text-center text-xs text-slate-400 hover:text-blue-600 transition-colors py-1"
-            >
-              Usar credenciales de demo →
-            </button>
+            {/* Las credenciales demo solo se muestran en desarrollo; controlado por VITE_SHOW_DEMO_CREDENTIALS=true */}
+            {import.meta.env.VITE_SHOW_DEMO_CREDENTIALS === 'true' && (
+              <button
+                type="button"
+                onClick={fillDemo}
+                className="w-full text-center text-xs text-slate-400 hover:text-blue-600 transition-colors py-1"
+              >
+                Usar credenciales de demo →
+              </button>
+            )}
           </form>
 
           <p className="mt-6 text-center text-xs text-slate-400">

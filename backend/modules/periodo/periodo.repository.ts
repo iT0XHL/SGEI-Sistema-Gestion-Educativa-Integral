@@ -140,4 +140,14 @@ export const BimestreRepository = {
       return tx.bimestre.delete({ where: { id } });
     });
   },
+
+  async cerrar(id: string, perfilId: string) {
+    return withAuditContext(perfilId, async (tx) => {
+      return tx.bimestre.update({
+        where: { id },
+        data: { cerrado: true },
+        include: { periodo: true },
+      });
+    });
+  },
 };

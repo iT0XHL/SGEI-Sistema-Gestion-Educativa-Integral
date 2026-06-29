@@ -478,47 +478,6 @@ export interface ListHorariosParams {
   seccionId?:  string;
 }
 
-// ── Asistencia de docentes ────────────────────────────────────
-export type EstadoAsistencia = 'P' | 'F' | 'T' | 'J';
-
-export interface AsistenciaDocenteDTO {
-  id:           string;
-  docente_id:   string;
-  fecha:        string;
-  estado:       EstadoAsistencia;
-  justificacion: string | null;
-  hora_registro: string | null;
-  docente?: {
-    id:               string;
-    nombres:          string;
-    apellido_paterno: string;
-    apellido_materno: string;
-  };
-}
-
-export interface RegistroAsistenciaItem {
-  docente_id:    string;
-  estado:        EstadoAsistencia;
-  justificacion?: string | null;
-}
-
-export interface GuardarAsistenciaPayload {
-  fecha:     string;
-  registros: RegistroAsistenciaItem[];
-}
-
-export interface ActualizarAsistenciaPayload {
-  estado?:       EstadoAsistencia;
-  justificacion?: string | null;
-}
-
-export interface ListAsistenciaDocenteParams {
-  docenteId?:   string;
-  fecha?:       string;
-  fechaDesde?:  string;
-  fechaHasta?:  string;
-}
-
 // ── Estadísticas del dashboard admin ─────────────────────────
 export interface EstadisticasDTO {
   periodo: { id: string; nombre: string; anio: number; activo: boolean } | null;
@@ -884,27 +843,10 @@ export const horariosAdminApi = {
   },
 };
 
-// ── Asistencia de docentes ────────────────────────────────────
-export const asistenciaDocentesApi = {
-  listar(params: ListAsistenciaDocenteParams = {}): Promise<AsistenciaDocenteDTO[]> {
-    return apiClient.get<AsistenciaDocenteDTO[]>('/api/asistencias/docentes', toStr(params));
-  },
-
-  guardar(payload: GuardarAsistenciaPayload): Promise<{ registros_guardados: number; fecha: string }> {
-    return apiClient.post<{ registros_guardados: number; fecha: string }>(
-      '/api/asistencias/docentes',
-      payload,
-    );
-  },
-
-  actualizar(id: string, payload: ActualizarAsistenciaPayload): Promise<AsistenciaDocenteDTO> {
-    return apiClient.patch<AsistenciaDocenteDTO>(`/api/asistencias/docentes/${id}`, payload);
-  },
-
-  eliminar(id: string): Promise<{ id: string }> {
-    return apiClient.delete<{ id: string }>(`/api/asistencias/docentes/${id}`);
-  },
-};
+// Nota: la asistencia de docentes se gestiona vía `asistenciaDocentesApi`
+// en `asistencias.api.ts` (ruta base `/api/asistencias`). Aquí se eliminó
+// un cliente duplicado que apuntaba a una ruta `/api/asistencias/docentes`
+// ya retirada.
 
 // ── Dashboard admin — estadísticas generales ──────────────────
 export const estadisticasApi = {

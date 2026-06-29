@@ -5,7 +5,7 @@ import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { AlumnosRepository, type ListFilters } from './alumnos.repository';
 import type { CreateAlumnoInput, UpdateAlumnoInput } from '@/schemas/personas.schema';
-import { randomUUID } from 'crypto';
+
 
 export interface AlumnoDTO {
   id: string;
@@ -69,8 +69,11 @@ export const AlumnosService = {
   },
 
   async create(input: CreateAlumnoInput, adminPerfilId: string): Promise<AlumnoDTO> {
-    const existing = await AlumnosRepository.findByDNI(input.dni, input.periodo_id);
-    if (existing) throw new ConflictError('Ya existe un alumno con ese DNI en este período');
+    const existing = await prisma.alumno.findFirst({
+      where: { dni: input.dni },
+      select: { id: true },
+    });
+    if (existing) throw new ConflictError('Ya existe un alumno con ese DNI');
 
     const existingLogin = await prisma.credencial.findUnique({
       where: { usuario_login: input.usuario_login },
@@ -79,41 +82,77 @@ export const AlumnosService = {
     if (existingLogin) throw new ConflictError('Ya existe una cuenta con ese correo');
 
     const passwordHash = await hashPassword(input.password);
-    const cred = await prisma.credencial.create({
-      data: { usuario_login: input.usuario_login, password_hash: passwordHash },
-      select: { id: true },
+
+    return prisma.$transaction(async (tx) => {
+      const cred = await tx.credencial.create({
+        data: { usuario_login: input.usuario_login, password_hash: passwordHash },
+        select: { id: true },
+      });
+
+      const perfil = await tx.perfilUsuario.create({
+        data: {
+          credencial_id: cred.id,
+          rol: 'Alumno',
+          entidad_tipo: 'alumno',
+          entidad_id: '00000000-0000-0000-0000-000000000000',
+        },
+        select: { id: true },
+      });
+
+      await tx.$executeRaw`SELECT set_config('app.current_user_id', ${adminPerfilId}, true)`;
+
+      const alumno = await tx.alumno.create({
+        data: {
+          perfil_usuario_id: perfil.id,
+          seccion_id: input.seccion_id,
+          periodo_id: input.periodo_id,
+          dni: input.dni,
+          nombres: input.nombres,
+          apellido_paterno: input.apellido_paterno,
+          apellido_materno: input.apellido_materno,
+          fecha_nacimiento: new Date(input.fecha_nacimiento),
+          sexo: input.sexo,
+          direccion: input.direccion ?? null,
+          distrito: input.distrito ?? null,
+          telefono_emergencia: input.telefono_emergencia ?? null,
+          grupo_sanguineo: input.grupo_sanguineo ?? null,
+          condicion_especial: input.condicion_especial ?? null,
+          codigo_siagie: input.codigo_siagie ?? null,
+        },
+        select: {
+          id: true,
+          dni: true,
+          nombres: true,
+          apellido_paterno: true,
+          apellido_materno: true,
+          fecha_nacimiento: true,
+          sexo: true,
+          direccion: true,
+          distrito: true,
+          telefono_emergencia: true,
+          grupo_sanguineo: true,
+          condicion_especial: true,
+          codigo_siagie: true,
+          activo: true,
+        },
+      });
+
+      await tx.perfilUsuario.update({
+        where: { id: perfil.id },
+        data: { entidad_id: alumno.id },
+      });
+
+      await AuditService.logWithinTx(tx, {
+        usuarioId: adminPerfilId,
+        tipo: 'CREATE',
+        modulo: 'alumnos',
+        entidadAfectada: 'alumno',
+        entidadId: alumno.id,
+        newValue: { nombres: input.nombres, dni: input.dni },
+      });
+
+      return { ...alumno, usuario_login: input.usuario_login };
     });
-
-    const perfil = await prisma.perfilUsuario.create({
-      data: {
-        credencial_id: cred.id,
-        rol: 'Alumno',
-        entidad_tipo: 'alumno',
-        entidad_id: randomUUID(),
-      },
-      select: { id: true },
-    });
-
-    const alumno = await AlumnosRepository.create(
-      { ...input, perfilUsuarioId: perfil.id },
-      adminPerfilId,
-    );
-
-    await prisma.perfilUsuario.update({
-      where: { id: perfil.id },
-      data: { entidad_id: alumno.id },
-    });
-
-    await AuditService.log({
-      usuarioId: adminPerfilId,
-      tipo: 'CREATE',
-      modulo: 'alumnos',
-      entidadAfectada: 'alumno',
-      entidadId: alumno.id,
-      newValue: { nombres: input.nombres, dni: input.dni },
-    });
-
-    return { ...alumno, usuario_login: input.usuario_login };
   },
 
   async update(
@@ -125,34 +164,58 @@ export const AlumnosService = {
     if (!current) throw new NotFoundError('Alumno');
 
     if (input.dni && input.dni !== current.dni) {
-      const existing = await AlumnosRepository.findByDNI(input.dni, current.periodo_id);
-      if (existing) throw new ConflictError('Ya existe otro alumno con ese DNI en este período');
-    }
-
-    if (input.usuario_login && input.usuario_login !== current.perfil?.credencial.usuario_login) {
-      const existing = await prisma.credencial.findUnique({
-        where: { usuario_login: input.usuario_login },
+      const existing = await prisma.alumno.findFirst({
+        where: { dni: input.dni },
         select: { id: true },
       });
-      if (existing) throw new ConflictError('Ya existe otra cuenta con ese correo');
-      
-      await prisma.credencial.update({
-        where: { id: current.perfil.credencial.id },
-        data: { usuario_login: input.usuario_login },
-      });
+      if (existing) throw new ConflictError('Ya existe otro alumno con ese DNI');
     }
 
-    await AlumnosRepository.update(alumnoId, input, adminPerfilId);
+    return prisma.$transaction(async (tx) => {
+      if (input.usuario_login && input.usuario_login !== current.perfil?.credencial.usuario_login) {
+        const existing = await tx.credencial.findUnique({
+          where: { usuario_login: input.usuario_login },
+          select: { id: true },
+        });
+        if (existing) throw new ConflictError('Ya existe otra cuenta con ese correo');
 
-    await AuditService.log({
-      usuarioId: adminPerfilId,
-      tipo: 'UPDATE',
-      modulo: 'alumnos',
-      entidadAfectada: 'alumno',
-      entidadId: alumnoId,
+        await tx.credencial.update({
+          where: { id: current.perfil.credencial.id },
+          data: { usuario_login: input.usuario_login },
+        });
+      }
+
+      await tx.$executeRaw`SELECT set_config('app.current_user_id', ${adminPerfilId}, true)`;
+
+      await tx.alumno.update({
+        where: { id: alumnoId },
+        data: {
+          ...(input.nombres && { nombres: input.nombres }),
+          ...(input.apellido_paterno && { apellido_paterno: input.apellido_paterno }),
+          ...(input.apellido_materno && { apellido_materno: input.apellido_materno }),
+          ...(input.dni && { dni: input.dni }),
+          ...(input.fecha_nacimiento && { fecha_nacimiento: new Date(input.fecha_nacimiento) }),
+          ...(input.sexo && { sexo: input.sexo }),
+          ...(input.direccion !== undefined && { direccion: input.direccion }),
+          ...(input.distrito !== undefined && { distrito: input.distrito }),
+          ...(input.telefono_emergencia !== undefined && { telefono_emergencia: input.telefono_emergencia }),
+          ...(input.grupo_sanguineo !== undefined && { grupo_sanguineo: input.grupo_sanguineo }),
+          ...(input.condicion_especial !== undefined && { condicion_especial: input.condicion_especial }),
+          ...(input.codigo_siagie !== undefined && { codigo_siagie: input.codigo_siagie }),
+          ...(input.seccion_id && { seccion_id: input.seccion_id }),
+        },
+      });
+
+      await AuditService.logWithinTx(tx, {
+        usuarioId: adminPerfilId,
+        tipo: 'UPDATE',
+        modulo: 'alumnos',
+        entidadAfectada: 'alumno',
+        entidadId: alumnoId,
+      });
+
+      return this.get(alumnoId);
     });
-
-    return this.get(alumnoId);
   },
 
   async setActivo(alumnoId: string, activo: boolean, adminPerfilId: string): Promise<AlumnoDTO> {

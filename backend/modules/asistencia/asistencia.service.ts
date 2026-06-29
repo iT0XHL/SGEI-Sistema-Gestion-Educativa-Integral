@@ -3,10 +3,35 @@
 //  para asistencia docente (validaciones, crear, editar, listar).
 // ============================================================
 import { paginate } from '@/lib/response';
-import { NotFoundError, ConflictError } from '@/errors/http-errors';
+import { NotFoundError, ConflictError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { AsistenciaRepository, type ListFilters } from './asistencia.repository';
 import type { CreateAsistenciaInput, UpdateAsistenciaInput } from '@/schemas/asistencia.schema';
+
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/** La asistencia docente solo aplica en días lectivos: lunes a viernes. */
+function assertDiaLectivo(fecha: Date): void {
+  const dow = fecha.getUTCDay(); // 0=Dom … 6=Sáb
+  if (dow === 0 || dow === 6) {
+    throw new BusinessRuleError(
+      'DIA_NO_LECTIVO',
+      `No se puede registrar asistencia en ${DIAS_SEMANA[dow]}; solo días lectivos (lunes a viernes).`,
+    );
+  }
+}
+
+/** No se permite registrar asistencia de una fecha futura. */
+function assertFechaNoFutura(fecha: Date): void {
+  const hoy = new Date();
+  hoy.setUTCHours(23, 59, 59, 999);
+  if (fecha.getTime() > hoy.getTime()) {
+    throw new BusinessRuleError(
+      'FECHA_FUTURA',
+      'No se puede registrar asistencia de una fecha futura.',
+    );
+  }
+}
 
 export interface AsistenciaDTO {
   id: string;
@@ -51,6 +76,10 @@ export const AsistenciaService = {
   },
 
   async create(input: CreateAsistenciaInput, registradoPorId: string): Promise<AsistenciaDTO> {
+    // La clase solo existe en días lectivos y no en el futuro.
+    assertDiaLectivo(input.fecha);
+    assertFechaNoFutura(input.fecha);
+
     // Validar que no exista asistencia para ese docente y fecha
     const existing = await AsistenciaRepository.findByDocenteAndFecha(input.docente_id, input.fecha);
     if (existing) {
@@ -114,11 +143,7 @@ export const AsistenciaService = {
       oldValue: { estado: current.estado, fecha: current.fecha },
     });
 
-    // Lógica de borrado lógico o físico según requerimientos
-    // Por ahora: borrado físico
-    await (await import('@/lib/prisma')).prisma.asistenciaDocente.delete({
-      where: { id: asistenciaId },
-    });
+    await AsistenciaRepository.delete(asistenciaId, registradoPorId);
 
     return { id: asistenciaId, eliminado: true };
   },

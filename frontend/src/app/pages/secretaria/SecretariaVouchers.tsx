@@ -157,7 +157,6 @@ export default function SecretariaVouchers() {
     setSavingId(rejectTarget.id);
     setRejectError('');
     const targetId = rejectTarget.id;
-    setRejectTarget(null);
     try {
       const updated = await secretariaApi.revisarBoleta({
         boleta_id:            targetId,
@@ -165,6 +164,7 @@ export default function SecretariaVouchers() {
         observacion_rechazo:  obs,
       });
       patchBoleta(targetId, updated);
+      setRejectTarget(null);
     } catch (err) {
       patchBoleta(targetId, prev);
       setActionError(err instanceof Error ? err.message : 'Error al rechazar el voucher.');

@@ -22,6 +22,39 @@ import type {
   CalificarEntregaInput,
 } from './actividades.schema';
 
+function validateUpload(
+  file: File,
+  maxSizeMB: number = 10,
+  allowedMimes: string[] = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'application/zip',
+    'application/x-rar-compressed',
+  ],
+): void {
+  const maxBytes = maxSizeMB * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new BusinessRuleError(
+      'FILE_TOO_LARGE',
+      `El archivo excede el tamaño máximo de ${maxSizeMB} MB.`,
+    );
+  }
+  if (!allowedMimes.includes(file.type)) {
+    throw new BusinessRuleError(
+      'INVALID_FILE_TYPE',
+      `Tipo de archivo "${file.type}" no permitido. Tipos aceptados: ${allowedMimes.join(', ')}.`,
+    );
+  }
+}
+
 async function getAlumnoSeccionId(alumnoEntidadId: string): Promise<string> {
   const alumno = await prisma.alumno.findUnique({
     where: { id: alumnoEntidadId },
@@ -123,6 +156,8 @@ export const ActividadesService = {
     if (user.rol === 'Docente') {
       await assertDocenteEnSeccion(user.entidadId, data.seccion_id);
     }
+
+    validateUpload(file);
 
     const objectPath = await StorageService.upload(
       BUCKETS.ACTIVIDADES_ADJUNTOS,
@@ -279,6 +314,8 @@ export const ActividadesService = {
     if (new Date() > actividad.fecha_limite) {
       throw new BusinessRuleError('FUERA_DE_PLAZO', 'La fecha límite de entrega ya pasó.');
     }
+
+    validateUpload(file);
 
     const objectPath = await StorageService.upload(
       BUCKETS.ENTREGAS_ALUMNOS,

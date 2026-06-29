@@ -5,7 +5,7 @@
 //    Admin   → cualquier sección
 //    Alumno  → solo lectura de su propia asistencia
 // ============================================================
-import { ForbiddenError, NotFoundError } from '@/errors/http-errors';
+import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { AsistenciaAlumnosRepository } from './asistencia-alumnos.repository';
 import type { JwtClaims } from '@/lib/jwt';
@@ -15,15 +15,52 @@ import type {
   ListarAsistenciaQuery,
 } from './asistencia-alumnos.schema';
 
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/**
+ * Calcula el día de la semana de una fecha 'YYYY-MM-DD' en UTC para
+ * evitar desfases por zona horaria. Retorna 0=Dom … 6=Sáb (coincide
+ * con horario.dia_semana donde 1=Lun … 5=Vie).
+ */
+function diaSemanaDe(fecha: string): number {
+  return new Date(`${fecha}T00:00:00Z`).getUTCDay();
+}
+
+/** La asistencia solo existe en días lectivos: lunes (1) a viernes (5). */
+function assertDiaLectivo(fecha: string): number {
+  const dow = diaSemanaDe(fecha);
+  if (dow === 0 || dow === 6) {
+    throw new BusinessRuleError(
+      'DIA_NO_LECTIVO',
+      `No se puede registrar asistencia en ${DIAS_SEMANA[dow]}; solo días lectivos (lunes a viernes).`,
+    );
+  }
+  return dow;
+}
+
+/** No se permite registrar asistencia de una fecha futura. */
+function assertFechaNoFutura(fecha: string): void {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (fecha > hoy) {
+    throw new BusinessRuleError(
+      'FECHA_FUTURA',
+      'No se puede registrar asistencia de una fecha futura.',
+    );
+  }
+}
+
 export const AsistenciaAlumnosService = {
   async list(filters: ListarAsistenciaQuery, user: JwtClaims) {
     // Alumno solo ve su propia asistencia.
     if (user.rol === 'Alumno') {
       return AsistenciaAlumnosRepository.list({
         alumnoId: user.entidadId,
+        ...(filters.estado ? { estado: filters.estado } : {}),
         ...(filters.fechaDesde ? { fechaDesde: new Date(filters.fechaDesde) } : {}),
         ...(filters.fechaHasta ? { fechaHasta: new Date(filters.fechaHasta) } : {}),
         ...(filters.fecha ? { fecha: new Date(filters.fecha) } : {}),
+        limit: filters.limit,
+        offset: filters.offset,
       });
     }
 
@@ -50,9 +87,12 @@ export const AsistenciaAlumnosService = {
     return AsistenciaAlumnosRepository.list({
       seccionId: filters.seccionId,
       alumnoId: filters.alumnoId,
+      ...(filters.estado ? { estado: filters.estado } : {}),
       ...(filters.fecha ? { fecha: new Date(filters.fecha) } : {}),
       ...(filters.fechaDesde ? { fechaDesde: new Date(filters.fechaDesde) } : {}),
       ...(filters.fechaHasta ? { fechaHasta: new Date(filters.fechaHasta) } : {}),
+      limit: filters.limit,
+      offset: filters.offset,
     });
   },
 
@@ -62,6 +102,14 @@ export const AsistenciaAlumnosService = {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo docentes y Admin pueden registrar asistencia.');
     }
 
+    // ── Validaciones de consistencia institucional ──────────────
+    // 1) La clase solo existe en días lectivos (lunes a viernes).
+    const diaSemana = assertDiaLectivo(input.fecha);
+    // 2) No se registra asistencia de fechas futuras.
+    assertFechaNoFutura(input.fecha);
+
+    // 3) El docente solo gestiona secciones donde tiene asignación
+    //    activa y, además, clase programada ese día en el horario.
     if (user.rol === 'Docente') {
       const tieneAcceso = await AsistenciaAlumnosRepository.docenteTieneAsignacion(
         user.entidadId,
@@ -73,6 +121,35 @@ export const AsistenciaAlumnosService = {
           'No tienes una asignación activa en esta sección.',
         );
       }
+
+      const tieneClase = await AsistenciaAlumnosRepository.docenteTieneClaseEnDia(
+        user.entidadId,
+        input.seccion_id,
+        diaSemana,
+      );
+      if (!tieneClase) {
+        throw new BusinessRuleError(
+          'SIN_CLASE_PROGRAMADA',
+          `No tienes clases programadas en esta sección el ${DIAS_SEMANA[diaSemana]}; no puedes registrar asistencia fuera de tu horario.`,
+        );
+      }
+    }
+
+    // 4) Todos los alumnos deben pertenecer (estar matriculados y
+    //    activos) en la sección indicada.
+    const alumnosSeccion = await AsistenciaAlumnosRepository.alumnosDeSeccion(input.seccion_id);
+    if (alumnosSeccion.size === 0) {
+      throw new BusinessRuleError(
+        'SECCION_SIN_ALUMNOS',
+        'La sección no tiene alumnos activos matriculados.',
+      );
+    }
+    const ajenos = input.registros.filter((r) => !alumnosSeccion.has(r.alumno_id));
+    if (ajenos.length > 0) {
+      throw new BusinessRuleError(
+        'ALUMNO_NO_PERTENECE',
+        `${ajenos.length} alumno(s) no pertenecen a esta sección y no pueden registrarse.`,
+      );
     }
 
     // Para Admin, registrado_por debe ser un docente_id válido.

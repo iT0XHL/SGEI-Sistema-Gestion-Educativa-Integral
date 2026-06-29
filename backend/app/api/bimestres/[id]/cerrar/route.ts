@@ -4,7 +4,7 @@
 // ============================================================
 import { withRole } from '@/lib/auth';
 import { ok } from '@/lib/response';
-import { BimestreService } from '@/modules/academic/periodo.service';
+import { BimestreService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';
 

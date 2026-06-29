@@ -6,6 +6,10 @@ import type { CreatePagoInput, ListarPagosQueryInput } from './pago.schema';
 
 export const PagoService = {
   async listar(query: ListarPagosQueryInput, user: JwtClaims) {
+    // Docente no tiene acceso a pagos
+    if (user.rol === 'Docente') {
+      throw new ForbiddenError('ACCESO_DENEGADO', 'Docente no puede ver pagos.');
+    }
     // Alumno solo ve sus propios pagos (por la vista v_estado_pagos_alumno)
     if (user.rol === 'Alumno') {
       return PagoRepository.estadoPagosAlumno(user.entidadId);
@@ -20,6 +24,11 @@ export const PagoService = {
   },
 
   async obtener(id: string, user: JwtClaims) {
+    // Docente no tiene acceso a pagos
+    if (user.rol === 'Docente') {
+      throw new ForbiddenError('ACCESO_DENEGADO', 'Docente no puede ver pagos.');
+    }
+
     const pago = await PagoRepository.findOne(id);
     if (!pago) throw new NotFoundError('Pago');
 

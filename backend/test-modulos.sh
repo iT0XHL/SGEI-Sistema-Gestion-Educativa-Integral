@@ -38,7 +38,8 @@ echo; echo "############ 2. RBAC (negativos esperados 403) ############"
 hit Alumno  GET /usuarios          # 403
 hit Docente GET /alumnos           # 403
 hit Alumno  GET /admin/estadisticas# 403
-hit Docente GET /asistencias/docentes # 403
+hit Docente GET /asistencias          # 403 (asistencia docente: solo Admin)
+hit Secretaria GET /asistencias       # 403 (asistencia docente: solo Admin)
 hit Alumno  GET /secretaria/resumen   # 403
 
 echo; echo "############ 3. ESTRUCTURA ACADÉMICA (todos los roles) ############"
@@ -60,12 +61,20 @@ hit Alumno GET /pagos
 hit Alumno GET /boletas
 
 echo; echo "############ 6. ASISTENCIAS ############"
-hit Admin      GET /asistencias
-hit Secretaria GET /asistencias
-hit Admin      GET /asistencias/docentes
-hit Docente    GET /asistencias/alumnos
-hit Alumno     GET /asistencias/resumen
-hit Docente    GET /asistencias/resumen
+# Obtener una sección real para las pruebas de asistencia de alumnos.
+SECCION_ID=$(curl -s -b "$T/Admin.cookie" "$BASE/secciones" | grep -oE '"id":"[^"]+"' | head -1 | sed 's/.*:"//;s/"$//')
+echo "SECCION_ID=$SECCION_ID"
+echo "--- asistencia docente (solo Admin) ---"
+hit Admin      GET /asistencias                # ok
+hit Secretaria GET /asistencias                # 403
+hit Docente    GET /asistencias                # 403
+echo "--- asistencia alumnos ---"
+hit Docente    GET "/asistencias/alumnos?seccionId=$SECCION_ID"  # ok (su sección)
+hit Admin      GET "/asistencias/alumnos?seccionId=$SECCION_ID"  # ok (cualquier sección)
+hit Alumno     GET /asistencias/alumnos         # ok (solo su propia asistencia)
+hit Alumno     GET "/asistencias/resumen?seccionId=$SECCION_ID"  # 403 (alumno no ve resumen)
+hit Docente    GET "/asistencias/resumen?seccionId=$SECCION_ID"  # ok/403 según asignación
+hit Admin      GET "/asistencias/resumen?seccionId=$SECCION_ID"  # ok
 
 echo; echo "############ 7. NOTIFICACIONES ############"
 for r in Admin Secretaria Docente Alumno; do hit "$r" GET /notificaciones; done

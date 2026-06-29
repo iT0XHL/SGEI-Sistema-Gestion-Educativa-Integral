@@ -1,10 +1,8 @@
-import { apiClient } from './client';
-
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
+import { apiClient, BASE_URL } from './client';
 
 /** URL absoluta del PDF del examen (descarga directa con cookie de sesión). */
 export function examenPdfUrl(simulacroId: string, gradoId: string, tipo: 'cuestionario' | 'balotario'): string {
-  return `${API_BASE}/api/simulacros/${simulacroId}/examen/${gradoId}/pdf?tipo=${tipo}`;
+  return `${BASE_URL}/api/simulacros/${simulacroId}/examen/${gradoId}/pdf?tipo=${tipo}`;
 }
 
 // ── Tipos ─────────────────────────────────────────────────────────

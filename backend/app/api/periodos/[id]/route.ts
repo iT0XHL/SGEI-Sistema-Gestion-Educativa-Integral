@@ -1,8 +1,11 @@
 import { withRole } from '@/lib/auth';
 import { ok } from '@/lib/response';
 import { parseBody } from '@/lib/request';
+import { z } from 'zod';
 import { UpdatePeriodoSchema } from '@/schemas/periodo.schema';
 import { PeriodoService } from '@/modules/periodo/periodo.service';
+
+const ActivarPeriodoSchema = z.object({ activo: z.boolean() });
 
 export const dynamic = 'force-dynamic';
 
@@ -18,10 +21,7 @@ export const DELETE = withRole(['Admin'], async (_req, { params, user }) => {
 });
 
 export const PUT = withRole(['Admin'], async (req, { params, user }) => {
-  const body = await req.json();
-  if (body.activo !== undefined) {
-    const result = await PeriodoService.setActivo(params.id, body.activo, user.perfilId);
-    return ok(result, `Período ${body.activo ? 'activado' : 'desactivado'}`);
-  }
-  throw new Error('Request inválido');
+  const body = await parseBody(req, ActivarPeriodoSchema);
+  const result = await PeriodoService.setActivo(params.id, body.activo, user.perfilId);
+  return ok(result, `Período ${body.activo ? 'activado' : 'desactivado'}`);
 });

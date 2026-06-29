@@ -10,6 +10,7 @@ import AlumnoAsistencias from './pages/alumno/AlumnoAsistencias';
 import AlumnoPagos from './pages/alumno/AlumnoPagos';
 import DocenteDashboard from './pages/docente/DocenteDashboard';
 import DocenteAsistencia from './pages/docente/DocenteAsistencia';
+import DocenteAsistenciaHistorial from './pages/docente/DocenteAsistenciaHistorial';
 import DocenteTareas from './pages/docente/DocenteTareas';
 import DocenteNotas from './pages/docente/DocenteNotas';
 import DocenteSimulacro from './pages/docente/DocenteSimulacro';
@@ -17,6 +18,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminCuentas from './pages/admin/AdminCuentas';
 import AdminHorarios from './pages/admin/AdminHorarios';
 import AdminAsistenciaDocente from './pages/admin/AdminAsistenciaDocente';
+import AdminAsistenciaAlumnos from './pages/admin/AdminAsistenciaAlumnos';
 import AdminPeriodo from './pages/admin/AdminPeriodo';
 import AdminBimestres from './pages/admin/AdminBimestres';
 import AdminEscalaLiteral from './pages/admin/AdminEscalaLiteral';
@@ -64,6 +66,7 @@ export const router = createBrowserRouter([
       { index: true, Component: () => <Navigate to="inicio" replace /> },
       { path: 'inicio',      Component: DocenteDashboard },
       { path: 'asistencia',  Component: DocenteAsistencia },
+      { path: 'historial-asistencia', Component: DocenteAsistenciaHistorial },
       { path: 'tareas',      Component: DocenteTareas },
       { path: 'notas',       Component: DocenteNotas },
       { path: 'simulacro',   Component: DocenteSimulacro },
@@ -82,6 +85,7 @@ export const router = createBrowserRouter([
       { path: 'cuentas',       Component: AdminCuentas },
       { path: 'horarios',      Component: AdminHorarios },
       { path: 'asistencia',    Component: AdminAsistenciaDocente },
+      { path: 'asistencia-alumnos', Component: AdminAsistenciaAlumnos },
       { path: 'bloqueo',       Component: AdminBloqueo },
       { path: 'periodo',       Component: AdminPeriodo },
       { path: 'bimestres',     Component: AdminBimestres },

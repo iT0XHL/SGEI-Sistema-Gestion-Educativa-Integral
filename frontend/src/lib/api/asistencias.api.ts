@@ -6,6 +6,7 @@ import { apiClient } from './client';
 import type {
   AsistenciaRegistro,
   AsistenciaDocenteRegistro,
+  EstadoAsistencia,
   GuardarAsistenciaPayload,
   ResumenAsistencia,
 } from '../../types/asistencia';
@@ -68,16 +69,22 @@ export const asistenciasApi = {
   listar(params: {
     seccionId?: string;
     alumnoId?: string;
+    estado?: EstadoAsistencia;
     fecha?: string;
     fechaDesde?: string;
     fechaHasta?: string;
+    limit?: number;
+    offset?: number;
   }) {
     return apiClient.get<AsistenciaRegistro[]>('/api/asistencias/alumnos', {
       seccionId: params.seccionId,
       alumnoId: params.alumnoId,
+      estado: params.estado,
       fecha: params.fecha,
       fechaDesde: params.fechaDesde,
       fechaHasta: params.fechaHasta,
+      limit: params.limit !== undefined ? String(params.limit) : undefined,
+      offset: params.offset !== undefined ? String(params.offset) : undefined,
     });
   },
 

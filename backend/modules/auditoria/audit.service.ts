@@ -11,6 +11,7 @@
 // ============================================================
 import { prisma } from '@/lib/prisma';
 import type { TipoAccionAuditoria } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 export interface AuditLogInput {
   usuarioId: string; // perfil_usuario.id
@@ -27,6 +28,25 @@ export interface AuditLogInput {
 export const AuditService = {
   async log(data: AuditLogInput): Promise<void> {
     await prisma.$executeRaw`
+      INSERT INTO audit_schema.sesion_auditoria
+        (usuario_id, tipo_accion, modulo, entidad_afectada, entidad_id,
+         old_value, new_value, ip_origen, user_agent)
+      VALUES (
+        ${data.usuarioId}::uuid,
+        ${data.tipo}::auth_schema.tipo_accion_auditoria,
+        ${data.modulo},
+        ${data.entidadAfectada},
+        ${data.entidadId ?? null}::uuid,
+        ${data.oldValue ? JSON.stringify(data.oldValue) : null}::jsonb,
+        ${data.newValue ? JSON.stringify(data.newValue) : null}::jsonb,
+        ${data.ip ?? null}::inet,
+        ${data.userAgent ?? null}
+      )
+    `;
+  },
+
+  async logWithinTx(tx: Prisma.TransactionClient, data: AuditLogInput): Promise<void> {
+    await tx.$executeRaw`
       INSERT INTO audit_schema.sesion_auditoria
         (usuario_id, tipo_accion, modulo, entidad_afectada, entidad_id,
          old_value, new_value, ip_origen, user_agent)

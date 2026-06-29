@@ -43,12 +43,27 @@ export function GET(req: NextRequest): Response {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let cerrado = false;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let unsubscribe: (() => void) | null = null;
+
+      const cleanup = () => {
+        if (cerrado) return;
+        cerrado = true;
+        if (heartbeat) clearInterval(heartbeat);
+        if (unsubscribe) unsubscribe();
+        try {
+          controller.close();
+        } catch {
+          /* ya cerrado */
+        }
+      };
+
       const enqueue = (chunk: string) => {
         if (cerrado) return;
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          cerrado = true;
+          cleanup();
         }
       };
 
@@ -57,26 +72,14 @@ export function GET(req: NextRequest): Response {
       enqueue(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
       // Suscripción específica del usuario.
-      const unsubscribe = notificationBus.subscribe(perfilId, (n) => {
+      unsubscribe = notificationBus.subscribe(perfilId, (n) => {
         enqueue(`event: notificacion\ndata: ${JSON.stringify(n)}\n\n`);
       });
 
       // Heartbeat (comentario SSE) para mantener viva la conexión y detectar cortes.
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         enqueue(`: ping ${Date.now()}\n\n`);
       }, HEARTBEAT_MS);
-
-      const cleanup = () => {
-        if (cerrado) return;
-        cerrado = true;
-        clearInterval(heartbeat);
-        unsubscribe();
-        try {
-          controller.close();
-        } catch {
-          /* ya cerrado */
-        }
-      };
 
       // El cliente cerró la conexión (cambió de página, cerró pestaña, etc.).
       req.signal.addEventListener('abort', cleanup);

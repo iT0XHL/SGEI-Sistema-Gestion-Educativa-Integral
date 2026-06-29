@@ -223,6 +223,7 @@ export default function UserFormModal({ mode, rol: initialRol, lockRol, initialD
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [clientErrors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [credModal, setCredModal] = useState<{ login: string; password: string } | null>(null);
@@ -268,39 +269,44 @@ export default function UserFormModal({ mode, rol: initialRol, lockRol, initialD
     setForm(prev => ({ ...prev, [key]: value }));
   }
 
-  const errors: Record<string, string> = {};
-  if (submitAttempted) {
-    if (!form.usuario_login.trim()) errors.email = 'Campo obligatorio';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.usuario_login)) errors.email = 'Formato de correo inválido';
+  const errors = submitAttempted ? clientErrors : {};
+
+  function validate(): Record<string, string> {
+    const errs: Record<string, string> = {};
+    if (!form.usuario_login.trim()) errs.email = 'Campo obligatorio';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.usuario_login)) errs.email = 'Formato de correo inválido';
     if (mode === 'create') {
-      if (form.password.length < 8) errors.password = 'Mínimo 8 caracteres';
+      if (form.password.length < 8) errs.password = 'Mínimo 8 caracteres';
     }
     if (mode === 'edit' && form.cambiaPassword) {
-      if (form.password.length < 8) errors.password = 'Mínimo 8 caracteres';
-      if (form.password !== form.confirmPassword && !errors.password) errors.confirmPassword = 'No coinciden';
+      if (form.password.length < 8) errs.password = 'Mínimo 8 caracteres';
+      if (form.password !== form.confirmPassword && !errs.password) errs.confirmPassword = 'No coinciden';
     }
     if (rol === 'Docente' || rol === 'Alumno') {
-      if (!form.nombres.trim()) errors.nombres = 'Campo obligatorio';
-      if (!form.apellido_paterno.trim()) errors.apellidoPaterno = 'Campo obligatorio';
-      if (!form.apellido_materno.trim()) errors.apellidoMaterno = 'Campo obligatorio';
-      if (form.dni.length !== 8) errors.dni = 'Debe tener 8 dígitos';
+      if (!form.nombres.trim()) errs.nombres = 'Campo obligatorio';
+      if (!form.apellido_paterno.trim()) errs.apellidoPaterno = 'Campo obligatorio';
+      if (!form.apellido_materno.trim()) errs.apellidoMaterno = 'Campo obligatorio';
+      if (form.dni.length !== 8) errs.dni = 'Debe tener 8 dígitos';
     }
     if (rol === 'Docente') {
-      if (!form.especialidad) errors.especialidad = 'Campo obligatorio';
+      if (!form.especialidad) errs.especialidad = 'Campo obligatorio';
     }
     if (rol === 'Alumno') {
-      if (!form.seccion_id) errors.seccion = 'Campo obligatorio';
-      if (!form.periodo_id) errors.periodo = 'Campo obligatorio';
-      if (!form.sexo) errors.sexo = 'Campo obligatorio';
-      if (!form.fecha_nacimiento) errors.fechaNacimiento = 'Campo obligatorio';
+      if (!form.seccion_id) errs.seccion = 'Campo obligatorio';
+      if (!form.periodo_id) errs.periodo = 'Campo obligatorio';
+      if (!form.sexo) errs.sexo = 'Campo obligatorio';
+      if (!form.fecha_nacimiento) errs.fechaNacimiento = 'Campo obligatorio';
     }
+    return errs;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitAttempted(true);
     setError('');
-    if (Object.keys(errors).some(k => errors[k])) return;
+    const validationErrors = validate();
+    setErrors(validationErrors);
+    if (Object.keys(validationErrors).some(k => validationErrors[k])) return;
     setSaving(true);
     try {
       if (mode === 'create') {

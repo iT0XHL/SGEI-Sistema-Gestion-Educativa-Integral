@@ -1,5 +1,5 @@
 import { paginate } from '@/lib/response';
-import { NotFoundError, ConflictError } from '@/errors/http-errors';
+import { NotFoundError, ConflictError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { PeriodoRepository, BimestreRepository, type ListFilters, type BimestreFilters } from './periodo.repository';
 import type { CreatePeriodoInput, UpdatePeriodoInput, CreateBimestreInput, UpdateBimestreInput } from '@/schemas/periodo.schema';
@@ -215,5 +215,27 @@ export const BimestreService = {
     });
 
     return { id, eliminado: true };
+  },
+
+  async cerrar(id: string, adminPerfilId: string) {
+    const bimestre = await this.get(id);
+    if (bimestre.cerrado) {
+      throw new BusinessRuleError('BIMESTRE_CERRADO', 'El bimestre ya está cerrado.');
+    }
+
+    await prisma.$executeRaw`SELECT set_config('app.current_user_id', ${adminPerfilId}, true)`;
+    const actualizado = await BimestreRepository.cerrar(id, adminPerfilId);
+
+    await AuditService.log({
+      usuarioId: adminPerfilId,
+      tipo: 'UPDATE',
+      modulo: 'bimestres',
+      entidadAfectada: 'bimestre',
+      entidadId: id,
+      oldValue: { cerrado: false },
+      newValue: { cerrado: true },
+    });
+
+    return actualizado;
   },
 };

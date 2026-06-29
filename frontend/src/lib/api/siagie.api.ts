@@ -3,10 +3,8 @@
 //  baja un .xlsx por blob, así que necesita fetch directo: ahí
 //  reusamos la misma BASE_URL con fallback que client.ts.
 // ============================================================
-import { apiClient } from './client';
+import { apiClient, BASE_URL } from './client';
 import type { SiagieStats, SiagieValidacion } from '../../types/siagie';
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 export const siagieApi = {
   stats(periodoId?: string): Promise<SiagieStats> {
