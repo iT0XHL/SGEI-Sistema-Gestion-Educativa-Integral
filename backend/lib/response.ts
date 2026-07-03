@@ -91,8 +91,24 @@ export function errorResponse(error: unknown): NextResponse<ApiError> {
         409,
       );
     }
-    if (error.code === 'P0001') {
-      return buildError('BUSINESS_RULE', error.message, 422);
+    // Nota: en errores de $queryRaw/$executeRaw, Prisma reporta `error.code`
+    // como 'P2010' (raw query failed) y guarda el SQLSTATE real de Postgres
+    // en `error.meta.code` — por eso se comparan ambos.
+    const pgCode = error.code === 'P0001' || error.code === '23P01' ? error.code : error.meta?.code;
+    const pgMessage = typeof error.meta?.message === 'string' ? error.meta.message : error.message;
+
+    if (pgCode === 'P0001') {
+      return buildError('BUSINESS_RULE', pgMessage, 422);
+    }
+    // Constraint EXCLUDE nativa (academic_schema.horario) — última línea de
+    // defensa contra cruces de horario que el trigger no atrapó por una
+    // carrera entre transacciones concurrentes.
+    if (pgCode === '23P01') {
+      return buildError(
+        'SCHEDULE_CONFLICT',
+        'Se detectó un cruce de horario por una operación concurrente. Intenta de nuevo.',
+        422,
+      );
     }
   }
 

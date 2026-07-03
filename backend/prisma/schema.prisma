@@ -47,6 +47,7 @@ model PerfilUsuario {
   boletas_revisadas       BoletaPago[]
   notificaciones          Notificacion[]
   pagos_generados         Pago[]
+  horario_publicaciones   HorarioPublicacion[]
 
   @@index([entidad_tipo, entidad_id], map: "idx_perfil_entidad")
   @@index([rol], map: "idx_perfil_rol")
@@ -98,24 +99,25 @@ model InstitucionEducativa {
 }
 
 model Nivel {
-  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nombre      String  @unique @db.VarChar(30)
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre      String            @unique @db.VarChar(30)
   descripcion String?
   cursos      Curso[]
   grados      Grado[]
+  descansos   HorarioDescanso[]
 
   @@map("nivel")
   @@schema("academic_schema")
 }
 
 model Grado {
-  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nivel_id  String        @db.Uuid
-  nombre    String        @db.VarChar(30)
-  orden     Int           @db.SmallInt
-  nivel     Nivel         @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
-  secciones Seccion[]
-  cursos    GradoCurso[]
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id            String              @db.Uuid
+  nombre              String              @db.VarChar(30)
+  orden               Int                 @db.SmallInt
+  nivel               Nivel               @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
+  secciones           Seccion[]
+  cursos              GradoCurso[]
   simulacro_preguntas SimulacroPregunta[]
   simulacro_examenes  SimulacroExamen[]
 
@@ -125,75 +127,81 @@ model Grado {
 }
 
 model PeriodoAcademico {
-  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  anio         Int                    @unique @map("año") @db.SmallInt
-  nombre       String                 @db.VarChar(60)
-  fecha_inicio DateTime               @db.Date
-  fecha_fin    DateTime               @db.Date
-  activo       Boolean                @default(false)
-  created_at   DateTime               @default(now()) @db.Timestamptz(6)
-  alumnos      Alumno[]
-  asignaciones AsignacionDocente[]
-  bimestres    Bimestre[]
-  escalas      ConfigEscalaLiteral[]
-  secciones    Seccion[]
-  situaciones  SituacionFinalAlumno[]
-  pagos        Pago[]
-  simulacros   Simulacro[]
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  anio                  Int                    @unique @map("año") @db.SmallInt
+  nombre                String                 @db.VarChar(60)
+  fecha_inicio          DateTime               @db.Date
+  fecha_fin             DateTime               @db.Date
+  activo                Boolean                @default(false)
+  created_at            DateTime               @default(now()) @db.Timestamptz(6)
+  alumnos               Alumno[]
+  asignaciones          AsignacionDocente[]
+  bimestres             Bimestre[]
+  escalas               ConfigEscalaLiteral[]
+  secciones             Seccion[]
+  situaciones           SituacionFinalAlumno[]
+  pagos                 Pago[]
+  simulacros            Simulacro[]
+  horario_publicaciones HorarioPublicacion[]
+  horario_descansos     HorarioDescanso[]
 
   @@map("periodo_academico")
   @@schema("academic_schema")
 }
 
 model Docente {
-  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  perfil_usuario_id   String              @unique @db.Uuid
-  dni                 String              @unique @db.Char(8)
-  nombres             String              @db.VarChar(100)
-  apellido_paterno    String              @db.VarChar(60)
-  apellido_materno    String              @db.VarChar(60)
-  fecha_nacimiento    DateTime?           @db.Date
-  sexo                String?             @db.Char(1)
-  especialidad        String              @db.VarChar(150)
-  titulo_profesional  String?             @db.VarChar(200)
-  telefono            String              @db.VarChar(15)
-  email_institucional String?             @unique @db.VarChar(150)
-  foto_url            String?
-  activo              Boolean             @default(true)
-  fecha_ingreso       DateTime?           @db.Date
-  created_at          DateTime            @default(now()) @db.Timestamptz(6)
-  actividades         Actividad[]
-  asignaciones        AsignacionDocente[]
-  asistencias_alumnos Asistencia[]
-  asistencias         AsistenciaDocente[]
-  perfil              PerfilUsuario       @relation(fields: [perfil_usuario_id], references: [id], onUpdate: NoAction)
-  materiales          Material[]
-  notas               Nota[]
-  secciones_tutoradas Seccion[]
-  simulacro_preguntas SimulacroPregunta[]
+  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  perfil_usuario_id     String               @unique @db.Uuid
+  dni                   String               @unique @db.Char(8)
+  nombres               String               @db.VarChar(100)
+  apellido_paterno      String               @db.VarChar(60)
+  apellido_materno      String               @db.VarChar(60)
+  fecha_nacimiento      DateTime?            @db.Date
+  sexo                  String?              @db.Char(1)
+  especialidad          String               @db.VarChar(150)
+  titulo_profesional    String?              @db.VarChar(200)
+  telefono              String               @db.VarChar(15)
+  email_institucional   String?              @unique @db.VarChar(150)
+  foto_url              String?
+  activo                Boolean              @default(true)
+  fecha_ingreso         DateTime?            @db.Date
+  created_at            DateTime             @default(now()) @db.Timestamptz(6)
+  actividades           Actividad[]
+  asignaciones          AsignacionDocente[]
+  asistencias_alumnos   Asistencia[]
+  asistencias           AsistenciaDocente[]
+  perfil                PerfilUsuario        @relation(fields: [perfil_usuario_id], references: [id], onUpdate: NoAction)
+  materiales            Material[]
+  notas                 Nota[]
+  secciones_tutoradas   Seccion[]
+  simulacro_preguntas   SimulacroPregunta[]
+  horarios              Horario[]
+  horario_publicaciones HorarioPublicacion[]
 
   @@map("docente")
   @@schema("academic_schema")
 }
 
 model Seccion {
-  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  grado_id         String              @db.Uuid
-  periodo_id       String              @db.Uuid
-  nombre           String              @db.VarChar(5)
-  turno            String              @default("Mañana") @db.VarChar(20)
-  cupo_maximo      Int                 @db.SmallInt
-  docente_tutor_id String?             @db.Uuid
-  aula             String?             @db.VarChar(20)
-  actividades      Actividad[]
-  alumnos          Alumno[]
-  asignaciones     AsignacionDocente[]
-  asistencias      Asistencia[]
-  materiales       Material[]
-  docente_tutor    Docente?            @relation(fields: [docente_tutor_id], references: [id], onUpdate: NoAction)
-  grado            Grado               @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
-  periodo          PeriodoAcademico    @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
-  simulacro_preguntas SimulacroPregunta[]
+  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grado_id              String               @db.Uuid
+  periodo_id            String               @db.Uuid
+  nombre                String               @db.VarChar(5)
+  turno                 String               @default("Mañana") @db.VarChar(20)
+  cupo_maximo           Int                  @db.SmallInt
+  docente_tutor_id      String?              @db.Uuid
+  aula                  String?              @db.VarChar(20)
+  actividades           Actividad[]
+  alumnos               Alumno[]
+  asignaciones          AsignacionDocente[]
+  asistencias           Asistencia[]
+  materiales            Material[]
+  docente_tutor         Docente?             @relation(fields: [docente_tutor_id], references: [id], onUpdate: NoAction)
+  grado                 Grado                @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
+  periodo               PeriodoAcademico     @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  simulacro_preguntas   SimulacroPregunta[]
+  horarios              Horario[]
+  horario_publicaciones HorarioPublicacion[]
 
   @@unique([grado_id, periodo_id, nombre])
   @@map("seccion")
@@ -274,18 +282,18 @@ model Bimestre {
 }
 
 model Curso {
-  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nivel_id        String              @db.Uuid
-  nombre          String              @db.VarChar(120)
-  codigo_cneb     String?             @db.VarChar(20)
-  descripcion     String?
-  horas_semanales Int?                @db.SmallInt
-  actividades     Actividad[]
-  asignaciones    AsignacionDocente[]
-  competencias    Competencia[]
-  nivel           Nivel               @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
-  materiales      Material[]
-  grados          GradoCurso[]
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id            String              @db.Uuid
+  nombre              String              @db.VarChar(120)
+  codigo_cneb         String?             @db.VarChar(20)
+  descripcion         String?
+  horas_semanales     Int?                @db.SmallInt
+  actividades         Actividad[]
+  asignaciones        AsignacionDocente[]
+  competencias        Competencia[]
+  nivel               Nivel               @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
+  materiales          Material[]
+  grados              GradoCurso[]
   simulacro_preguntas SimulacroPregunta[]
   simulacro_examenes  SimulacroExamen[]
 
@@ -310,16 +318,16 @@ enum EstadoSimulacro {
 // (cada bimestre puede tener el suyo, no obligatorio). Máx. 4 por período.
 // Solo uno puede estar Activo a la vez (índice único parcial en el DDL).
 model Simulacro {
-  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  periodo_id  String           @db.Uuid
-  bimestre_id String?          @db.Uuid
-  numero      Int              @db.SmallInt
-  nombre      String           @db.VarChar(60)
-  estado      EstadoSimulacro  @default(Borrador)
-  created_by  String?          @db.Uuid
-  created_at  DateTime         @default(now()) @db.Timestamptz(6)
-  periodo     PeriodoAcademico @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
-  bimestre    Bimestre?        @relation(fields: [bimestre_id], references: [id], onUpdate: NoAction)
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  periodo_id  String              @db.Uuid
+  bimestre_id String?             @db.Uuid
+  numero      Int                 @db.SmallInt
+  nombre      String              @db.VarChar(60)
+  estado      EstadoSimulacro     @default(Borrador)
+  created_by  String?             @db.Uuid
+  created_at  DateTime            @default(now()) @db.Timestamptz(6)
+  periodo     PeriodoAcademico    @relation(fields: [periodo_id], references: [id], onUpdate: NoAction)
+  bimestre    Bimestre?           @relation(fields: [bimestre_id], references: [id], onUpdate: NoAction)
   preguntas   SimulacroPregunta[]
   examenes    SimulacroExamen[]
 
@@ -330,12 +338,12 @@ model Simulacro {
 
 // Banco de preguntas que suben los docentes (por curso y grado).
 model SimulacroPregunta {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  simulacro_id       String?  @db.Uuid
-  docente_id         String   @db.Uuid
-  curso_id           String   @db.Uuid
-  grado_id           String   @db.Uuid
-  seccion_id         String?  @db.Uuid
+  id                 String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  simulacro_id       String?                   @db.Uuid
+  docente_id         String                    @db.Uuid
+  curso_id           String                    @db.Uuid
+  grado_id           String                    @db.Uuid
+  seccion_id         String?                   @db.Uuid
   enunciado          String
   imagen_url         String?
   alt_a              String
@@ -343,14 +351,14 @@ model SimulacroPregunta {
   alt_c              String
   alt_d              String
   alt_e              String
-  respuesta_correcta String   @db.Char(1)
-  orden              Int      @db.SmallInt
-  created_at         DateTime @default(now()) @db.Timestamptz(6)
-  simulacro          Simulacro?         @relation(fields: [simulacro_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  docente            Docente            @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
-  curso              Curso              @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
-  grado              Grado              @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
-  seccion            Seccion?           @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
+  respuesta_correcta String                    @db.Char(1)
+  orden              Int                       @db.SmallInt
+  created_at         DateTime                  @default(now()) @db.Timestamptz(6)
+  simulacro          Simulacro?                @relation(fields: [simulacro_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  docente            Docente                   @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  curso              Curso                     @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  grado              Grado                     @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
+  seccion            Seccion?                  @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
   examen_items       SimulacroExamenPregunta[]
 
   @@index([simulacro_id, grado_id, curso_id])
@@ -361,14 +369,14 @@ model SimulacroPregunta {
 // Examen oficial por grado + curso (curado por Admin). El `orden` define la
 // posición del curso en el cuestionario y la numeración del balotario.
 model SimulacroExamen {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  simulacro_id String    @db.Uuid
-  grado_id     String    @db.Uuid
-  curso_id     String    @db.Uuid
-  orden        Int       @db.SmallInt
-  simulacro    Simulacro @relation(fields: [simulacro_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  grado        Grado     @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
-  curso        Curso     @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  id           String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  simulacro_id String                    @db.Uuid
+  grado_id     String                    @db.Uuid
+  curso_id     String                    @db.Uuid
+  orden        Int                       @db.SmallInt
+  simulacro    Simulacro                 @relation(fields: [simulacro_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  grado        Grado                     @relation(fields: [grado_id], references: [id], onUpdate: NoAction)
+  curso        Curso                     @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
   preguntas    SimulacroExamenPregunta[]
 
   @@unique([simulacro_id, grado_id, curso_id])
@@ -458,10 +466,80 @@ model Horario {
   hora_inicio   DateTime          @db.Time(6)
   hora_fin      DateTime          @db.Time(6)
   aula          String?           @db.VarChar(20)
+  docente_id    String            @db.Uuid
+  seccion_id    String            @db.Uuid
   asignacion    AsignacionDocente @relation(fields: [asignacion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  docente       Docente           @relation(fields: [docente_id], references: [id], onUpdate: NoAction)
+  seccion       Seccion           @relation(fields: [seccion_id], references: [id], onUpdate: NoAction)
 
   @@index([asignacion_id, dia_semana, hora_inicio], map: "idx_horario_asignacion")
+  @@index([docente_id], map: "idx_horario_docente_id")
+  @@index([seccion_id], map: "idx_horario_seccion_id")
   @@map("horario")
+  @@schema("academic_schema")
+}
+
+// Snapshot vigente (sin historial) del horario publicado a un Docente o a una
+// Sección. Desacoplado del borrador editable (Horario): republicar sobrescribe
+// tipo y sus bloques, los cambios del borrador no se ven hasta re-publicar.
+model HorarioPublicacion {
+  id                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tipo              String                     @db.VarChar(10)
+  docente_id        String?                    @db.Uuid
+  seccion_id        String?                    @db.Uuid
+  periodo_id        String                     @db.Uuid
+  publicado_por     String                     @db.Uuid
+  fecha_publicacion DateTime                   @default(now()) @db.Timestamptz(6)
+  docente           Docente?                   @relation(fields: [docente_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  seccion           Seccion?                   @relation(fields: [seccion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  periodo           PeriodoAcademico           @relation(fields: [periodo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  publicador        PerfilUsuario              @relation(fields: [publicado_por], references: [id], onUpdate: NoAction)
+  bloques           HorarioPublicacionBloque[]
+
+  @@map("horario_publicacion")
+  @@schema("academic_schema")
+}
+
+// Bloques del snapshot publicado, desnormalizados: no cambian si el borrador
+// se edita después de publicar. Sin FK viva hacia Horario (horario_id_origen
+// es solo informativo, el bloque vivo puede editarse o borrarse después).
+model HorarioPublicacionBloque {
+  id                      String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicacion_id          String             @db.Uuid
+  horario_id_origen       String?            @db.Uuid
+  dia_semana              Int                @db.SmallInt
+  hora_inicio             DateTime           @db.Time(6)
+  hora_fin                DateTime           @db.Time(6)
+  aula_snapshot           String?            @db.VarChar(20)
+  curso_nombre_snapshot   String             @db.VarChar(120)
+  docente_nombre_snapshot String             @db.VarChar(160)
+  seccion_nombre_snapshot String             @db.VarChar(20)
+  grado_nombre_snapshot   String             @db.VarChar(30)
+  nivel_nombre_snapshot   String             @db.VarChar(30)
+  publicacion             HorarioPublicacion @relation(fields: [publicacion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([publicacion_id], map: "idx_horario_publicacion_bloque_publicacion")
+  @@map("horario_publicacion_bloque")
+  @@schema("academic_schema")
+}
+
+// Recreo y Refrigerio/Almuerzo por Nivel y período, mismo horario Lun-Vie
+// para Docentes y Alumnos. Sin relación con docente_id/seccion_id a
+// propósito: no es un bloque de clase, no participa de las EXCLUDE
+// constraints ni del trigger de cruces de Horario. Sin flujo de
+// publicación: se sirve siempre en vivo, upsert por (nivel_id, periodo_id, tipo).
+model HorarioDescanso {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id    String           @db.Uuid
+  periodo_id  String           @db.Uuid
+  tipo        String           @db.VarChar(12)
+  hora_inicio DateTime         @db.Time(6)
+  hora_fin    DateTime         @db.Time(6)
+  nivel       Nivel            @relation(fields: [nivel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  periodo     PeriodoAcademico @relation(fields: [periodo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([nivel_id, periodo_id, tipo])
+  @@map("horario_descanso")
   @@schema("academic_schema")
 }
 

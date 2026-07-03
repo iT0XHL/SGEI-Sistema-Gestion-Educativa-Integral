@@ -339,32 +339,42 @@ export const AsignacionRepo = {
 // ── Horario ───────────────────────────────────────────────────
 // El tipo TIME se maneja con SQL crudo: el INSERT dispara el
 // trigger tg_validar_cruce_horario (puede lanzar RAISE EXCEPTION).
-interface HorarioRow {
+export interface HorarioRow {
   id: string;
   asignacion_id: string;
+  docente_id: string;
+  seccion_id: string;
   dia_semana: number;
   hora_inicio: string;
   hora_fin: string;
   aula: string | null;
   curso: string;
   seccion: string;
+  grado: string;
+  nivel: string;
   docente: string;
 }
 
 export const HorarioRepo = {
+  // Fuente única reutilizada tanto por el CRUD de borrador (Admin) como
+  // por el constructor del snapshot de publicación (horario-publicacion).
   list(filters: { periodoId?: string; seccionId?: string; docenteId?: string }) {
     return prisma.$queryRaw<HorarioRow[]>`
-      SELECT h.id, h.asignacion_id, h.dia_semana,
+      SELECT h.id, h.asignacion_id, h.docente_id, h.seccion_id, h.dia_semana,
              to_char(h.hora_inicio, 'HH24:MI') AS hora_inicio,
              to_char(h.hora_fin,    'HH24:MI') AS hora_fin,
              h.aula,
              c.nombre  AS curso,
              s.nombre  AS seccion,
+             g.nombre  AS grado,
+             n.nombre  AS nivel,
              d.nombres || ' ' || d.apellido_paterno AS docente
       FROM   academic_schema.horario             h
       JOIN   academic_schema.asignacion_docente  ad ON ad.id = h.asignacion_id
       JOIN   academic_schema.curso               c  ON c.id  = ad.curso_id
       JOIN   academic_schema.seccion             s  ON s.id  = ad.seccion_id
+      JOIN   academic_schema.grado               g  ON g.id  = s.grado_id
+      JOIN   academic_schema.nivel               n  ON n.id  = g.nivel_id
       JOIN   academic_schema.docente             d  ON d.id  = ad.docente_id
       WHERE  (${filters.periodoId ?? null}::uuid IS NULL OR ad.periodo_id = ${filters.periodoId ?? null}::uuid)
         AND  (${filters.seccionId ?? null}::uuid IS NULL OR ad.seccion_id = ${filters.seccionId ?? null}::uuid)

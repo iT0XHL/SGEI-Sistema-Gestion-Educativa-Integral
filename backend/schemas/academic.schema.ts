@@ -261,4 +261,5 @@ export const AsignacionesQuery = z.object({
 export const HorariosQuery = z.object({
   periodoId: uuid.optional(),
   seccionId: uuid.optional(),
+  docenteId: uuid.optional(),
 });

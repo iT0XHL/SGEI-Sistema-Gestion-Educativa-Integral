@@ -1,18 +1,18 @@
 // ============================================================
-//  GET /api/docentes/:id/horario — Bloques de horario del docente.
+//  GET /api/docentes/:id/horario — Horario PUBLICADO del docente
+//  (?periodoId, opcional → período activo por defecto). Nunca sirve
+//  el borrador. Secretaría no tiene acceso (decisión de negocio) —
+//  el chequeo de acceso vive en HorarioPublicacionService.
 // ============================================================
-import { withAuth, assertAccess } from '@/lib/auth';
+import { withAuth } from '@/lib/auth';
 import { ok } from '@/lib/response';
-import { DocentesService } from '@/modules/docentes/docentes.service';
+import { HorarioPublicacionService } from '@/modules/horarios/horario-publicacion.service';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withAuth(async (_req, { user, params }) => {
-  assertAccess(
-    user.rol === 'Admin' ||
-      user.rol === 'Secretaria' ||
-      (user.rol === 'Docente' && user.entidadId === params.id),
-  );
-  const data = await DocentesService.horario(params.id);
+export const GET = withAuth(async (req, { user, params }) => {
+  const { searchParams } = new URL(req.url);
+  const periodoId = searchParams.get('periodoId') ?? undefined;
+  const data = await HorarioPublicacionService.horarioPublicadoDeDocente(params.id, periodoId, user);
   return ok(data, 'Horario del docente');
 });

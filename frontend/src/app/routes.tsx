@@ -8,12 +8,14 @@ import AlumnoCursoDetalle from './pages/alumno/AlumnoCursoDetalle';
 import AlumnoLibreta from './pages/alumno/AlumnoLibreta';
 import AlumnoAsistencias from './pages/alumno/AlumnoAsistencias';
 import AlumnoPagos from './pages/alumno/AlumnoPagos';
+import AlumnoHorario from './pages/alumno/AlumnoHorario';
 import DocenteDashboard from './pages/docente/DocenteDashboard';
 import DocenteAsistencia from './pages/docente/DocenteAsistencia';
 import DocenteAsistenciaHistorial from './pages/docente/DocenteAsistenciaHistorial';
 import DocenteTareas from './pages/docente/DocenteTareas';
 import DocenteNotas from './pages/docente/DocenteNotas';
 import DocenteSimulacro from './pages/docente/DocenteSimulacro';
+import DocenteHorario from './pages/docente/DocenteHorario';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminCuentas from './pages/admin/AdminCuentas';
 import AdminHorarios from './pages/admin/AdminHorarios';
@@ -54,6 +56,7 @@ export const router = createBrowserRouter([
       { path: 'libreta',       Component: AlumnoLibreta },
       { path: 'asistencias',   Component: AlumnoAsistencias },
       { path: 'pagos',         Component: AlumnoPagos },
+      { path: 'horario',       Component: AlumnoHorario },
     ],
   },
 
@@ -70,6 +73,7 @@ export const router = createBrowserRouter([
       { path: 'tareas',      Component: DocenteTareas },
       { path: 'notas',       Component: DocenteNotas },
       { path: 'simulacro',   Component: DocenteSimulacro },
+      { path: 'horario',     Component: DocenteHorario },
     ],
   },
 

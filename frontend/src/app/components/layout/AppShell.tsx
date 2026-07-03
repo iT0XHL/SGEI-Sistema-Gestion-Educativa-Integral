@@ -51,6 +51,7 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Libreta Digital',path: '/alumno/libreta',      icon: FileText },
     { label: 'Asistencias',    path: '/alumno/asistencias',  icon: CalendarCheck },
     { label: 'Pagos',          path: '/alumno/pagos',        icon: CreditCard },
+    { label: 'Mi Horario',     path: '/alumno/horario',      icon: Calendar },
   ],
   Docente: [
     { label: 'Inicio',              path: '/docente/inicio',     icon: LayoutDashboard },
@@ -59,6 +60,7 @@ const NAV_CONFIG: Record<Role, NavItem[]> = {
     { label: 'Tareas y Materiales', path: '/docente/tareas',     icon: ClipboardList },
     { label: 'Ingreso de Notas',    path: '/docente/notas',      icon: PenLine },
     { label: 'Simulacro Admisión',  path: '/docente/simulacro',  icon: FileQuestion },
+    { label: 'Mi Horario',          path: '/docente/horario',    icon: Calendar },
   ],
   Admin: [
     { label: 'Inicio',                  path: '/admin/inicio',        icon: LayoutDashboard },

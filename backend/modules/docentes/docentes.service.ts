@@ -226,10 +226,6 @@ export const DocentesService = {
     throw new Error('No implementado en FASE 1');
   },
 
-  async horario(_docenteId: string) {
-    throw new Error('No implementado en FASE 1');
-  },
-
   async adminResetPassword(_docenteId: string, _input: unknown, _adminPerfilId: string) {
     throw new Error('No implementado en FASE 1');
   },
