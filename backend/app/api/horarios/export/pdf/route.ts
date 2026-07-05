@@ -18,6 +18,8 @@ import { HorarioService } from '@/modules/academic/asignacion.service';
 import { PeriodoService } from '@/modules/periodo/periodo.service';
 import { prisma } from '@/lib/prisma';
 import { HorarioDescansoRepository } from '@/modules/horarios/horario-descanso.repository';
+import { NivelHorarioConfigRepository } from '@/modules/horarios/nivel-horario-config.repository';
+import { generarFranjas, mergeFranjas } from '@/lib/horario-slots';
 import {
   buildHorarioDocentePdf, buildHorarioSeccionPdf, buildHorarioCompletoPdf, buildHorarioMultiplePdf,
   type HorarioPdfEntrada,
@@ -50,9 +52,15 @@ export const GET = withRole(['Admin'], async (req) => {
         select: { seccion: { select: { grado: { select: { nivel_id: true } } } } },
       });
       const nivelIds = [...new Set(asignaciones.map((a) => a.seccion.grado.nivel_id))];
-      const descansos = nivelIds.length ? await HorarioDescansoRepository.listarPorNiveles(nivelIds, periodoId) : [];
+      const [descansos, jornadas] = await Promise.all([
+        nivelIds.length ? HorarioDescansoRepository.listarPorNiveles(nivelIds, periodoId) : Promise.resolve([]),
+        nivelIds.length ? NivelHorarioConfigRepository.listarPorNiveles(nivelIds, periodoId) : Promise.resolve([]),
+      ]);
+      const franjas = mergeFranjas(
+        jornadas.map((j) => generarFranjas(j.hora_inicio_jornada, j.duracion_hora_min, descansos.filter((d) => d.nivel_id === j.nivel_id), j.total_horas_dia)),
+      );
 
-      pdfBuffer = await buildHorarioDocentePdf(rows, nombre, descansos);
+      pdfBuffer = await buildHorarioDocentePdf(rows, nombre, franjas);
       filename = `horario_${nombre.replace(/\s+/g, '_')}.pdf`;
     } else if (tipo === 'seccion') {
       const seccion = await prisma.seccion.findUnique({
@@ -62,9 +70,13 @@ export const GET = withRole(['Admin'], async (req) => {
       if (!seccion) throw new NotFoundError('Sección');
       const nombre = `${seccion.grado.nombre} "${seccion.nombre}" — ${seccion.grado.nivel.nombre}`;
       const rows = await HorarioService.list({ periodoId, seccionId: id });
-      const descansos = await HorarioDescansoRepository.listarPorNiveles([seccion.grado.nivel_id], periodoId);
+      const [descansos, jornada] = await Promise.all([
+        HorarioDescansoRepository.listarPorNiveles([seccion.grado.nivel_id], periodoId),
+        NivelHorarioConfigRepository.getOrDefault(seccion.grado.nivel_id, periodoId),
+      ]);
+      const franjas = generarFranjas(jornada.hora_inicio_jornada, jornada.duracion_hora_min, descansos, jornada.total_horas_dia);
 
-      pdfBuffer = await buildHorarioSeccionPdf(rows, nombre, descansos);
+      pdfBuffer = await buildHorarioSeccionPdf(rows, nombre, franjas);
       filename = `horario_${seccion.grado.nombre}_${seccion.nombre}.pdf`.replace(/\s+/g, '_');
     } else if (tipo === 'docentes') {
       const docentes = await prisma.docente.findMany({
@@ -81,12 +93,18 @@ export const GET = withRole(['Admin'], async (req) => {
           select: { seccion: { select: { grado: { select: { nivel_id: true } } } } },
         });
         const nivelIds = [...new Set(asignaciones.map((a) => a.seccion.grado.nivel_id))];
-        const descansos = nivelIds.length ? await HorarioDescansoRepository.listarPorNiveles(nivelIds, periodoId) : [];
+        const [descansos, jornadas] = await Promise.all([
+          nivelIds.length ? HorarioDescansoRepository.listarPorNiveles(nivelIds, periodoId) : Promise.resolve([]),
+          nivelIds.length ? NivelHorarioConfigRepository.listarPorNiveles(nivelIds, periodoId) : Promise.resolve([]),
+        ]);
+        const franjas = mergeFranjas(
+          jornadas.map((j) => generarFranjas(j.hora_inicio_jornada, j.duracion_hora_min, descansos.filter((d) => d.nivel_id === j.nivel_id), j.total_horas_dia)),
+        );
         entradas.push({
           titulo: 'Horario del Docente',
           subtitulo: `${d.nombres} ${d.apellido_paterno}`,
           bloques: rows,
-          descansos,
+          franjas,
           variante: 'docente',
         });
       }
@@ -103,12 +121,16 @@ export const GET = withRole(['Admin'], async (req) => {
       const entradas: HorarioPdfEntrada[] = [];
       for (const s of secciones) {
         const rows = await HorarioService.list({ periodoId, seccionId: s.id });
-        const descansos = await HorarioDescansoRepository.listarPorNiveles([s.grado.nivel_id], periodoId);
+        const [descansos, jornada] = await Promise.all([
+          HorarioDescansoRepository.listarPorNiveles([s.grado.nivel_id], periodoId),
+          NivelHorarioConfigRepository.getOrDefault(s.grado.nivel_id, periodoId),
+        ]);
+        const franjas = generarFranjas(jornada.hora_inicio_jornada, jornada.duracion_hora_min, descansos, jornada.total_horas_dia);
         entradas.push({
           titulo: 'Horario de Sección',
           subtitulo: `${s.grado.nombre} "${s.nombre}" — ${s.grado.nivel.nombre}`,
           bloques: rows,
-          descansos,
+          franjas,
           variante: 'seccion',
         });
       }

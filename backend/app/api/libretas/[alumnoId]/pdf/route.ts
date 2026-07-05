@@ -20,7 +20,8 @@ export function GET(req: NextRequest, { params }: { params: { alumnoId: string }
         userAgent ?? undefined,
       );
 
-      const pdfBuffer = await buildLibretaPdf(rows);
+      const soloLiteral = ctx.user.rol === 'Alumno';
+      const pdfBuffer = await buildLibretaPdf(rows, { soloLiteral });
       const alumnoNombre = rows[0]?.alumno_nombre ?? 'alumno';
       const filename = `libreta_${alumnoNombre.replace(/\s+/g, '_')}.pdf`;
 

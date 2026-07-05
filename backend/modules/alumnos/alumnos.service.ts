@@ -4,6 +4,10 @@ import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { AlumnosRepository, type ListFilters } from './alumnos.repository';
+import { desambiguarNombres } from './nombre-desambiguado.util';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
+import type { JwtClaims } from '@/lib/jwt';
 import type { CreateAlumnoInput, UpdateAlumnoInput } from '@/schemas/personas.schema';
 
 
@@ -24,11 +28,13 @@ export interface AlumnoDTO {
   activo: boolean;
   usuario_login?: string;
   seccion?: { nombre: string; grado: { nombre: string } };
+  sufijo_homonimo?: string;
 }
 
 export const AlumnosService = {
   async list(filters: ListFilters) {
     const { rows, total } = await AlumnosRepository.list(filters);
+    const sufijos = desambiguarNombres(rows);
     const dtos = rows.map((r) => ({
       id: r.id,
       dni: r.dni,
@@ -41,6 +47,7 @@ export const AlumnosService = {
       bloqueo_manual: r.bloqueo_manual,
       usuario_login: r.perfil?.credencial.usuario_login,
       seccion: r.seccion,
+      sufijo_homonimo: sufijos.get(r.id),
     }));
     return paginate(dtos, filters.page, filters.limit, total);
   },
@@ -68,7 +75,8 @@ export const AlumnosService = {
     };
   },
 
-  async create(input: CreateAlumnoInput, adminPerfilId: string): Promise<AlumnoDTO> {
+  async create(input: CreateAlumnoInput, user: JwtClaims): Promise<AlumnoDTO> {
+    const adminPerfilId = user.perfilId;
     const existing = await prisma.alumno.findFirst({
       where: { dni: input.dni },
       select: { id: true },
@@ -152,6 +160,13 @@ export const AlumnosService = {
       });
 
       return { ...alumno, usuario_login: input.usuario_login };
+    }).then(async (alumno) => {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.ALUMNO_CREADO,
+        actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+        contexto: { alumnoId: alumno.id, seccionId: input.seccion_id, alumnoNombre: input.nombres },
+      });
+      return alumno;
     });
   },
 
@@ -258,7 +273,23 @@ export const AlumnosService = {
     return this.get(alumnoId);
   },
 
-  async cursos(_alumnoId: string) {
-    throw new Error('No implementado en FASE 1');
+  /** Cursos (asignaciones docente-curso) de la sección del alumno en su período. */
+  async cursos(alumnoId: string) {
+    const alumno = await AlumnosRepository.findById(alumnoId);
+    if (!alumno) throw new NotFoundError('Alumno');
+
+    return prisma.asignacionDocente.findMany({
+      where: { seccion_id: alumno.seccion_id, periodo_id: alumno.periodo_id, activo: true },
+      include: {
+        docente: { select: { id: true, nombres: true, apellido_paterno: true } },
+        curso:   { select: { id: true, nombre: true } },
+        seccion: {
+          select: {
+            id: true, nombre: true, grado_id: true,
+            grado: { select: { id: true, nombre: true, nivel: { select: { id: true, nombre: true } } } },
+          },
+        },
+      },
+    });
   },
 };

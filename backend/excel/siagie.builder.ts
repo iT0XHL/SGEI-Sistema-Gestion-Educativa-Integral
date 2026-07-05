@@ -89,6 +89,22 @@ const AREAS_MINEDU: Array<{ letra: string; nombre: string; aliases: string[] }> 
   { letra: 'J', nombre: 'Educación para el Trabajo',               aliases: ['educacion para el trabajo', 'ept', 'computacion', 'informatica'] },
 ];
 
+// Mapeo directo área_academica.nombre (catálogo fino, poblado en SQL/19)
+// → índice de AREAS_MINEDU. Se usa PRIMERO, antes de caer al alias-matching
+// por nombre de curso — así los 21 cursos finos (Aritmética, Álgebra, R.M.,
+// Física, Historia, Geografía, etc.) se agrupan por su área real en vez de
+// desbordar el cupo de 5 columnas "taller".
+const AREA_ACADEMICA_A_MINEDU: Record<string, number> = {
+  'matematica':             0, // A
+  'comunicacion':           1, // B
+  'ingles':                 2, // C
+  'arte y cultura':         3, // D
+  'ciencias sociales':      4, // E
+  'dpcc':                   5, // F
+  'educacion fisica':       6, // G
+  'ciencia y tecnologia':   8, // I
+};
+
 // ════════════════════════════════════════════════════════════
 //  Public API
 // ════════════════════════════════════════════════════════════
@@ -326,8 +342,10 @@ interface AlumnoActa {
   apellido_materno:          string;
   nombres:                   string;
   sexo:                      string;
-  areas:                     string[];     // length 10
+  areas:                     string[];     // length 10 — literal final (post-promedio)
+  areasAcc:                  number[][];   // length 10 — notas acumuladas antes de promediar
   especialidad:              string;
+  especialidadAcc:           number[];
   talleres:                  string[];     // length 5
   comportamiento:            string;
   numero_areas_desaprobadas: number | null;
@@ -366,7 +384,9 @@ function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
         nombres:                   r.nombres,
         sexo:                      r.sexo,
         areas:                     Array(10).fill(''),
+        areasAcc:                  Array.from({ length: 10 }, () => []),
         especialidad:              '',
+        especialidadAcc:           [],
         talleres:                  Array(5).fill(''),
         comportamiento:            r.comportamiento ?? '',
         numero_areas_desaprobadas: r.numero_areas_desaprobadas,
@@ -377,14 +397,24 @@ function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
       acta.alumnos.push(alumno);
     }
 
-    const lit = notaToLiteral(r.nota_promedio);
-    const cls = clasificarCurso(r.curso, acta.talleres);
-    if (cls.tipo === 'area')              alumno.areas[cls.index]    = lit;
-    else if (cls.tipo === 'especialidad') alumno.especialidad        = lit;
-    else if (cls.tipo === 'taller')       alumno.talleres[cls.index] = lit;
+    const cls = clasificarCurso(r.curso, r.area_nombre, acta.talleres);
+    if (cls.tipo === 'area')              alumno.areasAcc[cls.index].push(r.nota_promedio);
+    else if (cls.tipo === 'especialidad') alumno.especialidadAcc.push(r.nota_promedio);
+    else if (cls.tipo === 'taller')       alumno.talleres[cls.index] = notaToLiteral(r.nota_promedio);
   }
 
+  // Los cursos de una misma área MINEDU (ej. Aritmética+Álgebra+Trigonometría+
+  // R.M.+Geometría → "Matemática") se promedian en una sola nota por área,
+  // en vez de que el último curso procesado sobrescriba a los anteriores.
   for (const acta of map.values()) {
+    for (const alumno of acta.alumnos) {
+      alumno.areas = alumno.areasAcc.map((notas) =>
+        notas.length > 0 ? notaToLiteral(notas.reduce((a, b) => a + b, 0) / notas.length) : '',
+      );
+      alumno.especialidad = alumno.especialidadAcc.length > 0
+        ? notaToLiteral(alumno.especialidadAcc.reduce((a, b) => a + b, 0) / alumno.especialidadAcc.length)
+        : '';
+    }
     acta.alumnos.sort((a, b) => a.numero_orden - b.numero_orden);
   }
 
@@ -395,9 +425,20 @@ function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
 }
 
 function clasificarCurso(
-  nombre:   string,
-  talleres: string[],
+  nombre:      string,
+  areaNombre:  string | null,
+  talleres:    string[],
 ): { tipo: 'area'; index: number } | { tipo: 'especialidad' } | { tipo: 'taller'; index: number } {
+  // 1) Vía area_academica_id (catálogo fino nuevo) — resuelve directo por
+  //    área asignada al curso, sin depender del nombre del curso en sí.
+  if (areaNombre) {
+    const idx = AREA_ACADEMICA_A_MINEDU[normalizar(areaNombre)];
+    if (idx !== undefined) return { tipo: 'area', index: idx };
+  }
+
+  // 2) Fallback: alias-matching por nombre de curso (catálogo viejo de 8
+  //    cursos genéricos, y los cursos finos sin área asignada — Religión,
+  //    Oratoria, Psicología, Plan Lector — que van a "taller" a propósito).
   const norm = normalizar(nombre);
   for (let i = 0; i < AREAS_MINEDU.length; i++) {
     const area = AREAS_MINEDU[i];

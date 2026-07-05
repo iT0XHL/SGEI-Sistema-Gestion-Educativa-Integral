@@ -2,6 +2,8 @@ import { ForbiddenError, NotFoundError, ConflictError, BusinessRuleError } from 
 import { prisma } from '@/lib/prisma';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { LibretaRepository } from './libreta.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import type { JwtClaims } from '@/lib/jwt';
 
 type EstadoDestino = 'EN_REVISION' | 'OBSERVADA' | 'APROBADA' | 'PUBLICADA' | 'ANULADA';
@@ -44,6 +46,30 @@ export const LibretaService = {
     return rows;
   },
 
+  /**
+   * Libreta agrupada en 3 niveles (área → curso → criterio), con promedios
+   * ponderados. No depende de la MV (lee nota en vivo), mismo control de
+   * acceso que obtener().
+   */
+  async obtenerAgrupado(alumnoId: string, bimestreId: string | undefined, user: JwtClaims) {
+    if (user.rol === 'Alumno') {
+      if (user.entidadId !== alumnoId) {
+        throw new ForbiddenError('LIBRETA_AJENA', 'Solo puedes ver tu propia libreta.');
+      }
+      const bloqueada = await LibretaRepository.bloqueoActivo(alumnoId);
+      if (bloqueada) {
+        throw new ForbiddenError(
+          'LIBRETA_BLOQUEADA',
+          'Tu libreta está bloqueada por deuda pendiente o bloqueo administrativo.',
+        );
+      }
+    }
+
+    const agrupada = await LibretaRepository.obtenerAgrupado(alumnoId, bimestreId);
+    if (agrupada.areas.length === 0) throw new NotFoundError('Libreta del alumno');
+    return agrupada;
+  },
+
   async generarPdf(
     alumnoId:   string,
     bimestreId: string | undefined,
@@ -65,7 +91,7 @@ export const LibretaService = {
     }
 
     await LibretaRepository.refrescarVista();
-    const rows = await LibretaRepository.obtener(alumnoId, bimestreId);
+    const rows = await LibretaRepository.detalleConArea(alumnoId, bimestreId);
     if (rows.length === 0) throw new NotFoundError('Libreta del alumno');
 
     await AuditService.log({
@@ -143,6 +169,15 @@ export const LibretaService = {
       oldValue: { estado: libreta.estado },
       newValue: { estado, observacion: observacion ?? null },
     });
+
+    if (estado === 'PUBLICADA') {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.LIBRETA_PUBLICADA,
+        actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+        contexto: { alumnoId: libreta.alumno_id, libretaId: id },
+      });
+    }
+
     return actualizada;
   },
 

@@ -3,9 +3,10 @@ import { PlusCircle, ChevronRight, Loader2, Download, Upload } from 'lucide-reac
 import type { DocenteRow, CursoRow, SeccionRow, GradoRow, PeriodoRow, AsignacionRow, HorarioRow } from '@/lib/api/horarios.api';
 import {
   usePublicacionesDocentes, useHorarioBloques, usePublicarDocente,
-  useEliminarBloque, useDescargarHorarioPdf, useDescansos,
+  useEliminarBloque, useDescargarHorarioPdf, useDescansos, useJornadasDeNiveles,
 } from '@/hooks/admin/useHorariosAdmin';
 import { HorarioSemanalGrid } from '@/app/components/horarios/HorarioSemanalGrid';
+import { generarFranjas, mergeFranjas } from '@/app/components/horarios/horarioSlots';
 import { EstadoPublicacionBadge } from '@/app/components/horarios/EstadoPublicacionBadge';
 import { AdminHorarioBloqueModal } from './AdminHorarioBloqueModal';
 
@@ -47,6 +48,10 @@ export function AdminHorariosPorDocente({ periodoActivo, docentes, cursos, secci
     ),
   ];
   const { data: descansos = [] } = useDescansos(periodoActivo.id, nivelIdsDelDocente);
+  const { data: jornadas } = useJornadasDeNiveles(periodoActivo.id, nivelIdsDelDocente);
+  const franjas = mergeFranjas(
+    jornadas.map((j) => generarFranjas(j.hora_inicio_jornada, j.duracion_hora_min, descansos.filter((d) => d.nivel_id === j.nivel_id), j.total_horas_dia)),
+  );
 
   return (
     <div className="space-y-4">
@@ -146,7 +151,7 @@ export function AdminHorariosPorDocente({ periodoActivo, docentes, cursos, secci
             bloques={bloques}
             mode="edit"
             mostrarEtiqueta="seccion"
-            descansos={descansos}
+            franjas={franjas}
             onEdit={(b) => setModal({ open: true, mode: 'edit', editing: bloques.find((h) => h.id === b.id) })}
             onDelete={(b) => { if (b.id) eliminarBloque.mutate(b.id); }}
           />

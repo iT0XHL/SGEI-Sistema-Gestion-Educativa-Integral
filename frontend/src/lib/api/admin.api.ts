@@ -124,6 +124,8 @@ export interface AlumnoResumenDTO {
   bloqueo_manual:   boolean;
   activo:           boolean;
   usuario_login:    string | null;
+  /** Sufijo visual (ej. " (DNI 1234)") para distinguir alumnos homónimos en el listado. Solo presente si hay colisión. */
+  sufijo_homonimo?: string;
   seccion: {
     id:     string;
     nombre: string;
@@ -372,39 +374,61 @@ export interface UpdateSeccionPayload {
 }
 
 export interface CursoDTO {
-  id:               string;
-  nivel_id:         string;
-  nombre:           string;
-  codigo_cneb:      string | null;
-  descripcion:      string | null;
-  horas_semanales:  number | null;
+  id:                 string;
+  nivel_id:           string;
+  nombre:             string;
+  codigo_cneb:        string | null;
+  descripcion:        string | null;
+  horas_semanales:    number | null;
+  area_academica_id:  string | null;
 }
 
 export interface CreateCursoPayload {
-  nivel_id:         string;
-  nombre:           string;
-  codigo_cneb?:     string | null;
-  descripcion?:     string | null;
-  horas_semanales?: number | null;
+  nivel_id:           string;
+  nombre:             string;
+  codigo_cneb?:       string | null;
+  descripcion?:       string | null;
+  horas_semanales?:   number | null;
+  area_academica_id?: string | null;
 }
 export type UpdateCursoPayload = Partial<Omit<CreateCursoPayload, 'nivel_id'>>;
 
-// ── Competencias ──────────────────────────────────────────────
+// ── Áreas académicas (agrupador visual de libreta) ─────────────
+export interface AreaAcademicaDTO {
+  id:       string;
+  nivel_id: string;
+  nombre:   string;
+  orden:    number | null;
+  activo:   boolean;
+}
+
+export interface CreateAreaAcademicaPayload {
+  nivel_id: string;
+  nombre:   string;
+  orden?:   number | null;
+}
+export type UpdateAreaAcademicaPayload = Partial<Omit<CreateAreaAcademicaPayload, 'nivel_id'>>;
+
+// ── Competencias (UI: "Criterios de Evaluación") ──────────────
 export interface CompetenciaDTO {
   id:          string;
   curso_id:    string;
+  grado_id:    string | null;
   nombre:      string;
   descripcion: string | null;
   tipo:        'regular' | 'transversal';
   orden:       number | null;
+  peso:        number;
 }
 
 export interface CreateCompetenciaPayload {
   curso_id:    string;
+  grado_id?:   string | null;
   nombre:      string;
   descripcion?: string | null;
   tipo:        'regular' | 'transversal';
   orden?:      number | null;
+  peso?:       number;
 }
 
 export interface UpdateCompetenciaPayload {
@@ -412,6 +436,7 @@ export interface UpdateCompetenciaPayload {
   descripcion?: string | null;
   tipo?:        'regular' | 'transversal';
   orden?:       number | null;
+  peso?:        number;
 }
 
 export interface ReordenarItem {
@@ -429,7 +454,11 @@ export interface AsignacionDTO {
   activo:     boolean;
   docente:    { id: string; nombres: string; apellido_paterno: string };
   curso:      { id: string; nombre: string };
-  seccion:    { id: string; nombre: string };
+  seccion:    {
+    id: string;
+    nombre: string;
+    grado: { id: string; nombre: string; nivel: { id: string; nombre: string } };
+  };
 }
 
 export interface CreateAsignacionPayload {
@@ -783,12 +812,29 @@ export const estructuraApi = {
   },
 };
 
-// ── Competencias ──────────────────────────────────────────────
+// ── Áreas académicas (agrupador visual de libreta) ─────────────
+export const areasApi = {
+  listar(nivelId?: string): Promise<AreaAcademicaDTO[]> {
+    return apiClient.get<AreaAcademicaDTO[]>('/api/areas-academicas', nivelId ? { nivelId } : undefined);
+  },
+  crear(payload: CreateAreaAcademicaPayload): Promise<AreaAcademicaDTO> {
+    return apiClient.post<AreaAcademicaDTO>('/api/areas-academicas', payload);
+  },
+  actualizar(id: string, payload: UpdateAreaAcademicaPayload): Promise<AreaAcademicaDTO> {
+    return apiClient.put<AreaAcademicaDTO>(`/api/areas-academicas/${id}`, payload);
+  },
+  eliminar(id: string): Promise<{ id: string; eliminado: boolean }> {
+    return apiClient.delete<{ id: string; eliminado: boolean }>(`/api/areas-academicas/${id}`);
+  },
+};
+
+// ── Competencias (UI: "Criterios de Evaluación") ──────────────
 export const competenciasApi = {
-  listar(cursoId?: string): Promise<CompetenciaDTO[]> {
+  /** Con gradoId: si el curso tiene overrides para ese grado los devuelve; si no, cae al default del nivel. */
+  listar(cursoId?: string, gradoId?: string): Promise<CompetenciaDTO[]> {
     return apiClient.get<CompetenciaDTO[]>(
       '/api/competencias',
-      cursoId ? { cursoId } : undefined,
+      toStr({ cursoId, gradoId }),
     );
   },
 
@@ -806,6 +852,21 @@ export const competenciasApi = {
 
   reordenar(competencias: ReordenarItem[]): Promise<CompetenciaDTO[]> {
     return apiClient.patch<CompetenciaDTO[]>('/api/competencias/reordenar', { competencias });
+  },
+
+  /** "Personalizar para este grado": copia los defaults del nivel como override editable. */
+  copiarAGrado(cursoId: string, gradoId: string): Promise<CompetenciaDTO[]> {
+    return apiClient.post<CompetenciaDTO[]>('/api/competencias/copiar-a-grado', {
+      curso_id: cursoId,
+      grado_id: gradoId,
+    });
+  },
+
+  /** "Restaurar valores del nivel": borra los overrides de ese curso+grado. */
+  restaurarPredeterminado(cursoId: string, gradoId: string): Promise<{ restaurado: boolean }> {
+    return apiClient.delete<{ restaurado: boolean }>(
+      `/api/competencias/copiar-a-grado?curso_id=${cursoId}&grado_id=${gradoId}`,
+    );
   },
 };
 

@@ -25,6 +25,7 @@ export const NotificationEvents = {
   TAREA_CALIFICADA:      'TAREA_CALIFICADA',
   MATERIAL_PUBLICADO:    'MATERIAL_PUBLICADO',
   ACTIVIDAD_PUBLICADA:   'ACTIVIDAD_PUBLICADA',
+  SIMULACRO_PROGRAMADO:  'SIMULACRO_PROGRAMADO',
   NOTAS_ENVIADAS_A_SECRETARIA: 'NOTAS_ENVIADAS_A_SECRETARIA',
   // Libretas
   LIBRETA_PUBLICADA:     'LIBRETA_PUBLICADA',
@@ -33,6 +34,11 @@ export const NotificationEvents = {
   BOLETA_SUBIDA:         'BOLETA_SUBIDA',
   BOLETA_REVISADA:       'BOLETA_REVISADA',
   PAGO_REGISTRADO:       'PAGO_REGISTRADO',
+  PAGO_POR_VENCER:       'PAGO_POR_VENCER',
+  // Horarios
+  HORARIO_ACTUALIZADO:   'HORARIO_ACTUALIZADO',
+  // Asistencia
+  ASISTENCIA_PENDIENTE:  'ASISTENCIA_PENDIENTE',
   // Sistema / comunicados
   PERIODO_ACTUALIZADO:   'PERIODO_ACTUALIZADO',
   COMUNICADO_GENERAL:    'COMUNICADO_GENERAL',
@@ -69,12 +75,16 @@ export const EVENTO_CONFIG: Record<NotificationEvent, EventoMeta> = {
   TAREA_CALIFICADA:            { tipo: 'academico',  prioridad: 'normal',  entidad: 'entrega' },
   MATERIAL_PUBLICADO:          { tipo: 'academico',  prioridad: 'normal',  entidad: 'material' },
   ACTIVIDAD_PUBLICADA:         { tipo: 'academico',  prioridad: 'normal',  entidad: 'actividad' },
+  SIMULACRO_PROGRAMADO:        { tipo: 'academico',  prioridad: 'alta',    entidad: 'simulacro' },
   NOTAS_ENVIADAS_A_SECRETARIA: { tipo: 'academico',  prioridad: 'alta',    entidad: 'nota' },
   LIBRETA_PUBLICADA:           { tipo: 'academico',  prioridad: 'urgente', entidad: 'libreta' },
   LIBRETA_BLOQUEADA:           { tipo: 'academico',  prioridad: 'alta',    entidad: 'libreta' },
   BOLETA_SUBIDA:               { tipo: 'pago',       prioridad: 'normal',  entidad: 'boleta' },
   BOLETA_REVISADA:             { tipo: 'pago',       prioridad: 'alta',    entidad: 'boleta' },
   PAGO_REGISTRADO:             { tipo: 'pago',       prioridad: 'normal',  entidad: 'pago' },
+  PAGO_POR_VENCER:             { tipo: 'pago',       prioridad: 'alta',    entidad: 'pago' },
+  HORARIO_ACTUALIZADO:         { tipo: 'academico',  prioridad: 'alta',    entidad: 'horario' },
+  ASISTENCIA_PENDIENTE:        { tipo: 'sistema',    prioridad: 'normal',  entidad: 'asistencia_docente' },
   PERIODO_ACTUALIZADO:         { tipo: 'sistema',    prioridad: 'alta',    entidad: 'periodo' },
   COMUNICADO_GENERAL:          { tipo: 'comunicado', prioridad: 'urgente', entidad: 'comunicado' },
 };

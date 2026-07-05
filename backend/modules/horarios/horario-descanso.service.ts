@@ -4,6 +4,11 @@
 //  borrador de Horario, no tiene flujo de publicación: se sirve
 //  siempre en vivo (lectura abierta a cualquier rol autenticado),
 //  solo Admin puede editarlo.
+//
+//  Recreo/Refrigerio son anclas FIJAS a cualquier hora que el Admin
+//  elija — no requieren "calzar" con nada, porque los bloques de
+//  clase se calculan alrededor de ellas (ver backend/lib/horario-slots.ts),
+//  no al revés.
 // ============================================================
 import { ForbiddenError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';

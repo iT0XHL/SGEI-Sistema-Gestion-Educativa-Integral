@@ -331,7 +331,7 @@ export default function DocenteTareas() {
       id:        a.id,
       cursoId:   a.curso_id,
       seccionId: a.seccion_id,
-      label:     `${a.curso.nombre} — ${a.seccion.nombre}`,
+      label:     `${a.curso.nombre} — ${a.seccion.grado.nombre} "${a.seccion.nombre}"`,
       curso:     a.curso.nombre,
       seccion:   a.seccion.nombre,
       colorIdx:  i,

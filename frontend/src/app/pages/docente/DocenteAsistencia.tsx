@@ -57,7 +57,7 @@ export default function DocenteAsistencia() {
     id:        a.id,
     cursoId:   a.curso_id,
     seccionId: a.seccion_id,
-    label:     `${a.curso.nombre} — ${a.seccion.nombre}`,
+    label:     `${a.curso.nombre} — ${a.seccion.grado.nombre} "${a.seccion.nombre}"`,
     curso:     a.curso.nombre,
     seccion:   a.seccion.nombre,
   }));
@@ -80,7 +80,7 @@ export default function DocenteAsistencia() {
             id:        primera.id,
             cursoId:   primera.curso_id,
             seccionId: primera.seccion_id,
-            label:     `${primera.curso.nombre} — ${primera.seccion.nombre}`,
+            label:     `${primera.curso.nombre} — ${primera.seccion.grado.nombre} "${primera.seccion.nombre}"`,
             curso:     primera.curso.nombre,
             seccion:   primera.seccion.nombre,
           });

@@ -28,7 +28,12 @@ export interface AsignacionDocente {
   activo: boolean;
   docente: { id: string; nombres: string; apellido_paterno: string };
   curso: { id: string; nombre: string };
-  seccion: { id: string; nombre: string };
+  seccion: {
+    id: string;
+    nombre: string;
+    grado_id: string;
+    grado: { id: string; nombre: string; nivel: { id: string; nombre: string } };
+  };
 }
 
 export const alumnosApi = {

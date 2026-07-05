@@ -4,8 +4,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '../../components/ui/alert-dialog';
-import { periodosApi, asignacionesApi, docentesAdminApi, estructuraApi } from '../../../lib/api/admin.api';
-import type { PeriodoDTO, AsignacionDTO, DocenteDTO, NivelDTO, CursoDTO, SeccionDTO } from '../../../lib/api/admin.api';
+import { periodosApi, asignacionesApi, docentesAdminApi, estructuraApi, areasApi } from '../../../lib/api/admin.api';
+import type { PeriodoDTO, AsignacionDTO, DocenteDTO, NivelDTO, CursoDTO, SeccionDTO, AreaAcademicaDTO } from '../../../lib/api/admin.api';
 
 export default function AdminAsignaciones() {
   const [items, setItems]           = useState<AsignacionDTO[]>([]);
@@ -13,6 +13,7 @@ export default function AdminAsignaciones() {
   const [docentes, setDocentes]     = useState<DocenteDTO[]>([]);
   const [niveles, setNiveles]       = useState<NivelDTO[]>([]);
   const [cursos, setCursos]         = useState<CursoDTO[]>([]);
+  const [areas, setAreas]           = useState<AreaAcademicaDTO[]>([]);
   const [secciones, setSecciones]   = useState<SeccionDTO[]>([]);
   const [loading, setLoading]       = useState(true);
   const [modal, setModal]           = useState(false);
@@ -48,17 +49,39 @@ export default function AdminAsignaciones() {
   useEffect(() => {
     if (!form.nivel_id || !periodo) {
       setCursos([]);
+      setAreas([]);
       setSecciones([]);
       return;
     }
     Promise.all([
       estructuraApi.cursos(form.nivel_id),
+      areasApi.listar(form.nivel_id),
       estructuraApi.secciones({ periodoId: periodo.id }),
-    ]).then(([c, s]) => {
+    ]).then(([c, a, s]) => {
       setCursos(c);
+      setAreas(a);
       setSecciones(s);
     });
   }, [form.nivel_id, periodo]);
+
+  // Cursos agrupados por área académica — antes el select mostraba todos
+  // los cursos del nivel en una lista plana, mezclando el catálogo viejo
+  // (huérfano, sin área ni docentes desde hoy) con el nuevo sin distinción.
+  const cursosPorArea = areas
+    .map(area => ({ area, cursos: cursos.filter(c => c.area_academica_id === area.id) }))
+    .filter(g => g.cursos.length > 0);
+  const cursosSinArea = cursos.filter(c => !c.area_academica_id);
+
+  // Secciones agrupadas por grado — antes el select traía TODAS las
+  // secciones del período sin filtrar por nivel ni agrupar por grado,
+  // mostrando opciones ambiguas como "A", "A", "B" de grados distintos.
+  const seccionesDelNivel = secciones.filter(s => s.grado.nivel.id === form.nivel_id);
+  const seccionesPorGrado = Object.values(
+    seccionesDelNivel.reduce<Record<string, { grado: SeccionDTO['grado']; secciones: SeccionDTO[] }>>((acc, s) => {
+      (acc[s.grado.id] ??= { grado: s.grado, secciones: [] }).secciones.push(s);
+      return acc;
+    }, {}),
+  );
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -141,6 +164,7 @@ export default function AdminAsignaciones() {
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Docente</th>
                 <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Curso</th>
+                <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Grado</th>
                 <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Sección</th>
                 <th className="text-center px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
                 <th className="text-right px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
@@ -149,7 +173,7 @@ export default function AdminAsignaciones() {
             <tbody className="divide-y divide-slate-50">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                     No hay asignaciones para este período
                   </td>
                 </tr>
@@ -160,7 +184,8 @@ export default function AdminAsignaciones() {
                       <p className="font-medium text-slate-800">{a.docente.nombres} {a.docente.apellido_paterno}</p>
                     </td>
                     <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{a.curso.nombre}</td>
-                    <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{a.seccion.nombre}</td>
+                    <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{a.seccion.grado.nombre}</td>
+                    <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">"{a.seccion.nombre}"</td>
                     <td className="px-4 py-3.5 text-center">
                       {a.activo ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
@@ -184,7 +209,7 @@ export default function AdminAsignaciones() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>¿Dar de baja esta asignación?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Se desactivará la asignación de <strong>{a.docente.nombres} {a.docente.apellido_paterno}</strong> al curso <strong>{a.curso.nombre}</strong> en la sección <strong>{a.seccion.nombre}</strong>.
+                                Se desactivará la asignación de <strong>{a.docente.nombres} {a.docente.apellido_paterno}</strong> al curso <strong>{a.curso.nombre}</strong> en <strong>{a.seccion.grado.nombre} "{a.seccion.nombre}"</strong>.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -248,7 +273,16 @@ export default function AdminAsignaciones() {
                   <div className="relative">
                     <select value={form.curso_id} onChange={e => setForm(f => ({ ...f, curso_id: e.target.value }))} className={`${inputCls} appearance-none pr-8`} disabled={!form.nivel_id}>
                       <option value="">Seleccionar</option>
-                      {cursos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      {cursosPorArea.map(({ area, cursos: cs }) => (
+                        <optgroup key={area.id} label={area.nombre}>
+                          {cs.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                        </optgroup>
+                      ))}
+                      {cursosSinArea.length > 0 && (
+                        <optgroup label="Sin área académica (independientes o catálogo antiguo)">
+                          {cursosSinArea.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
                   </div>
@@ -258,7 +292,11 @@ export default function AdminAsignaciones() {
                   <div className="relative">
                     <select value={form.seccion_id} onChange={e => setForm(f => ({ ...f, seccion_id: e.target.value }))} className={`${inputCls} appearance-none pr-8`} disabled={!form.nivel_id}>
                       <option value="">Seleccionar</option>
-                      {secciones.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                      {seccionesPorGrado.map(({ grado, secciones: secs }) => (
+                        <optgroup key={grado.id} label={grado.nombre}>
+                          {secs.map(s => <option key={s.id} value={s.id}>{grado.nombre} "{s.nombre}"</option>)}
+                        </optgroup>
+                      ))}
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
                   </div>

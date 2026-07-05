@@ -4,6 +4,8 @@ import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
 import { BoletaRepository } from './boleta.repository';
 import { PagoRepository } from '@/modules/pagos/pago.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import type { JwtClaims } from '@/lib/jwt';
 import type { SubirBoletaInput, RevisarBoletaInput, ListarBoletasQueryInput } from './boleta.schema';
 
@@ -87,6 +89,15 @@ export const BoletaService = {
       entidadAfectada: 'boleta_pago',
       entidadId:       boleta.id,
       newValue: { pago_id: input.pago_id, nombre_archivo: archivo.name },
+    });
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.BOLETA_SUBIDA,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        boletaId:    boleta.id,
+        alumnoNombre: `${boleta.pago.alumno.nombres} ${boleta.pago.alumno.apellido_paterno}`,
+      },
     });
 
     return boleta;

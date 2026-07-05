@@ -10,7 +10,7 @@ interface StudentBlock {
 }
 
 function toRow(a: AlumnoResumenDTO): StudentBlock {
-  const studentName = `${a.apellido_paterno} ${a.apellido_materno}, ${a.nombres}`.trim();
+  const studentName = `${a.apellido_paterno} ${a.apellido_materno}, ${a.nombres}${a.sufijo_homonimo ?? ''}`.trim();
   const grade = `${a.seccion?.grado?.nivel?.nombre ?? ''} · ${a.seccion?.grado?.nombre ?? ''} "${a.seccion?.nombre ?? ''}"`.trim();
   return { id: a.id, studentName, grade, blocked: a.bloqueo_manual };
 }

@@ -1,5 +1,5 @@
 import { apiClient, BASE_URL } from './client';
-import type { LibretaRow } from '../../types/nota';
+import type { LibretaRow, LibretaAgrupada } from '../../types/nota';
 import type { ResumenAlumnoLibreta, RecepcionRow, LibretaDTO } from '../../types/libreta';
 
 export const libretasApi = {
@@ -7,6 +7,13 @@ export const libretasApi = {
     const q: Record<string, string> = {};
     if (bimestreId) q.bimestreId = bimestreId;
     return apiClient.get<LibretaRow[]>(`/api/libretas/${alumnoId}`, q);
+  },
+
+  /** Libreta agrupada en 3 niveles (área → curso → criterio), con promedios ponderados. */
+  obtenerAgrupado(alumnoId: string, bimestreId?: string): Promise<LibretaAgrupada> {
+    const q: Record<string, string> = {};
+    if (bimestreId) q.bimestreId = bimestreId;
+    return apiClient.get<LibretaAgrupada>(`/api/libretas/${alumnoId}/agrupada`, q);
   },
 
   async descargarPdf(alumnoId: string, bimestreId?: string): Promise<Blob> {

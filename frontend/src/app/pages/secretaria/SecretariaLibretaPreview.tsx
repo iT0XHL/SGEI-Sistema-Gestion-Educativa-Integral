@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router';
-import { Loader2, AlertCircle, Download, CheckCircle2, XCircle, ArrowLeft, Eye } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, XCircle, ArrowLeft, Eye } from 'lucide-react';
 import { libretasApi } from '@/lib/api/libretas.api';
-import { LibretaStatusBadge } from '../../components/libretas/LibretaStatusBadge';
-import type { LibretaRow } from '@/types/nota';
+import type { LibretaAgrupada } from '@/types/nota';
 
 export default function SecretariaLibretaPreview() {
   const { alumnoId } = useParams<{ alumnoId: string }>();
@@ -11,7 +10,7 @@ export default function SecretariaLibretaPreview() {
   const [searchParams] = useSearchParams();
   const bimestreId = searchParams.get('bimestreId');
 
-  const [rows, setRows] = useState<LibretaRow[]>([]);
+  const [agrupada, setAgrupada] = useState<LibretaAgrupada | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -26,8 +25,8 @@ export default function SecretariaLibretaPreview() {
       try {
         setLoading(true);
         setError(null);
-        const data = await libretasApi.obtener(alumnoId, bimestreId ?? undefined);
-        setRows(data);
+        const data = await libretasApi.obtenerAgrupado(alumnoId, bimestreId ?? undefined);
+        setAgrupada(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error al cargar');
       } finally {
@@ -75,19 +74,18 @@ export default function SecretariaLibretaPreview() {
     }
   }
 
-  const alumnoNombre = rows[0]?.alumno_nombre ?? '—';
-  const grado = rows[0]?.grado ?? '';
-  const seccion = rows[0]?.seccion ?? '';
-  const bimestreNombre = rows[0]?.nombre_bimestre ?? '';
-
-  const cursos = [...new Set(rows.map(r => r.curso))];
-  const getCompRows = (curso: string) => rows.filter(r => r.curso === curso);
+  const primeraFila = agrupada?.areas[0]?.cursos[0]?.competencias[0];
+  const alumnoNombre = primeraFila?.alumno_nombre ?? '—';
+  const grado = primeraFila?.grado ?? '';
+  const seccion = primeraFila?.seccion ?? '';
+  const bimestreNombre = primeraFila?.nombre_bimestre ?? '';
+  const areas = agrupada?.areas ?? [];
 
   if (loading) {
     return <div className="p-6 lg:p-8 max-w-5xl mx-auto"><Loader2 className="size-6 animate-spin text-teal-600" /></div>;
   }
 
-  if (error && rows.length === 0) {
+  if (error && areas.length === 0) {
     return (
       <div className="p-6 lg:p-8 max-w-5xl mx-auto">
         <div className="flex flex-col items-center gap-3 py-12">
@@ -108,7 +106,7 @@ export default function SecretariaLibretaPreview() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-slate-900">Vista previa de libreta</h1>
-            <p className="text-sm text-slate-500">{alumnoNombre} · {grado}° {seccion} · {bimestreNombre}</p>
+            <p className="text-sm text-slate-500">{alumnoNombre} · {grado} {seccion} · {bimestreNombre}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -178,7 +176,7 @@ export default function SecretariaLibretaPreview() {
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-500">Alumno: <span className="font-semibold text-slate-700">{alumnoNombre}</span></p>
-              <p className="text-xs text-slate-500">Grado: <span className="font-semibold text-slate-700">{grado}° — Sec. {seccion}</span></p>
+              <p className="text-xs text-slate-500">Grado: <span className="font-semibold text-slate-700">{grado} — Sec. {seccion}</span></p>
             </div>
           </div>
         </div>
@@ -187,46 +185,43 @@ export default function SecretariaLibretaPreview() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase min-w-[160px]">Área Curricular</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase min-w-[220px]">Competencia</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase min-w-[160px]">Área Académica</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase min-w-[220px]">Curso</th>
                 <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase w-16">Nota</th>
                 <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase w-16">Escala</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {cursos.map(curso => {
-                const compRows = getCompRows(curso);
-                const totalRows = compRows.length + 1;
-                const notas = compRows.map(r => r.nota_vigesimal).filter((n): n is number => n !== null);
-                const prom = notas.length > 0 ? notas.reduce((a, b) => a + b, 0) / notas.length : null;
+              {areas.map(area => {
+                const totalRows = area.cursos.length + 1;
                 return (
-                  <React.Fragment key={curso}>
-                    {compRows.map((r, i) => (
-                      <tr key={`${curso}-${i}`} className="hover:bg-slate-50/60">
+                  <React.Fragment key={area.area_id ?? area.area_nombre}>
+                    {area.cursos.map((curso, i) => (
+                      <tr key={curso.curso_id} className="hover:bg-slate-50/60">
                         {i === 0 && (
                           <td rowSpan={totalRows} className="px-4 py-3 border-r border-slate-100 align-top font-semibold text-slate-800">
-                            {curso}
+                            {area.area_nombre}
                           </td>
                         )}
-                        <td className="px-4 py-2.5 text-slate-600">{r.competencia}</td>
+                        <td className="px-4 py-2.5 text-slate-600">{curso.curso}</td>
                         <td className="text-center px-3 py-2.5 text-slate-800 font-medium">
-                          {r.nota_vigesimal !== null ? r.nota_vigesimal : '—'}
+                          {curso.promedio !== null ? curso.promedio.toFixed(1) : '—'}
                         </td>
                         <td className="text-center px-3 py-2.5">
-                          {r.nota_literal ? (
+                          {curso.literal ? (
                             <span className="inline-flex items-center justify-center w-8 h-6 rounded-lg text-xs font-bold border bg-blue-50 border-blue-200 text-blue-700">
-                              {r.nota_literal}
+                              {curso.literal}
                             </span>
                           ) : '—'}
                         </td>
                       </tr>
                     ))}
                     <tr className="border-b-2 border-slate-200 bg-slate-50/50">
-                      <td className="px-4 py-2.5 text-xs font-bold text-slate-600 uppercase">Promedio</td>
-                      <td className="text-center px-3 py-2.5 text-base font-bold text-slate-900">{prom !== null ? prom.toFixed(1) : '—'}</td>
+                      <td className="px-4 py-2.5 text-xs font-bold text-slate-600 uppercase">Promedio General</td>
+                      <td className="text-center px-3 py-2.5 text-base font-bold text-slate-900">{area.promedioGeneral !== null ? area.promedioGeneral.toFixed(1) : '—'}</td>
                       <td className="text-center px-3 py-2.5">—</td>
                     </tr>
-                    </React.Fragment>
+                  </React.Fragment>
                 );
               })}
             </tbody>

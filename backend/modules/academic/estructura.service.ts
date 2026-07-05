@@ -11,6 +11,7 @@ import {
   CursoRepo,
   GradoCursoRepo,
   CompetenciaRepo,
+  AreaAcademicaRepo,
 } from './academic.repository';
 import type {
   UpdateInstitucionInput,
@@ -25,6 +26,8 @@ import type {
   CreateCompetenciaInput,
   UpdateCompetenciaInput,
   ReordenarCompetenciasInput,
+  CreateAreaAcademicaInput,
+  UpdateAreaAcademicaInput,
 } from '@/schemas/academic.schema';
 
 // ── Institución educativa ─────────────────────────────────────
@@ -215,6 +218,7 @@ export const CursoService = {
       codigo_cneb: input.codigo_cneb ?? null,
       descripcion: input.descripcion ?? null,
       horas_semanales: input.horas_semanales ?? null,
+      area_academica_id: input.area_academica_id ?? null,
     });
   },
   async update(id: string, input: UpdateCursoInput) {
@@ -239,18 +243,24 @@ export const CursoService = {
 
 // ── Competencias ──────────────────────────────────────────────
 export const CompetenciaService = {
-  list(cursoId?: string) {
-    return CompetenciaRepo.list(cursoId);
+  list(cursoId?: string, gradoId?: string) {
+    return CompetenciaRepo.list(cursoId, gradoId);
   },
   async create(input: CreateCompetenciaInput) {
     const curso = await CursoRepo.findById(input.curso_id);
     if (!curso) throw new NotFoundError('Curso');
+    if (input.grado_id) {
+      const grado = await GradoRepo.findById(input.grado_id);
+      if (!grado) throw new NotFoundError('Grado');
+    }
     return CompetenciaRepo.create({
       curso_id: input.curso_id,
+      grado_id: input.grado_id ?? null,
       nombre: input.nombre,
       descripcion: input.descripcion ?? null,
       tipo: input.tipo,
       orden: input.orden ?? null,
+      peso: input.peso,
     });
   },
   async update(id: string, input: UpdateCompetenciaInput) {
@@ -261,6 +271,7 @@ export const CompetenciaService = {
       ...(input.descripcion !== undefined ? { descripcion: input.descripcion } : {}),
       ...(input.tipo !== undefined ? { tipo: input.tipo } : {}),
       ...(input.orden !== undefined ? { orden: input.orden } : {}),
+      ...(input.peso !== undefined ? { peso: input.peso } : {}),
     });
   },
   async remove(id: string) {
@@ -274,5 +285,55 @@ export const CompetenciaService = {
   async reordenar(input: ReordenarCompetenciasInput) {
     await CompetenciaRepo.reordenar(input.competencias);
     return { actualizadas: input.competencias.length };
+  },
+  /** Copia las competencias default del nivel como override editable de un grado. */
+  async copiarAGrado(cursoId: string, gradoId: string) {
+    const curso = await CursoRepo.findById(cursoId);
+    if (!curso) throw new NotFoundError('Curso');
+    const grado = await GradoRepo.findById(gradoId);
+    if (!grado) throw new NotFoundError('Grado');
+    await CompetenciaRepo.copiarDefaultsAGrado(cursoId, gradoId);
+    return CompetenciaRepo.overridesDeGrado(cursoId, gradoId);
+  },
+  /** Elimina los overrides de un grado, volviendo a heredar el default del nivel. */
+  async restaurarPredeterminado(cursoId: string, gradoId: string) {
+    await CompetenciaRepo.restaurarDefaultDeGrado(cursoId, gradoId);
+    return { cursoId, gradoId, restaurado: true };
+  },
+};
+
+// ── Área académica (agrupador visual de libreta) ──────────────
+export const AreaAcademicaService = {
+  list(nivelId?: string) {
+    return AreaAcademicaRepo.list(nivelId);
+  },
+  async create(input: CreateAreaAcademicaInput) {
+    const nivel = await NivelRepo.findById(input.nivel_id);
+    if (!nivel) throw new NotFoundError('Nivel');
+    return AreaAcademicaRepo.create({
+      nivel_id: input.nivel_id,
+      nombre: input.nombre,
+      orden: input.orden ?? null,
+    });
+  },
+  async update(id: string, input: UpdateAreaAcademicaInput) {
+    const area = await AreaAcademicaRepo.findById(id);
+    if (!area) throw new NotFoundError('Área académica');
+    return AreaAcademicaRepo.update(id, {
+      ...(input.nombre !== undefined ? { nombre: input.nombre } : {}),
+      ...(input.orden !== undefined ? { orden: input.orden } : {}),
+    });
+  },
+  async remove(id: string) {
+    const area = await AreaAcademicaRepo.findById(id);
+    if (!area) throw new NotFoundError('Área académica');
+    const cursos = await AreaAcademicaRepo.countCursos(id);
+    if (cursos > 0) {
+      throw new ConflictError(
+        `No se puede eliminar el área: tiene ${cursos} curso(s) asignado(s). Reasígnalos primero.`,
+      );
+    }
+    await AreaAcademicaRepo.delete(id);
+    return { id, eliminado: true };
   },
 };

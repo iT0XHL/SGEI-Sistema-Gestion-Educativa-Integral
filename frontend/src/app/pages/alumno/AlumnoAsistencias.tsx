@@ -81,7 +81,9 @@ export default function AlumnoAsistencias() {
     ? new Date(registros[registros.length - 1]!.fecha)
     : new Date();
   const mesAnio      = fechaReciente.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
-  const gradoSeccion = asignaciones.length > 0 ? asignaciones[0]!.seccion.nombre : '';
+  const gradoSeccion = asignaciones.length > 0
+    ? `${asignaciones[0]!.seccion.grado.nombre} "${asignaciones[0]!.seccion.nombre}"`
+    : '';
   const subtitulo    = `Registro de asistencia — ${mesAnio}${gradoSeccion ? ` · ${gradoSeccion}` : ''}`;
 
   // ── Render ──────────────────────────────────────────────────────────────────

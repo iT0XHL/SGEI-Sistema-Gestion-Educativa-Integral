@@ -102,7 +102,7 @@ function buildCursos(
 ): CursoDashboard[] {
   return asignaciones.slice(0, 4).map((asig, idx) => {
     const notasCurso = notas.filter(
-      n => n.competencia?.curso?.nombre === asig.curso.nombre,
+      n => n.competencia?.curso?.id === asig.curso.id,
     );
     // Prisma's Decimal serializes to a JSON string; Number() normalises it.
     const valores = notasCurso.map(n => Number(n.nota_vigesimal));
@@ -181,10 +181,10 @@ export default function AlumnoDashboard() {
 
         if (alumnoData) setAlumno(alumnoData);
 
-        // Active bimestre = open (cerrado=false), highest numero.
+        // Active bimestre = open (cerrado=false), lowest numero (el más próximo en curso).
         const abiertos = bimestres.filter(b => !b.cerrado);
         const bimestre = abiertos.length > 0
-          ? abiertos.reduce((prev, curr) => curr.numero > prev.numero ? curr : prev)
+          ? abiertos.reduce((prev, curr) => curr.numero < prev.numero ? curr : prev)
           : null;
         setBimestreActivo(bimestre);
 

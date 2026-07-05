@@ -56,10 +56,18 @@ export interface DescansoDTO {
   hora_fin: string;
 }
 
+export interface JornadaConfigDTO {
+  nivel_id: string;
+  hora_inicio_jornada: string;
+  duracion_hora_min: number;
+  total_horas_dia: number;
+}
+
 export interface HorarioPublicadoDTO {
   fecha_publicacion: string;
   bloques: HorarioPublicadoBloque[];
   descansos: DescansoDTO[];
+  jornadas: JornadaConfigDTO[];
 }
 
 export interface NivelRow {
@@ -280,6 +288,23 @@ export const descansosApi = {
     hora_fin: string;
   }): Promise<DescansoDTO> {
     return apiClient.put<DescansoDTO>('/api/horarios/descansos', payload);
+  },
+};
+
+export const jornadaApi = {
+  /** Jornada escolar (hora de inicio + duración de la hora escolar) de un nivel. */
+  obtener(params: { nivelId: string; periodoId: string }): Promise<JornadaConfigDTO> {
+    return apiClient.get<JornadaConfigDTO>('/api/horarios/jornada', { nivelId: params.nivelId, periodoId: params.periodoId });
+  },
+
+  actualizar(payload: {
+    nivel_id: string;
+    periodo_id: string;
+    hora_inicio_jornada: string;
+    duracion_hora_min: number;
+    total_horas_dia: number;
+  }): Promise<JornadaConfigDTO> {
+    return apiClient.put<JornadaConfigDTO>('/api/horarios/jornada', payload);
   },
 };
 

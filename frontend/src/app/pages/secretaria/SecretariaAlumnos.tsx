@@ -154,7 +154,7 @@ export default function SecretariaAlumnos() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {filtered.map(a => {
-              const nombre = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}`;
+              const nombre = `${a.nombres} ${a.apellido_paterno} ${a.apellido_materno}${a.sufijo_homonimo ?? ''}`;
               const nivel = a.seccion?.grado?.nivel?.nombre;
               return (
                 <tr key={a.id} className="hover:bg-slate-50 transition-colors">

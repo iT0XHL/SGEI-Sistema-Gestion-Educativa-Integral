@@ -3,6 +3,7 @@ import { useSession } from '@/lib/hooks/useSession';
 import { ApiError } from '@/lib/api/client';
 import { useMiHorarioPublicado, useDescargarMiHorarioPdf } from '@/hooks/alumno/useHorarioAlumno';
 import { HorarioSemanalGrid } from '@/app/components/horarios/HorarioSemanalGrid';
+import { generarFranjas, mergeFranjas } from '@/app/components/horarios/horarioSlots';
 
 export default function AlumnoHorario() {
   const { session } = useSession();
@@ -49,7 +50,14 @@ export default function AlumnoHorario() {
           <Download className="size-3.5" /> Exportar PDF
         </button>
       </div>
-      <HorarioSemanalGrid bloques={data.bloques} mode="readonly" mostrarEtiqueta="docente" descansos={data.descansos} />
+      <HorarioSemanalGrid
+        bloques={data.bloques}
+        mode="readonly"
+        mostrarEtiqueta="docente"
+        franjas={mergeFranjas(
+          data.jornadas.map((j) => generarFranjas(j.hora_inicio_jornada, j.duracion_hora_min, data.descansos.filter((d) => d.nivel_id === j.nivel_id), j.total_horas_dia)),
+        )}
+      />
     </div>
   );
 }

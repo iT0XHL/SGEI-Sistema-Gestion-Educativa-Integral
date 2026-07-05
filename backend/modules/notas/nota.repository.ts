@@ -61,7 +61,7 @@ export const NotaRepository = {
           select: {
             nombre: true,
             tipo:   true,
-            curso:  { select: { nombre: true } },
+            curso:  { select: { id: true, nombre: true } },
           },
         },
         bimestre: { select: { nombre: true, numero: true } },

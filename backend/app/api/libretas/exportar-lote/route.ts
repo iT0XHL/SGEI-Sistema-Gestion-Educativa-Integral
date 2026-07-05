@@ -35,7 +35,7 @@ export function GET(req: NextRequest) {
         try {
           // §24: la descarga interna de secretaría/admin se permite aun con deuda
           // del alumno (queda auditada); no se omiten los bloqueados en el lote.
-          const rows = await LibretaRepository.obtener(alumno.alumno_id, bimestreId);
+          const rows = await LibretaRepository.detalleConArea(alumno.alumno_id, bimestreId);
           if (rows.length === 0) continue;
           const meta = await LibretaRepository.metaPdf(alumno.alumno_id);
           const docBuffer = await buildLibretaDocx(rows, meta);

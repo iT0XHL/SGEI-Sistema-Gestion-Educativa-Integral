@@ -239,6 +239,31 @@ export const CursoRepo = {
   },
 };
 
+// ── Área académica (agrupador visual de libreta) ──────────────
+export const AreaAcademicaRepo = {
+  list(nivelId?: string) {
+    return prisma.areaAcademica.findMany({
+      where: nivelId ? { nivel_id: nivelId } : undefined,
+      orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
+    });
+  },
+  findById(id: string) {
+    return prisma.areaAcademica.findUnique({ where: { id } });
+  },
+  create(data: Prisma.AreaAcademicaUncheckedCreateInput) {
+    return prisma.areaAcademica.create({ data });
+  },
+  update(id: string, data: Prisma.AreaAcademicaUpdateInput) {
+    return prisma.areaAcademica.update({ where: { id }, data });
+  },
+  delete(id: string) {
+    return prisma.areaAcademica.delete({ where: { id } });
+  },
+  countCursos(id: string) {
+    return prisma.curso.count({ where: { area_academica_id: id } });
+  },
+};
+
 // ── Grado ↔ Curso (cursos por grado) ──────────────────────────
 export const GradoCursoRepo = {
   listByGrado(gradoId: string) {
@@ -276,8 +301,22 @@ export const GradoCursoRepo = {
 };
 
 // ── Competencia ───────────────────────────────────────────────
+// Resolución nivel-por-defecto / override-por-grado: si un curso tiene
+// filas de competencia con grado_id = X, esas reemplazan por completo a
+// las de grado_id NULL (default del nivel) para ese grado — no se mezclan.
 export const CompetenciaRepo = {
-  list(cursoId?: string) {
+  async list(cursoId?: string, gradoId?: string) {
+    if (cursoId && gradoId) {
+      const overrides = await prisma.competencia.findMany({
+        where: { curso_id: cursoId, grado_id: gradoId },
+        orderBy: { orden: 'asc' },
+      });
+      if (overrides.length > 0) return overrides;
+      return prisma.competencia.findMany({
+        where: { curso_id: cursoId, grado_id: null },
+        orderBy: { orden: 'asc' },
+      });
+    }
     return prisma.competencia.findMany({
       where: cursoId ? { curso_id: cursoId } : undefined,
       orderBy: [{ curso_id: 'asc' }, { orden: 'asc' }],
@@ -302,6 +341,37 @@ export const CompetenciaRepo = {
       ),
     );
   },
+  /** Overrides ya definidos para curso+grado (sin fallback al default). */
+  overridesDeGrado(cursoId: string, gradoId: string) {
+    return prisma.competencia.findMany({
+      where: { curso_id: cursoId, grado_id: gradoId },
+      orderBy: { orden: 'asc' },
+    });
+  },
+  /** Copia las competencias default del nivel (grado_id NULL) como filas nuevas de ese grado. */
+  async copiarDefaultsAGrado(cursoId: string, gradoId: string) {
+    const defaults = await prisma.competencia.findMany({
+      where: { curso_id: cursoId, grado_id: null },
+      orderBy: { orden: 'asc' },
+    });
+    if (defaults.length === 0) return { count: 0 };
+    return prisma.competencia.createMany({
+      data: defaults.map((d) => ({
+        curso_id: cursoId,
+        grado_id: gradoId,
+        nombre: d.nombre,
+        descripcion: d.descripcion,
+        tipo: d.tipo,
+        orden: d.orden,
+        peso: d.peso,
+      })),
+      skipDuplicates: true,
+    });
+  },
+  /** Elimina los overrides de un grado, restaurando el default del nivel. */
+  restaurarDefaultDeGrado(cursoId: string, gradoId: string) {
+    return prisma.competencia.deleteMany({ where: { curso_id: cursoId, grado_id: gradoId } });
+  },
 };
 
 // ── Asignación docente ────────────────────────────────────────
@@ -317,7 +387,12 @@ export const AsignacionRepo = {
       include: {
         docente: { select: { id: true, nombres: true, apellido_paterno: true } },
         curso: { select: { id: true, nombre: true } },
-        seccion: { select: { id: true, nombre: true } },
+        seccion: {
+          select: {
+            id: true, nombre: true, grado_id: true,
+            grado: { select: { id: true, nombre: true, nivel: { select: { id: true, nombre: true } } } },
+          },
+        },
       },
     });
   },

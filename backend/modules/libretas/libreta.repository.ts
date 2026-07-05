@@ -53,9 +53,46 @@ interface SnapshotRow {
   nota_literal:       string | null;
   orden_competencia:  number | null;
   observacion:        string | null;
+  peso:               number;
+}
+
+export interface LibretaRowDetallada extends LibretaRow {
+  curso_id:       string;
+  competencia_id: string;
+  area_id:        string | null;
+  area_nombre:    string | null;
+  peso:           number;
+}
+
+export interface CursoAgrupado {
+  curso_id:     string;
+  curso:        string;
+  competencias: LibretaRowDetallada[];
+  promedio:     number | null;
+  literal:      string | null;
+}
+
+export interface AreaAgrupada {
+  area_id:         string | null;
+  area_nombre:     string;
+  cursos:          CursoAgrupado[];
+  promedioGeneral: number | null;
+  literalGeneral:  string | null;
+}
+
+export interface LibretaAgrupada {
+  areas:         AreaAgrupada[];
+  promedioAnual: number | null;
+  literalAnual:  string | null;
 }
 
 export const LibretaRepository = {
+  /**
+   * Notas vivas (tabla `nota`, vía mv_libreta_alumno). Si el bimestre ya fue
+   * cerrado y no quedan notas "vivas" (p. ej. datos de demo sembrados
+   * directo en libreta_detalle), cae al snapshot congelado más reciente
+   * (`libreta` + `libreta_detalle`) para esa alumno/bimestre.
+   */
   async obtener(alumnoId: string, bimestreId?: string): Promise<LibretaRow[]> {
     const rows = await prisma.$queryRaw<LibretaRow[]>`
       SELECT
@@ -70,6 +107,50 @@ export const LibretaRepository = {
       ORDER BY curso, bimestre, competencia
     `;
 
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        ...r,
+        nota_vigesimal: r.nota_vigesimal !== null ? parseFloat(String(r.nota_vigesimal)) : null,
+      }));
+    }
+    return LibretaRepository.obtenerDesdeSnapshot(alumnoId, bimestreId);
+  },
+
+  /** Fallback: lee el snapshot congelado más reciente por bimestre (libreta_detalle). */
+  async obtenerDesdeSnapshot(alumnoId: string, bimestreId?: string): Promise<LibretaRow[]> {
+    const rows = await prisma.$queryRaw<LibretaRow[]>`
+      WITH ultima AS (
+        SELECT DISTINCT ON (bimestre_id) id AS libreta_id, bimestre_id
+        FROM academic_schema.libreta
+        WHERE alumno_id = ${alumnoId}::uuid
+          ${bimestreId ? Prisma.sql`AND bimestre_id = ${bimestreId}::uuid` : Prisma.sql``}
+        ORDER BY bimestre_id, version DESC
+      )
+      SELECT
+        a.id::text                                AS alumno_id,
+        (a.nombres || ' ' || a.apellido_paterno)   AS alumno_nombre,
+        g.nombre                                   AS grado,
+        s.nombre                                   AS seccion,
+        ld.curso_nombre_snapshot                   AS curso,
+        ld.competencia_nombre_snapshot              AS competencia,
+        ld.tipo_competencia,
+        b.numero                                   AS bimestre,
+        b.nombre                                   AS nombre_bimestre,
+        ld.nota_vigesimal,
+        ld.nota_literal::text                      AS nota_literal,
+        'Final'                                    AS tipo_evaluacion,
+        ld.observacion,
+        true                                        AS cerrada,
+        NULL::timestamptz                          AS fecha_registro,
+        financial_schema.fn_bloquea_libreta(a.id)  AS bloquea_libreta
+      FROM ultima u
+      JOIN academic_schema.libreta_detalle ld ON ld.libreta_id = u.libreta_id
+      JOIN academic_schema.alumno a           ON a.id = ${alumnoId}::uuid
+      JOIN academic_schema.seccion s          ON s.id = a.seccion_id
+      JOIN academic_schema.grado g            ON g.id = s.grado_id
+      JOIN academic_schema.bimestre b         ON b.id = u.bimestre_id
+      ORDER BY ld.orden_curso, ld.orden_competencia
+    `;
     return rows.map((r) => ({
       ...r,
       nota_vigesimal: r.nota_vigesimal !== null ? parseFloat(String(r.nota_vigesimal)) : null,
@@ -169,7 +250,7 @@ export const LibretaRepository = {
 
   /** Lee las notas (con IDs) para congelarlas en la libreta. */
   async notasSnapshot(alumnoId: string, bimestreId: string): Promise<SnapshotRow[]> {
-    return prisma.$queryRaw<SnapshotRow[]>`
+    const rows = await prisma.$queryRaw<SnapshotRow[]>`
       SELECT
         comp.curso_id::text         AS curso_id,
         c.nombre                    AS curso_nombre,
@@ -180,7 +261,8 @@ export const LibretaRepository = {
         n.nota_vigesimal,
         n.nota_literal::text        AS nota_literal,
         comp.orden                  AS orden_competencia,
-        n.observacion
+        n.observacion,
+        comp.peso                   AS peso
       FROM academic_schema.nota n
       JOIN academic_schema.competencia comp ON comp.id = n.competencia_id
       JOIN academic_schema.curso c          ON c.id = comp.curso_id
@@ -188,6 +270,7 @@ export const LibretaRepository = {
       WHERE n.alumno_id = ${alumnoId}::uuid AND n.bimestre_id = ${bimestreId}::uuid
       ORDER BY c.nombre, comp.orden NULLS LAST, comp.nombre
     `;
+    return rows.map((r) => ({ ...r, peso: Number(r.peso) }));
   },
 
   /** Última libreta (cualquier estado) del alumno para un bimestre. */
@@ -225,6 +308,21 @@ export const LibretaRepository = {
     for (const r of input.snapshot) if (!ordenCurso.has(r.curso_id)) ordenCurso.set(r.curso_id, ++oc);
     const compCounter = new Map<string, number>();
 
+    // Promedio ponderado por curso (criterio → curso): sum(nota*peso)/sum(peso).
+    // Se persiste en calificativo_area (columna existente, antes siempre NULL).
+    const pesoAcumulado = new Map<string, { sumPonderada: number; sumPeso: number }>();
+    for (const r of input.snapshot) {
+      if (r.nota_vigesimal === null) continue;
+      const acc = pesoAcumulado.get(r.curso_id) ?? { sumPonderada: 0, sumPeso: 0 };
+      acc.sumPonderada += r.nota_vigesimal * r.peso;
+      acc.sumPeso += r.peso;
+      pesoAcumulado.set(r.curso_id, acc);
+    }
+    const promedioCurso = new Map<string, number>();
+    for (const [cursoId, acc] of pesoAcumulado) {
+      if (acc.sumPeso > 0) promedioCurso.set(cursoId, Math.round((acc.sumPonderada / acc.sumPeso) * 100) / 100);
+    }
+
     return prisma.$transaction(async (tx) => {
       const prev = await tx.$queryRaw<[{ v: number | null }]>`
         SELECT max(version) AS v FROM academic_schema.libreta
@@ -260,15 +358,17 @@ export const LibretaRepository = {
         const cnt = (compCounter.get(r.curso_id) ?? 0) + 1;
         compCounter.set(r.curso_id, cnt);
         const oComp = r.orden_competencia ?? cnt;
+        const calificativoArea = promedioCurso.get(r.curso_id) ?? null;
         await tx.$executeRaw`
           INSERT INTO academic_schema.libreta_detalle
             (libreta_id, curso_id, curso_nombre_snapshot, competencia_id, competencia_nombre_snapshot,
-             tipo_competencia, bimestre_numero, nota_vigesimal, nota_literal, orden_curso, orden_competencia, observacion)
+             tipo_competencia, bimestre_numero, nota_vigesimal, nota_literal, calificativo_area, orden_curso, orden_competencia, observacion)
           VALUES
             (${libretaId}::uuid, ${r.curso_id}::uuid, ${r.curso_nombre}, ${r.competencia_id}::uuid,
              ${r.competencia_nombre}, ${r.tipo_competencia}, ${r.bimestre_numero},
              ${r.nota_vigesimal},
              ${r.nota_literal ? Prisma.sql`${r.nota_literal}::academic_schema.nota_literal` : Prisma.sql`NULL`},
+             ${calificativoArea},
              ${oCurso}, ${oComp}, ${r.observacion ?? null})
         `;
       }
@@ -375,5 +475,185 @@ export const LibretaRepository = {
         estado,
       };
     });
+  },
+
+  /**
+   * Detalle en vivo (no depende de la MV) con curso_id/competencia_id/peso y el
+   * área académica de cada curso — base para el rollup de 3 niveles de
+   * obtenerAgrupado(). No modifica mv_libreta_alumno.
+   */
+  async detalleConArea(alumnoId: string, bimestreId?: string): Promise<LibretaRowDetallada[]> {
+    const rows = await prisma.$queryRaw<LibretaRowDetallada[]>`
+      SELECT
+        a.id::text                                          AS alumno_id,
+        (a.nombres || ' ' || a.apellido_paterno)             AS alumno_nombre,
+        g.nombre                                             AS grado,
+        s.nombre                                             AS seccion,
+        c.id::text                                           AS curso_id,
+        c.nombre                                             AS curso,
+        comp.id::text                                        AS competencia_id,
+        comp.nombre                                          AS competencia,
+        comp.tipo                                            AS tipo_competencia,
+        comp.peso::float                                     AS peso,
+        area.id::text                                        AS area_id,
+        area.nombre                                          AS area_nombre,
+        b.numero                                             AS bimestre,
+        b.nombre                                             AS nombre_bimestre,
+        n.nota_vigesimal,
+        n.nota_literal::text                                 AS nota_literal,
+        n.tipo_evaluacion::text                              AS tipo_evaluacion,
+        n.observacion,
+        n.cerrada,
+        n.fecha_registro,
+        financial_schema.fn_bloquea_libreta(a.id)            AS bloquea_libreta
+      FROM academic_schema.nota n
+      JOIN academic_schema.alumno a           ON a.id = n.alumno_id
+      JOIN academic_schema.seccion s          ON s.id = a.seccion_id
+      JOIN academic_schema.grado g            ON g.id = s.grado_id
+      JOIN academic_schema.competencia comp   ON comp.id = n.competencia_id
+      JOIN academic_schema.curso c            ON c.id = comp.curso_id
+      LEFT JOIN academic_schema.area_academica area ON area.id = c.area_academica_id
+      JOIN academic_schema.bimestre b         ON b.id = n.bimestre_id
+      WHERE a.id = ${alumnoId}::uuid
+        ${bimestreId ? Prisma.sql`AND n.bimestre_id = ${bimestreId}::uuid` : Prisma.sql``}
+      ORDER BY c.nombre, comp.orden NULLS LAST, comp.nombre, b.numero
+    `;
+    const mapped = rows.map((r) => ({
+      ...r,
+      nota_vigesimal: r.nota_vigesimal !== null ? parseFloat(String(r.nota_vigesimal)) : null,
+      peso: Number(r.peso),
+    }));
+    if (mapped.length > 0) return mapped;
+    return LibretaRepository.detalleConAreaSnapshot(alumnoId, bimestreId);
+  },
+
+  /** Fallback de detalleConArea: snapshot congelado más reciente por bimestre. */
+  async detalleConAreaSnapshot(alumnoId: string, bimestreId?: string): Promise<LibretaRowDetallada[]> {
+    const rows = await prisma.$queryRaw<LibretaRowDetallada[]>`
+      WITH ultima AS (
+        SELECT DISTINCT ON (bimestre_id) id AS libreta_id, bimestre_id
+        FROM academic_schema.libreta
+        WHERE alumno_id = ${alumnoId}::uuid
+          ${bimestreId ? Prisma.sql`AND bimestre_id = ${bimestreId}::uuid` : Prisma.sql``}
+        ORDER BY bimestre_id, version DESC
+      )
+      SELECT
+        a.id::text                                 AS alumno_id,
+        (a.nombres || ' ' || a.apellido_paterno)    AS alumno_nombre,
+        g.nombre                                    AS grado,
+        s.nombre                                    AS seccion,
+        ld.curso_id::text                           AS curso_id,
+        ld.curso_nombre_snapshot                    AS curso,
+        ld.competencia_id::text                     AS competencia_id,
+        ld.competencia_nombre_snapshot               AS competencia,
+        ld.tipo_competencia,
+        COALESCE(comp.peso::float, 100)             AS peso,
+        area.id::text                               AS area_id,
+        area.nombre                                 AS area_nombre,
+        b.numero                                    AS bimestre,
+        b.nombre                                    AS nombre_bimestre,
+        ld.nota_vigesimal,
+        ld.nota_literal::text                       AS nota_literal,
+        'Final'                                     AS tipo_evaluacion,
+        ld.observacion,
+        true                                         AS cerrada,
+        NULL::timestamptz                           AS fecha_registro,
+        financial_schema.fn_bloquea_libreta(a.id)   AS bloquea_libreta
+      FROM ultima u
+      JOIN academic_schema.libreta_detalle ld ON ld.libreta_id = u.libreta_id
+      JOIN academic_schema.alumno a           ON a.id = ${alumnoId}::uuid
+      JOIN academic_schema.seccion s          ON s.id = a.seccion_id
+      JOIN academic_schema.grado g            ON g.id = s.grado_id
+      JOIN academic_schema.bimestre b         ON b.id = u.bimestre_id
+      LEFT JOIN academic_schema.competencia comp ON comp.id = ld.competencia_id
+      LEFT JOIN academic_schema.curso cur        ON cur.id = ld.curso_id
+      LEFT JOIN academic_schema.area_academica area ON area.id = cur.area_academica_id
+      ORDER BY ld.orden_curso, ld.orden_competencia
+    `;
+    return rows.map((r) => ({
+      ...r,
+      nota_vigesimal: r.nota_vigesimal !== null ? parseFloat(String(r.nota_vigesimal)) : null,
+      peso: Number(r.peso),
+    }));
+  },
+
+  /** Escala AD/A/B/C configurada para el período (para no hardcodear cortes). */
+  async escalaLiteral(periodoId: string): Promise<Array<{ escala: string; rango_inferior: number; rango_superior: number }>> {
+    const rows = await prisma.$queryRaw<Array<{ escala: string; rango_inferior: unknown; rango_superior: unknown }>>`
+      SELECT escala::text, rango_inferior, rango_superior
+      FROM academic_schema.config_escala_literal WHERE periodo_id = ${periodoId}::uuid
+    `;
+    return rows.map((r) => ({
+      escala: r.escala,
+      rango_inferior: Number(r.rango_inferior),
+      rango_superior: Number(r.rango_superior),
+    }));
+  },
+
+  /**
+   * Rollup de 3 niveles: criterio (competencia, ponderado por peso) → curso →
+   * área académica (promedio simple de sus cursos) → anual (promedio simple de
+   * las áreas a través de los bimestres disponibles). Cursos sin área asignada
+   * (los 8 genéricos viejos + los que el admin deje independientes) se
+   * renderizan como su propia banda, usando el nombre del curso — así la
+   * libreta histórica de Bimestre I no cambia visualmente en nada.
+   */
+  async obtenerAgrupado(alumnoId: string, bimestreId?: string): Promise<LibretaAgrupada> {
+    const rows = await LibretaRepository.detalleConArea(alumnoId, bimestreId);
+    if (rows.length === 0) return { areas: [], promedioAnual: null, literalAnual: null };
+
+    const periodoRow = await prisma.$queryRaw<Array<{ periodo_id: string }>>`
+      SELECT periodo_id::text FROM academic_schema.alumno WHERE id = ${alumnoId}::uuid
+    `;
+    const periodoId = periodoRow[0]?.periodo_id;
+    const escala = periodoId ? await LibretaRepository.escalaLiteral(periodoId) : [];
+    const literalDe = (nota: number | null): string | null => {
+      if (nota === null) return null;
+      return escala.find((e) => nota >= e.rango_inferior && nota <= e.rango_superior)?.escala ?? null;
+    };
+
+    const cursosMap = new Map<string, LibretaRowDetallada[]>();
+    for (const r of rows) {
+      if (!cursosMap.has(r.curso_id)) cursosMap.set(r.curso_id, []);
+      cursosMap.get(r.curso_id)!.push(r);
+    }
+
+    const cursos: CursoAgrupado[] = [...cursosMap.entries()].map(([cursoId, competencias]) => {
+      let sumPonderada = 0;
+      let sumPeso = 0;
+      for (const c of competencias) {
+        if (c.nota_vigesimal === null) continue;
+        sumPonderada += c.nota_vigesimal * c.peso;
+        sumPeso += c.peso;
+      }
+      const promedio = sumPeso > 0 ? Math.round((sumPonderada / sumPeso) * 100) / 100 : null;
+      return {
+        curso_id: cursoId,
+        curso: competencias[0]!.curso,
+        competencias,
+        promedio,
+        literal: literalDe(promedio),
+      };
+    });
+
+    const areasMap = new Map<string, { area_id: string | null; area_nombre: string; cursos: CursoAgrupado[] }>();
+    for (const curso of cursos) {
+      const original = curso.competencias[0]!;
+      const key = original.area_id ?? `__curso_${curso.curso_id}`;
+      const nombre = original.area_nombre ?? curso.curso;
+      if (!areasMap.has(key)) areasMap.set(key, { area_id: original.area_id, area_nombre: nombre, cursos: [] });
+      areasMap.get(key)!.cursos.push(curso);
+    }
+
+    const areas: AreaAgrupada[] = [...areasMap.values()].map((a) => {
+      const proms = a.cursos.map((c) => c.promedio).filter((n): n is number => n !== null);
+      const promedioGeneral = proms.length > 0 ? Math.round((proms.reduce((x, y) => x + y, 0) / proms.length) * 100) / 100 : null;
+      return { ...a, promedioGeneral, literalGeneral: literalDe(promedioGeneral) };
+    });
+
+    const promsArea = areas.map((a) => a.promedioGeneral).filter((n): n is number => n !== null);
+    const promedioAnual = promsArea.length > 0 ? Math.round((promsArea.reduce((x, y) => x + y, 0) / promsArea.length) * 100) / 100 : null;
+
+    return { areas, promedioAnual, literalAnual: literalDe(promedioAnual) };
   },
 };

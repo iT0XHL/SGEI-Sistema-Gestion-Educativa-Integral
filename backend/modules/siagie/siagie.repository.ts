@@ -20,8 +20,11 @@ export interface NotaFinalSiagie {
   apellido_materno:          string;
   nombres:                   string;
   sexo:                      string;
+  curso_id:                  string;
   curso:                     string;
   codigo_cneb:               string | null;
+  area_academica_id:         string | null;
+  area_nombre:               string | null;
   nota_promedio:             number;
   comportamiento:            string | null;
   numero_areas_desaprobadas: number | null;
@@ -75,8 +78,11 @@ export interface FormatoSiagieRow {
   sexo:                 string;
   nivel_educativo:      string;
   // Nota
+  curso_id:             string;
   curso:                string;
   codigo_cneb:          string | null;
+  area_academica_id:    string | null;
+  area_nombre:          string | null;
   competencia:          string;
   numero_bimestre:      number;
   bimestre:             string;
@@ -177,8 +183,11 @@ export const SiagieRepository = {
         apellido_materno,
         nombres,
         sexo,
+        curso_id,
         curso,
         codigo_cneb,
+        area_academica_id,
+        area_nombre,
         ROUND(AVG(bimestre_avg), 2) AS nota_promedio,
         MAX(comportamiento) AS comportamiento,
         MAX(numero_areas_desaprobadas) AS numero_areas_desaprobadas,
@@ -215,8 +224,11 @@ export const SiagieRepository = {
           apellido_materno,
           nombres,
           sexo,
+          curso_id,
           curso,
           codigo_cneb,
+          area_academica_id,
+          area_nombre,
           numero_bimestre,
           comportamiento,
           numero_areas_desaprobadas,
@@ -245,7 +257,7 @@ export const SiagieRepository = {
           grado, seccion, turno, nivel_educativo,
           numero_orden, codigo_estudiante, numero_documento,
           apellido_paterno, apellido_materno, nombres, sexo,
-          curso, codigo_cneb, numero_bimestre,
+          curso_id, curso, codigo_cneb, area_academica_id, area_nombre, numero_bimestre,
           comportamiento, numero_areas_desaprobadas, situacion_final,
           motivo_retiro, observaciones,
           codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
@@ -258,7 +270,7 @@ export const SiagieRepository = {
         grado, seccion, turno, nivel_educativo,
         numero_orden, codigo_estudiante, numero_documento,
         apellido_paterno, apellido_materno, nombres, sexo,
-        curso, codigo_cneb,
+        curso_id, curso, codigo_cneb, area_academica_id, area_nombre,
         codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
         resolucion_creacion, modalidad, gestion,
         departamento, provincia, distrito, centro_poblado,

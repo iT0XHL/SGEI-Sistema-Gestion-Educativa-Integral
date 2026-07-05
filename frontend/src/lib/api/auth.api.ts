@@ -41,4 +41,12 @@ export const authApi = {
   changePassword(payload: ChangePasswordPayload): Promise<{ mensaje: string }> {
     return apiClient.patch<{ mensaje: string }>('/api/auth/change-password', payload);
   },
+
+  forgotPassword(email: string): Promise<{ enviado: boolean }> {
+    return apiClient.post<{ enviado: boolean }>('/api/auth/forgot-password', { email });
+  },
+
+  resetPassword(token: string, password_nueva: string): Promise<{ actualizada: boolean }> {
+    return apiClient.post<{ actualizada: boolean }>('/api/auth/reset-password', { token, password_nueva });
+  },
 };

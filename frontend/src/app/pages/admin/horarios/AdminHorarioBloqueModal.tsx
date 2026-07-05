@@ -5,8 +5,9 @@ import { asignacionesApi } from '@/lib/api/horarios.api';
 import type {
   DocenteRow, CursoRow, SeccionRow, GradoRow, PeriodoRow, AsignacionRow, HorarioRow,
 } from '@/lib/api/horarios.api';
-import { useCrearBloque, useActualizarBloque } from '@/hooks/admin/useHorariosAdmin';
-import { HOURS, DAYS, DAY_TO_NUMBER, NUMBER_TO_DAY } from '@/app/components/horarios/horarioConstants';
+import { useCrearBloque, useActualizarBloque, useJornadaConfig, useDescansos } from '@/hooks/admin/useHorariosAdmin';
+import { DAYS, DAY_TO_NUMBER, NUMBER_TO_DAY } from '@/app/components/horarios/horarioConstants';
+import { generarFranjas } from '@/app/components/horarios/horarioSlots';
 
 interface AdminHorarioBloqueModalProps {
   mode: 'create' | 'edit';
@@ -34,8 +35,8 @@ export function AdminHorarioBloqueModal({
 
   const [form, setForm] = useState(() => ({
     day: mode === 'edit' && editing ? (NUMBER_TO_DAY[editing.dia_semana] ?? 'Lunes') : 'Lunes',
-    start: mode === 'edit' && editing ? editing.hora_inicio : '08:00',
-    end: mode === 'edit' && editing ? editing.hora_fin : '09:00',
+    start: mode === 'edit' && editing ? editing.hora_inicio : '',
+    end: mode === 'edit' && editing ? editing.hora_fin : '',
     course_id: mode === 'edit' && editing ? (cursos.find((c) => c.nombre === editing.curso)?.id ?? '') : (cursos[0]?.id ?? ''),
     docente_id: mode === 'edit' && editing ? (editing.docente_id ?? '') : (initialDocenteId ?? docentes[0]?.id ?? ''),
     grado_id: mode === 'edit' && editing ? (seccionInicial?.grado_id ?? '') : (secciones.find((s) => s.id === initialSeccionId)?.grado_id ?? grados[0]?.id ?? ''),
@@ -45,13 +46,36 @@ export function AdminHorarioBloqueModal({
 
   const [error, setError] = useState('');
 
+  const sectionsForSelect = form.grado_id
+    ? secciones.filter((s) => s.grado_id === form.grado_id && s.periodo_id === periodoActivo.id)
+    : [];
+
+  // El nivel determina la jornada (hora de inicio + duración de la hora
+  // escolar) — solo se conoce una vez elegidos Grado y Sección.
+  const nivelId = secciones.find((s) => s.id === form.seccion_id)?.grado.nivel.id;
+  const { data: jornada, isLoading: cargandoJornada } = useJornadaConfig(periodoActivo.id, nivelId);
+  const { data: descansos = [] } = useDescansos(periodoActivo.id, nivelId ? [nivelId] : []);
+
+  const franjasClase = useMemo(() => {
+    if (!jornada) return [];
+    return generarFranjas(jornada.hora_inicio_jornada, jornada.duracion_hora_min, descansos, jornada.total_horas_dia)
+      .filter((f) => f.tipo === 'CLASE');
+  }, [jornada, descansos]);
+
+  // Si cambia la sección (y por tanto el nivel), la hora elegida puede
+  // dejar de ser válida — se resetea para forzar una elección nueva.
   useEffect(() => {
-    if (form.end <= form.start) {
-      const validEnd = HOURS.find((h) => h > form.start);
-      if (validEnd) setForm((p) => ({ ...p, end: validEnd }));
+    if (form.start && !franjasClase.some((f) => f.hora_inicio === form.start)) {
+      setForm((p) => ({ ...p, start: '', end: '' }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.start]);
+  }, [nivelId, franjasClase]);
+
+  function handleHoraChange(inicio: string) {
+    const franja = franjasClase.find((f) => f.hora_inicio === inicio);
+    setForm((p) => ({ ...p, start: inicio, end: franja?.hora_fin ?? '' }));
+    setError('');
+  }
 
   const docentesDelCurso = useMemo(() => {
     if (!form.course_id) return docentes;
@@ -75,11 +99,6 @@ export function AdminHorarioBloqueModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.docente_id, cursosDelDocente]);
 
-  const sectionsForSelect = form.grado_id
-    ? secciones.filter((s) => s.grado_id === form.grado_id && s.periodo_id === periodoActivo.id)
-    : [];
-
-  const endHours = HOURS.filter((h) => h > form.start);
   const isPending = crearBloque.isPending || actualizarBloque.isPending;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -153,7 +172,34 @@ export function AdminHorarioBloqueModal({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Grado</label>
+              <select
+                value={form.grado_id}
+                onChange={(e) => { setForm((p) => ({ ...p, grado_id: e.target.value, seccion_id: '' })); setError(''); }}
+                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                disabled={mode === 'edit'}
+              >
+                <option value="">Seleccionar grado</option>
+                {grados.map((g) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Sección</label>
+              <select
+                value={form.seccion_id}
+                onChange={(e) => { setForm((p) => ({ ...p, seccion_id: e.target.value })); setError(''); }}
+                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                disabled={mode === 'edit' || !form.grado_id}
+              >
+                <option value="">Seleccionar sección</option>
+                {sectionsForSelect.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Día</label>
               <select
@@ -165,24 +211,25 @@ export function AdminHorarioBloqueModal({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Inicio</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Hora</label>
               <select
                 value={form.start}
-                onChange={(e) => { setForm((p) => ({ ...p, start: e.target.value })); setError(''); }}
-                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                onChange={(e) => handleHoraChange(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50"
+                disabled={!nivelId || cargandoJornada}
               >
-                {HOURS.slice(0, -1).map((h) => <option key={h}>{h}</option>)}
+                <option value="">
+                  {!nivelId ? 'Selecciona grado y sección primero' : cargandoJornada ? 'Cargando...' : 'Seleccionar hora'}
+                </option>
+                {franjasClase.map((f) => (
+                  <option key={f.hora_inicio} value={f.hora_inicio}>{f.hora_inicio} – {f.hora_fin}</option>
+                ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Fin</label>
-              <select
-                value={form.end}
-                onChange={(e) => { setForm((p) => ({ ...p, end: e.target.value })); setError(''); }}
-                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
-              >
-                {endHours.map((h) => <option key={h}>{h}</option>)}
-              </select>
+              {jornada && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Hora escolar de {jornada.duracion_hora_min} min, jornada desde {jornada.hora_inicio_jornada}
+                </p>
+              )}
             </div>
           </div>
 
@@ -213,30 +260,6 @@ export function AdminHorarioBloqueModal({
                 {cursosDelDocente.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Grado</label>
-              <select
-                value={form.grado_id}
-                onChange={(e) => { setForm((p) => ({ ...p, grado_id: e.target.value, seccion_id: '' })); setError(''); }}
-                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                disabled={mode === 'edit'}
-              >
-                <option value="">Seleccionar grado</option>
-                {grados.map((g) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Sección</label>
-              <select
-                value={form.seccion_id}
-                onChange={(e) => { setForm((p) => ({ ...p, seccion_id: e.target.value })); setError(''); }}
-                className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                disabled={mode === 'edit' || !form.grado_id}
-              >
-                <option value="">Seleccionar sección</option>
-                {sectionsForSelect.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-              </select>
-            </div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-600 mb-1">Aula</label>
               <input
@@ -259,7 +282,7 @@ export function AdminHorarioBloqueModal({
             </button>
             <button
               type="submit"
-              disabled={isPending || !form.docente_id || !form.course_id || !form.seccion_id}
+              disabled={isPending || !form.docente_id || !form.course_id || !form.seccion_id || !form.start}
               className="flex-1 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
             >
               {isPending

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { PlusCircle, X, Trash2, PenLine, Save, ChevronDown, ArrowUp, ArrowDown, ListChecks, Loader2, AlertTriangle } from 'lucide-react';
-import { estructuraApi, competenciasApi, type CompetenciaDTO, type CursoDTO } from '../../../lib/api/admin.api';
+import { PlusCircle, X, Trash2, PenLine, Save, ChevronDown, ArrowUp, ArrowDown, ListChecks, Loader2, AlertTriangle, Wand2, RotateCcw, Info } from 'lucide-react';
+import { estructuraApi, competenciasApi, areasApi, type CompetenciaDTO, type CursoDTO, type GradoDTO, type AreaAcademicaDTO, type NivelDTO } from '../../../lib/api/admin.api';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -15,18 +15,23 @@ const TIPO_COLORS: Record<TipoCompetencia, string> = {
   transversal:  'bg-purple-100 text-purple-700',
 };
 
-const EMPTY_FORM = { nombre: '', descripcion: '', tipo: 'regular' as TipoCompetencia };
+const EMPTY_FORM = { nombre: '', descripcion: '', tipo: 'regular' as TipoCompetencia, peso: '100' };
 
 export default function AdminCompetencias() {
+  const [niveles, setNiveles] = useState<NivelDTO[]>([]);
   const [cursos, setCursos] = useState<CursoDTO[]>([]);
+  const [grados, setGrados] = useState<GradoDTO[]>([]);
+  const [areas, setAreas] = useState<AreaAcademicaDTO[]>([]);
   const [competencias, setCompetencias] = useState<Competencia[]>([]);
-  const [filterNivel,  setFilterNivel]  = useState('Secundaria');
+  const [filterNivel,  setFilterNivel]  = useState('');
   const [filterCurso,  setFilterCurso]  = useState('');
+  const [filterGrado,  setFilterGrado]  = useState(''); // '' = defaults del nivel (comportamiento clásico)
   const [modal, setModal]     = useState(false);
   const [form, setForm]       = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [personalizando, setPersonalizando] = useState(false);
   const [error, setError] = useState('');
 
   // Edición inline
@@ -41,25 +46,59 @@ export default function AdminCompetencias() {
     try {
       setLoading(true);
       setError('');
-      const cursosData = await estructuraApi.cursos();
-      setCursos(cursosData);
-      if (cursosData.length > 0) {
-        setFilterCurso(cursosData[0].id);
-      }
+      const nivelesData = await estructuraApi.niveles();
+      setNiveles(nivelesData);
+      if (nivelesData.length > 0) setFilterNivel(nivelesData[0].id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error cargando cursos');
+      setError(err instanceof Error ? err.message : 'Error cargando niveles');
     } finally {
       setLoading(false);
     }
   }
 
+  // Cursos del nivel seleccionado — antes se traían TODOS los cursos de
+  // TODOS los niveles sin filtrar (bug: mezclaba Primaria/Secundaria y
+  // catálogo viejo/nuevo en un solo select sin agrupar).
+  useEffect(() => {
+    if (!filterNivel) { setCursos([]); setFilterCurso(''); return; }
+    estructuraApi.cursos(filterNivel)
+      .then(cursosData => {
+        setCursos(cursosData);
+        setFilterCurso(cursosData[0]?.id ?? '');
+      })
+      .catch(err => setError(err instanceof Error ? err.message : 'Error cargando cursos'));
+  }, [filterNivel]);
+
+  const cursoActual = cursos.find(c => c.id === filterCurso);
+
+  // Grados del mismo nivel del curso seleccionado — el override es por
+  // grado, y un grado solo tiene sentido dentro del nivel de su curso.
+  useEffect(() => {
+    setFilterGrado('');
+    if (!cursoActual) { setGrados([]); setAreas([]); return; }
+    estructuraApi.grados(cursoActual.nivel_id)
+      .then(setGrados)
+      .catch(err => setError(err instanceof Error ? err.message : 'Error cargando grados'));
+    areasApi.listar(cursoActual.nivel_id)
+      .then(setAreas)
+      .catch(err => setError(err instanceof Error ? err.message : 'Error cargando áreas académicas'));
+  }, [cursoActual?.nivel_id, filterCurso]);
+
+  const areaDelCurso = useMemo(
+    () => areas.find(a => a.id === cursoActual?.area_academica_id) ?? null,
+    [areas, cursoActual],
+  );
+
   useEffect(() => {
     if (!filterCurso) return;
     loadCompetencias();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCurso]);
 
   async function loadCompetencias() {
     try {
+      // Trae TODAS las filas del curso (defaults + overrides de cualquier
+      // grado) para poder distinguir en el cliente cuál set mostrar.
       const data = await competenciasApi.listar(filterCurso);
       setCompetencias(data);
     } catch (err) {
@@ -67,13 +106,51 @@ export default function AdminCompetencias() {
     }
   }
 
-  const cursosNivel = useMemo(() =>
-    cursos.filter(c => c.nivel_id === (filterNivel === 'Secundaria' ? 'nivel-secundaria' : 'nivel-primaria') || cursos.length > 0),
-  [cursos, filterNivel]);
+  const defaults = useMemo(() => competencias.filter(c => c.grado_id === null), [competencias]);
+  const overridesDelGrado = useMemo(
+    () => (filterGrado ? competencias.filter(c => c.grado_id === filterGrado) : []),
+    [competencias, filterGrado],
+  );
+  const tienePersonalizacion = filterGrado !== '' && overridesDelGrado.length > 0;
+  const mostrando = filterGrado ? (tienePersonalizacion ? overridesDelGrado : defaults) : defaults;
+  const puedeEditar = filterGrado === '' || tienePersonalizacion;
 
   const filtered = useMemo(() =>
-    competencias.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)),
-  [competencias]);
+    [...mostrando].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)),
+  [mostrando]);
+
+  const sumaPesos = useMemo(
+    () => filtered.reduce((acc, c) => acc + Number(c.peso), 0),
+    [filtered],
+  );
+
+  async function handlePersonalizar() {
+    if (!filterCurso || !filterGrado) return;
+    try {
+      setPersonalizando(true);
+      setError('');
+      await competenciasApi.copiarAGrado(filterCurso, filterGrado);
+      await loadCompetencias();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error personalizando competencias para el grado');
+    } finally {
+      setPersonalizando(false);
+    }
+  }
+
+  async function handleRestaurar() {
+    if (!filterCurso || !filterGrado) return;
+    try {
+      setPersonalizando(true);
+      setError('');
+      await competenciasApi.restaurarPredeterminado(filterCurso, filterGrado);
+      await loadCompetencias();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error restaurando los valores del nivel');
+    } finally {
+      setPersonalizando(false);
+    }
+  }
 
   async function moveUp(id: string) {
     const arr = [...filtered];
@@ -120,14 +197,15 @@ export default function AdminCompetencias() {
 
   function startEdit(comp: Competencia) {
     setEditingId(comp.id);
-    setEditForm({ nombre: comp.nombre, descripcion: comp.descripcion || '', tipo: comp.tipo });
+    setEditForm({ nombre: comp.nombre, descripcion: comp.descripcion || '', tipo: comp.tipo, peso: String(comp.peso) });
   }
 
   async function saveEdit(id: string) {
     if (!editForm.nombre.trim()) return;
     try {
       setSaving(true);
-      await competenciasApi.actualizar(id, editForm);
+      const peso = parseFloat(editForm.peso);
+      await competenciasApi.actualizar(id, { ...editForm, peso: isNaN(peso) ? undefined : peso });
       await loadCompetencias();
       setEditingId(null);
     } catch (err) {
@@ -144,11 +222,14 @@ export default function AdminCompetencias() {
     if (!filterCurso) { setFormError('Selecciona un curso primero.'); return; }
     try {
       setSaving(true);
+      const peso = parseFloat(form.peso);
       await competenciasApi.crear({
         curso_id: filterCurso,
+        grado_id: filterGrado || null,
         nombre: form.nombre.trim(),
         descripcion: form.descripcion.trim() || undefined,
         tipo: form.tipo,
+        peso: isNaN(peso) ? undefined : peso,
       });
       await loadCompetencias();
       setForm(EMPTY_FORM);
@@ -176,14 +257,16 @@ export default function AdminCompetencias() {
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <p className="text-sm text-slate-500 mb-1">Panel de administración</p>
-          <h1 className="text-2xl font-bold text-slate-900">Competencias</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Administra las competencias curriculares por curso</p>
+          <h1 className="text-2xl font-bold text-slate-900">Criterios de Evaluación</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Administra los criterios de evaluación (antes «competencias») por curso, cada uno con su peso — y personalízalos por grado cuando varíen</p>
         </div>
         <button
           onClick={() => { setModal(true); setFormError(''); }}
-          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shrink-0"
+          disabled={!puedeEditar}
+          title={!puedeEditar ? 'Personaliza este grado antes de agregar criterios propios' : undefined}
+          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shrink-0"
         >
-          <PlusCircle className="size-4" /> Nueva competencia
+          <PlusCircle className="size-4" /> Nuevo criterio
         </button>
       </div>
 
@@ -194,8 +277,18 @@ export default function AdminCompetencias() {
         </div>
       )}
 
-      {/* Filtros de curso */}
+      {/* Filtros de nivel + curso + grado */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-4 items-end">
+        <div className="flex-1 min-w-[160px]">
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Nivel</label>
+          <div className="relative">
+            <select value={filterNivel} onChange={e => setFilterNivel(e.target.value)}
+              className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-slate-400">
+              {niveles.map(n => <option key={n.id} value={n.id}>{n.nombre}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+          </div>
+        </div>
         <div className="flex-1 min-w-[200px]">
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Curso</label>
           <div className="relative">
@@ -205,23 +298,94 @@ export default function AdminCompetencias() {
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
           </div>
+          <p className="text-xs mt-1.5">
+            {areaDelCurso ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">Área: {areaDelCurso.nombre}</span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">
+                Sin área asignada — cámbialo en Estructura Académica
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Grado (opcional)</label>
+          <div className="relative">
+            <select value={filterGrado} onChange={e => setFilterGrado(e.target.value)}
+              className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-slate-400">
+              <option value="">Todos los grados (valores por defecto del nivel)</option>
+              {grados.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+          </div>
         </div>
         <p className="text-xs text-slate-400 self-end pb-2.5">{filtered.length} competencia{filtered.length !== 1 ? 's' : ''}</p>
       </div>
+
+      {/* Banner de personalización por grado */}
+      {filterGrado && (
+        tienePersonalizacion ? (
+          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex-wrap">
+            <Wand2 className="size-5 text-blue-600 shrink-0" />
+            <p className="text-sm font-medium text-blue-800 flex-1 min-w-[200px]">
+              Este grado tiene competencias personalizadas para {cursoActual?.nombre} — no afecta a los demás grados del nivel.
+            </p>
+            <button
+              onClick={handleRestaurar}
+              disabled={personalizando}
+              className="flex items-center gap-1.5 border border-blue-300 text-blue-700 hover:bg-blue-100 disabled:opacity-40 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            >
+              {personalizando ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />} Restaurar valores del nivel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex-wrap">
+            <Info className="size-5 text-slate-500 shrink-0" />
+            <p className="text-sm font-medium text-slate-600 flex-1 min-w-[200px]">
+              Usando los valores predeterminados del nivel para este grado.
+            </p>
+            <button
+              onClick={handlePersonalizar}
+              disabled={personalizando || defaults.length === 0}
+              title={defaults.length === 0 ? 'El nivel no tiene competencias definidas para este curso' : undefined}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            >
+              {personalizando ? <Loader2 className="size-3 animate-spin" /> : <Wand2 className="size-3" />} Personalizar para este grado
+            </button>
+          </div>
+        )
+      )}
+
+      {/* Suma de pesos del curso actual */}
+      {filtered.length > 0 && (
+        <div className={`flex items-center gap-3 rounded-2xl px-4 py-2.5 border ${
+          Math.abs(sumaPesos - 100) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
+        }`}>
+          {Math.abs(sumaPesos - 100) < 0.01 ? (
+            <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+          ) : (
+            <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+          )}
+          <p className={`text-sm font-medium ${Math.abs(sumaPesos - 100) < 0.01 ? 'text-emerald-800' : 'text-amber-800'}`}>
+            Suma de pesos: {sumaPesos}%
+            {Math.abs(sumaPesos - 100) >= 0.01 && ' — no suma 100%, los cálculos se normalizan automáticamente'}
+          </p>
+        </div>
+      )}
 
       {/* Tabla */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
           <ListChecks className="size-4 text-slate-500" />
           <h2 className="text-sm font-semibold text-slate-700">
-            {cursos.find(c => c.id === filterCurso)?.nombre ?? 'Curso'}
+            {cursoActual?.nombre ?? 'Curso'}{filterGrado ? ` — ${grados.find(g => g.id === filterGrado)?.nombre ?? ''}` : ' — Todos los grados'}
           </h2>
         </div>
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center py-16 text-center">
             <ListChecks className="size-10 text-slate-200 mb-3" />
-            <p className="text-slate-500">No hay competencias para este curso</p>
-            <p className="text-xs text-slate-400 mt-1">Haz clic en «Nueva competencia» para agregar una</p>
+            <p className="text-slate-500">No hay criterios de evaluación para este curso</p>
+            <p className="text-xs text-slate-400 mt-1">Haz clic en «Nuevo criterio» para agregar uno</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -231,6 +395,7 @@ export default function AdminCompetencias() {
                   <th className="text-center px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16">Orden</th>
                   <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nombre</th>
                   <th className="text-center px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
+                  <th className="text-center px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider w-24">Peso</th>
                   <th className="text-right px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
@@ -242,12 +407,12 @@ export default function AdminCompetencias() {
                       {/* Orden + reorder buttons */}
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => moveUp(comp.id)} disabled={idx === 0}
+                          <button onClick={() => moveUp(comp.id)} disabled={idx === 0 || !puedeEditar}
                             className="p-1 rounded-md hover:bg-slate-200 disabled:opacity-30 text-slate-500 transition-colors">
                             <ArrowUp className="size-3.5" />
                           </button>
                           <span className="text-xs font-semibold text-slate-600 w-5 text-center">{idx + 1}</span>
-                          <button onClick={() => moveDown(comp.id)} disabled={idx === filtered.length - 1}
+                          <button onClick={() => moveDown(comp.id)} disabled={idx === filtered.length - 1 || !puedeEditar}
                             className="p-1 rounded-md hover:bg-slate-200 disabled:opacity-30 text-slate-500 transition-colors">
                             <ArrowDown className="size-3.5" />
                           </button>
@@ -285,10 +450,22 @@ export default function AdminCompetencias() {
                           </span>
                         )}
                       </td>
+                      {/* Peso */}
+                      <td className="px-4 py-3.5 text-center">
+                        {isEditing ? (
+                          <input type="number" min={0.01} max={100} step="0.01" value={editForm.peso}
+                            onChange={e => setEditForm(f => ({ ...f, peso: e.target.value }))}
+                            className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-600">{Number(comp.peso)}%</span>
+                        )}
+                      </td>
                       {/* Acciones */}
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {isEditing ? (
+                          {!puedeEditar ? (
+                            <span className="text-xs text-slate-400 italic">Personaliza el grado para editar</span>
+                          ) : isEditing ? (
                             <>
                               <button onClick={() => saveEdit(comp.id)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                                 {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
@@ -342,7 +519,7 @@ export default function AdminCompetencias() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-base font-semibold text-slate-800">Nueva competencia</h3>
+              <h3 className="text-base font-semibold text-slate-800">Nuevo criterio de evaluación</h3>
               <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100">
                 <X className="size-4 text-slate-500" />
               </button>
@@ -363,12 +540,19 @@ export default function AdminCompetencias() {
                   className={`${inputCls} resize-none`} />
                 <p className={`text-xs text-right mt-1 ${form.descripcion.length >= 1000 ? 'text-red-500' : 'text-slate-400'}`}>{form.descripcion.length}/1000</p>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Tipo</label>
-                <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as TipoCompetencia }))} className={inputCls}>
-                  <option value="regular">regular</option>
-                  <option value="transversal">transversal</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Tipo</label>
+                  <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as TipoCompetencia }))} className={inputCls}>
+                    <option value="regular">regular</option>
+                    <option value="transversal">transversal</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Peso (%)</label>
+                  <input type="number" min={0.01} max={100} step="0.01" value={form.peso}
+                    onChange={e => setForm(f => ({ ...f, peso: e.target.value }))} className={inputCls} />
+                </div>
               </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setModal(false)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
@@ -376,7 +560,7 @@ export default function AdminCompetencias() {
                 </button>
                 <button type="submit" disabled={saving} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                   {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-                  {saving ? 'Agregando...' : 'Agregar competencia'}
+                  {saving ? 'Agregando...' : 'Agregar criterio'}
                 </button>
               </div>
             </form>

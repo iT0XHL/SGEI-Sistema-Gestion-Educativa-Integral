@@ -7,13 +7,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   CheckCircle2, X, Eye, Clock, Receipt, ZoomIn,
-  MessageSquare, AlertCircle, Search, Loader2, ExternalLink,
+  MessageSquare, AlertCircle, Search, Loader2,
 } from 'lucide-react';
 import {
   secretariaApi,
   type BoletaDTO,
   type EstadoRevision,
 } from '../../../lib/api/secretaria.api';
+import VoucherLightbox from '../../components/secretaria/VoucherLightbox';
 
 // ── Constantes ────────────────────────────────────────────────
 const MESES = [
@@ -67,6 +68,7 @@ export default function SecretariaVouchers() {
   const [detailModal, setDetailModal] = useState<BoletaDTO | null>(null);
   const [loadingUrl,  setLoadingUrl]  = useState(false);
   const [archivoUrl,  setArchivoUrl]  = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Modal rechazar
   const [rejectTarget, setRejectTarget] = useState<BoletaDTO | null>(null);
@@ -350,14 +352,6 @@ export default function SecretariaVouchers() {
                   </div>
                 )}
 
-                {/* Banco / operación */}
-                {(boleta.banco || boleta.numero_operacion) && (
-                  <div className="text-xs text-slate-400 space-y-0.5">
-                    {boleta.banco && <p>Banco: <span className="text-slate-600">{boleta.banco}</span></p>}
-                    {boleta.numero_operacion && <p>N° op.: <span className="text-slate-600 font-mono">{boleta.numero_operacion}</span></p>}
-                  </div>
-                )}
-
                 {/* Acciones */}
                 {boleta.estado_revision === 'En_Revision' && (
                   <div className="flex gap-2 pt-1">
@@ -440,7 +434,7 @@ export default function SecretariaVouchers() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-semibold text-slate-800">Detalle del voucher</h3>
               <button
-                onClick={() => { setDetailModal(null); setArchivoUrl(null); }}
+                onClick={() => { setDetailModal(null); setArchivoUrl(null); setLightboxOpen(false); }}
                 className="p-1.5 rounded-lg hover:bg-slate-100"
               >
                 <X className="size-4 text-slate-500" />
@@ -455,14 +449,12 @@ export default function SecretariaVouchers() {
                 ) : archivoUrl && !archivoUrl.startsWith('mock/') ? (
                   <div className="text-center space-y-2">
                     <Eye className="size-10 text-teal-500 mx-auto" />
-                    <a
-                      href={archivoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => setLightboxOpen(true)}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white text-xs font-medium rounded-xl hover:bg-teal-700"
                     >
-                      <ExternalLink className="size-3.5" /> Abrir archivo
-                    </a>
+                      <ZoomIn className="size-3.5" /> Ver archivo
+                    </button>
                   </div>
                 ) : (
                   <div className="text-center">
@@ -487,8 +479,6 @@ export default function SecretariaVouchers() {
                   ['Mes',       detailModal.pago.mes ? MESES[detailModal.pago.mes] : '—'],
                   ['Monto',     `S/ ${Number(detailModal.pago.monto).toFixed(2)}`],
                   ['Enviado el', formatFecha(detailModal.fecha_subida)],
-                  ...(detailModal.banco ? [['Banco', detailModal.banco]] : []),
-                  ...(detailModal.numero_operacion ? [['N° operación', detailModal.numero_operacion]] : []),
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between py-2 border-b border-slate-100 last:border-0">
                     <span className="text-sm text-slate-500">{k}</span>
@@ -591,6 +581,15 @@ export default function SecretariaVouchers() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ══ Lightbox del archivo ═════════════════════════════════ */}
+      {lightboxOpen && archivoUrl && !archivoUrl.startsWith('mock/') && (
+        <VoucherLightbox
+          url={archivoUrl}
+          nombreArchivo={detailModal?.nombre_archivo ?? null}
+          onClose={() => setLightboxOpen(false)}
+        />
       )}
     </div>
   );

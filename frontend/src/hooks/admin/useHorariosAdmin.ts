@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  horariosApi, asignacionesApi, horarioPublicacionesApi, descansosApi,
+  horariosApi, asignacionesApi, horarioPublicacionesApi, descansosApi, jornadaApi,
   type HorarioRow,
 } from '../../lib/api/horarios.api';
 
@@ -140,6 +140,41 @@ export function useUpsertDescanso() {
     mutationFn: (payload: { nivel_id: string; periodo_id: string; tipo: 'RECREO' | 'REFRIGERIO'; hora_inicio: string; hora_fin: string }) =>
       descansosApi.upsert(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['horarios', 'descansos'] }),
+  });
+}
+
+/** Jornada escolar (hora de inicio + duración de la hora escolar) de un nivel. */
+export function useJornadaConfig(periodoId: string | undefined, nivelId: string | undefined) {
+  return useQuery({
+    queryKey: ['horarios', 'jornada', periodoId, nivelId],
+    queryFn: () => jornadaApi.obtener({ periodoId: periodoId as string, nivelId: nivelId as string }),
+    enabled: Boolean(periodoId) && Boolean(nivelId),
+    staleTime: 1000 * 30,
+  });
+}
+
+/** Jornada escolar de varios niveles a la vez (vista combinada por Docente). */
+export function useJornadasDeNiveles(periodoId: string | undefined, nivelIds: string[]) {
+  return useQueries({
+    queries: nivelIds.map((nivelId) => ({
+      queryKey: ['horarios', 'jornada', periodoId, nivelId],
+      queryFn: () => jornadaApi.obtener({ periodoId: periodoId as string, nivelId }),
+      enabled: Boolean(periodoId),
+      staleTime: 1000 * 30,
+    })),
+    combine: (results) => ({
+      data: results.map((r) => r.data).filter((d): d is NonNullable<typeof d> => d != null),
+      isLoading: results.some((r) => r.isLoading),
+    }),
+  });
+}
+
+export function useUpsertJornadaConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { nivel_id: string; periodo_id: string; hora_inicio_jornada: string; duracion_hora_min: number; total_horas_dia: number }) =>
+      jornadaApi.actualizar(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['horarios', 'jornada'] }),
   });
 }
 

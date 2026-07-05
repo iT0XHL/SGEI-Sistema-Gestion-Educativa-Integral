@@ -40,6 +40,12 @@ export const ListarNotasQuery = z.object({
   cerrada:       z.enum(['true', 'false']).optional(),
 });
 
+export const PlantillaQuery = z.object({
+  asignacionId: z.string().uuid(),
+  bimestreId:   z.string().uuid(),
+});
+export type PlantillaQueryInput = z.infer<typeof PlantillaQuery>;
+
 export type NotaItem             = z.infer<typeof NotaItemSchema>;
 export type UpsertBatchNotaInput = z.infer<typeof UpsertBatchNotaSchema>;
 export type UpdateNotaInput      = z.infer<typeof UpdateNotaSchema>;

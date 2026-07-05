@@ -71,6 +71,29 @@ export const AuthRepository = {
       data: { password_hash: hash },
     });
   },
+
+  /** Cuenta solicitudes de recuperación recientes (rate limiting básico). */
+  contarTokensRecientes(credencialId: string, desde: Date) {
+    return prisma.tokenRecuperacion.count({
+      where: { credencial_id: credencialId, created_at: { gte: desde } },
+    });
+  },
+
+  crearTokenRecuperacion(credencialId: string, tokenHash: string, expiraEn: Date) {
+    return prisma.tokenRecuperacion.create({
+      data: { credencial_id: credencialId, token_hash: tokenHash, expira_en: expiraEn },
+    });
+  },
+
+  buscarTokenRecuperacionValido(tokenHash: string) {
+    return prisma.tokenRecuperacion.findFirst({
+      where: { token_hash: tokenHash, usado: false, expira_en: { gt: new Date() } },
+    });
+  },
+
+  marcarTokenRecuperacionUsado(id: string) {
+    return prisma.tokenRecuperacion.update({ where: { id }, data: { usado: true } });
+  },
 };
 
 export { MAX_FAILED_ATTEMPTS };

@@ -33,7 +33,7 @@ export interface ResolverContexto {
 
 // ── Helpers de consulta ──────────────────────────────────────────────────────
 
-async function perfilesPorRol(db: Db, rol: 'Admin' | 'Secretaria'): Promise<string[]> {
+async function perfilesPorRol(db: Db, rol: 'Admin' | 'Secretaria' | 'Docente'): Promise<string[]> {
   const rows = await db.perfilUsuario.findMany({
     where:  { rol, credencial: { activo: true } },
     select: { id: true },
@@ -63,6 +63,22 @@ async function perfilesAlumnosDeSeccion(db: Db, seccionId: string): Promise<stri
     select: { perfil_usuario_id: true },
   });
   return alumnos.map((a) => a.perfil_usuario_id);
+}
+
+async function perfilesDocentesDeSeccion(db: Db, seccionId: string): Promise<string[]> {
+  const asignaciones = await db.asignacionDocente.findMany({
+    where:  { seccion_id: seccionId, activo: true },
+    select: { docente: { select: { perfil_usuario_id: true } } },
+  });
+  return asignaciones.map((a) => a.docente.perfil_usuario_id);
+}
+
+async function perfilDocenteTutorDeSeccion(db: Db, seccionId: string): Promise<string[]> {
+  const seccion = await db.seccion.findUnique({
+    where:  { id: seccionId },
+    select: { docente_tutor: { select: { perfil_usuario_id: true } } },
+  });
+  return seccion?.docente_tutor ? [seccion.docente_tutor.perfil_usuario_id] : [];
 }
 
 // ── Resolver principal ───────────────────────────────────────────────────────
@@ -103,12 +119,13 @@ export async function resolverDestinatarios(
       break;
     }
     case NotificationEvents.ALUMNO_CREADO: {
-      const [admins, secre, alumno] = await Promise.all([
+      const [admins, secre, alumno, tutor] = await Promise.all([
         perfilesPorRol(db, 'Admin'),
         perfilesPorRol(db, 'Secretaria'),
         ctx.alumnoId ? perfilDeAlumno(db, ctx.alumnoId) : Promise.resolve([]),
+        ctx.seccionId ? perfilDocenteTutorDeSeccion(db, ctx.seccionId) : Promise.resolve([]),
       ]);
-      destinos = [...admins, ...secre, ...alumno];
+      destinos = [...admins, ...secre, ...alumno, ...tutor];
       break;
     }
     case NotificationEvents.ALUMNO_ACTUALIZADO: {
@@ -128,8 +145,15 @@ export async function resolverDestinatarios(
     case NotificationEvents.LIBRETA_PUBLICADA:
     case NotificationEvents.LIBRETA_BLOQUEADA:
     case NotificationEvents.PAGO_REGISTRADO:
+    case NotificationEvents.PAGO_POR_VENCER:
     case NotificationEvents.BOLETA_REVISADA: {
       destinos = ctx.alumnoId ? await perfilDeAlumno(db, ctx.alumnoId) : [];
+      break;
+    }
+
+    // ── Dirigidos al docente dueño ────────────────────────────────────────────
+    case NotificationEvents.ASISTENCIA_PENDIENTE: {
+      destinos = ctx.docenteId ? await perfilDeDocente(db, ctx.docenteId) : [];
       break;
     }
 
@@ -137,6 +161,22 @@ export async function resolverDestinatarios(
     case NotificationEvents.MATERIAL_PUBLICADO:
     case NotificationEvents.ACTIVIDAD_PUBLICADA: {
       destinos = ctx.seccionId ? await perfilesAlumnosDeSeccion(db, ctx.seccionId) : [];
+      break;
+    }
+
+    // ── Simulacro activado: todos los docentes activos ───────────────────────
+    case NotificationEvents.SIMULACRO_PROGRAMADO: {
+      destinos = await perfilesPorRol(db, 'Docente');
+      break;
+    }
+
+    // ── Horario actualizado: alumnos + docentes con asignación en la sección ──
+    case NotificationEvents.HORARIO_ACTUALIZADO: {
+      const [alumnos, docentes] = await Promise.all([
+        ctx.seccionId ? perfilesAlumnosDeSeccion(db, ctx.seccionId) : Promise.resolve([]),
+        ctx.seccionId ? perfilesDocentesDeSeccion(db, ctx.seccionId) : Promise.resolve([]),
+      ]);
+      destinos = [...alumnos, ...docentes];
       break;
     }
 

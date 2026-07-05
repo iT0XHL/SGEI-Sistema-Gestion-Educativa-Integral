@@ -3,19 +3,31 @@
 //  Reglas: bcrypt compare, bloqueo tras 5 intentos, JWT en
 //  cookie HttpOnly, auditoría LOGIN/LOGOUT.
 // ============================================================
+import { randomBytes, createHash } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, hashPassword } from '@/lib/password';
 import { signToken } from '@/lib/jwt';
 import { withAuditContext } from '@/lib/audit-context';
+import { revokeUserTokens } from '@/lib/token-blacklist';
+import { ResendEmailSender } from '@/lib/email/resend-email-sender';
 import {
   UnauthorizedError,
   AccountLockedError,
+  BusinessRuleError,
   NotFoundError,
 } from '@/errors/http-errors';
 import { AuthRepository, MAX_FAILED_ATTEMPTS } from './auth.repository';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { REDIRECT_BY_ROLE, type LoginResult, type SessionUser } from './auth.types';
-import type { LoginInput, ChangePasswordInput } from '@/schemas/auth.schema';
+import type { LoginInput, ChangePasswordInput, ForgotPasswordInput, ResetPasswordInput } from '@/schemas/auth.schema';
+
+const RESET_TOKEN_TTL_MIN = 30;
+const RESET_MAX_SOLICITUDES = 3;
+const RESET_VENTANA_MIN = 15;
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 interface PerfilLike {
   id: string;
@@ -201,5 +213,42 @@ export const AuthService = {
     await withAuditContext(perfilId, (tx) =>
       AuthRepository.updatePasswordHash(tx, credencialId, hash),
     );
+  },
+
+  /**
+   * Solicita el envío de un enlace de recuperación. Siempre responde éxito
+   * (no revela si el correo existe, igual que el login) y aplica un límite
+   * de solicitudes por credencial para evitar abuso de envío de correos.
+   */
+  async forgotPassword(input: ForgotPasswordInput): Promise<void> {
+    const cred = await AuthRepository.findCredencialByLogin(input.email);
+    if (!cred || !cred.activo) return;
+
+    const desde = new Date(Date.now() - RESET_VENTANA_MIN * 60_000);
+    const recientes = await AuthRepository.contarTokensRecientes(cred.id, desde);
+    if (recientes >= RESET_MAX_SOLICITUDES) return;
+
+    const token = randomBytes(32).toString('hex');
+    const expiraEn = new Date(Date.now() + RESET_TOKEN_TTL_MIN * 60_000);
+    await AuthRepository.crearTokenRecuperacion(cred.id, hashToken(token), expiraEn);
+
+    await ResendEmailSender.enviarRecuperacion(input.email, token);
+  },
+
+  /** Consume el token y actualiza la contraseña; invalida sesiones activas. */
+  async resetPassword(input: ResetPasswordInput): Promise<void> {
+    const tokenRow = await AuthRepository.buscarTokenRecuperacionValido(hashToken(input.token));
+    if (!tokenRow) {
+      throw new BusinessRuleError('TOKEN_INVALIDO', 'El enlace de recuperación es inválido o expiró.');
+    }
+
+    const perfil = await AuthRepository.getPerfilByCredencialId(tokenRow.credencial_id);
+    const hash = await hashPassword(input.password_nueva);
+
+    await withAuditContext(perfil?.id ?? tokenRow.credencial_id, (tx) =>
+      AuthRepository.updatePasswordHash(tx, tokenRow.credencial_id, hash),
+    );
+    await AuthRepository.marcarTokenRecuperacionUsado(tokenRow.id);
+    if (perfil) revokeUserTokens(perfil.id);
   },
 };

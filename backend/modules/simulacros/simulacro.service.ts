@@ -9,6 +9,9 @@
 import { prisma } from '@/lib/prisma';
 import { NotFoundError, ConflictError, BusinessRuleError } from '@/errors/http-errors';
 import { SimulacroRepo, PreguntaRepo, ExamenRepo, CargaRepo } from './simulacro.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
+import type { JwtClaims } from '@/lib/jwt';
 import type { CreateSimulacroInput, GuardarPreguntasInput, GuardarExamenInput } from '@/schemas/simulacro.schema';
 
 const MAX_SIMULACROS = 4;
@@ -58,7 +61,7 @@ export const SimulacroService = {
     });
   },
 
-  async cambiarEstado(id: string, estado: 'Borrador' | 'Activo' | 'Concluido') {
+  async cambiarEstado(id: string, estado: 'Borrador' | 'Activo' | 'Concluido', user: JwtClaims) {
     const sim = await SimulacroRepo.findById(id);
     if (!sim) throw new NotFoundError('Simulacro');
 
@@ -70,7 +73,17 @@ export const SimulacroService = {
         );
       }
     }
-    return SimulacroRepo.updateEstado(id, estado);
+    const actualizado = await SimulacroRepo.updateEstado(id, estado);
+
+    if (estado === 'Activo') {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.SIMULACRO_PROGRAMADO,
+        actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+        contexto: { simulacroId: id, simulacroNombre: sim.nombre },
+      });
+    }
+
+    return actualizado;
   },
 
   // ── Docente / global ────────────────────────────────────────

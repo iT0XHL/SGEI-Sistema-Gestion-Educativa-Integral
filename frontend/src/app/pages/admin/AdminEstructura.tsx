@@ -4,8 +4,9 @@ import {
   X, Loader2, AlertTriangle, ChevronRight, Sparkles, School, CheckCircle2, UserCircle2,
 } from 'lucide-react';
 import {
-  estructuraApi, periodosApi, docentesAdminApi,
+  estructuraApi, periodosApi, docentesAdminApi, areasApi,
   type NivelDTO, type GradoDTO, type CursoDTO, type SeccionDTO, type PeriodoDTO, type DocenteDTO,
+  type AreaAcademicaDTO,
 } from '../../../lib/api/admin.api';
 
 // ── Tipos de formulario ──────────────────────────────────────────
@@ -14,6 +15,7 @@ type Modal =
   | { kind: 'grado'; mode: 'create' | 'edit'; data?: GradoDTO }
   | { kind: 'curso'; mode: 'create' | 'edit'; data?: CursoDTO }
   | { kind: 'seccion'; mode: 'create' | 'edit'; data?: SeccionDTO }
+  | { kind: 'area'; mode: 'create' | 'edit'; data?: AreaAcademicaDTO }
   | null;
 
 interface ConfirmState { title: string; message: string; onConfirm: () => Promise<void> }
@@ -27,6 +29,7 @@ export default function AdminEstructura() {
   const [grados, setGrados]     = useState<GradoDTO[]>([]);
   const [gradoId, setGradoId]   = useState('');
   const [cursosNivel, setCursosNivel] = useState<CursoDTO[]>([]);
+  const [areasNivel, setAreasNivel]   = useState<AreaAcademicaDTO[]>([]);
   const [cursosGrado, setCursosGrado] = useState<CursoDTO[]>([]);
   const [secciones, setSecciones]     = useState<SeccionDTO[]>([]);
   const [periodo, setPeriodo]   = useState<PeriodoDTO | null>(null);
@@ -76,10 +79,11 @@ export default function AdminEstructura() {
   }, []);
 
   const loadNivelData = useCallback(async (nid: string) => {
-    if (!nid) { setGrados([]); setCursosNivel([]); return; }
-    const [g, c] = await Promise.all([estructuraApi.grados(nid), estructuraApi.cursos(nid)]);
+    if (!nid) { setGrados([]); setCursosNivel([]); setAreasNivel([]); return; }
+    const [g, c, a] = await Promise.all([estructuraApi.grados(nid), estructuraApi.cursos(nid), areasApi.listar(nid)]);
     setGrados(g);
     setCursosNivel(c);
+    setAreasNivel(a);
   }, []);
 
   const loadGradoData = useCallback(async (gid: string) => {
@@ -229,11 +233,18 @@ export default function AdminEstructura() {
               </p>
             ) : (
               <div className="flex flex-wrap gap-2 p-4">
-                {cursosNivel.map(c => (
+                {cursosNivel.map(c => {
+                  const area = areasNivel.find(a => a.id === c.area_academica_id);
+                  return (
                   <div key={c.id} className="group flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-sm">
                     <span className="font-medium text-slate-700">{c.nombre}</span>
                     {c.horas_semanales != null && (
                       <span className="text-xs text-slate-400">{c.horas_semanales}h</span>
+                    )}
+                    {area ? (
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{area.nombre}</span>
+                    ) : (
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400">Sin área</span>
                     )}
                     <button onClick={() => setModal({ kind: 'curso', mode: 'edit', data: c })}
                       className="p-1 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600">
@@ -253,7 +264,58 @@ export default function AdminEstructura() {
                       <Trash2 className="size-3" />
                     </button>
                   </div>
-                ))}
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Áreas académicas del nivel (agrupador visual de libreta) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Layers className="size-4 text-slate-500" />
+                <h2 className="text-sm font-semibold text-slate-700">
+                  Áreas académicas de «{nivelActual.nombre}»
+                </h2>
+                <span className="text-xs text-slate-400">({areasNivel.length})</span>
+              </div>
+              <button onClick={() => setModal({ kind: 'area', mode: 'create' })}
+                className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">
+                <PlusCircle className="size-3.5" /> Área
+              </button>
+            </div>
+            {areasNivel.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-slate-400 text-center">
+                Aún no hay áreas académicas. Agrúpalas para que la libreta muestre un «PROMEDIO GENERAL» por área.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2 p-4">
+                {areasNivel.map(a => {
+                  const numCursos = cursosNivel.filter(c => c.area_academica_id === a.id).length;
+                  return (
+                    <div key={a.id} className="group flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-sm">
+                      <span className="font-medium text-slate-700">{a.nombre}</span>
+                      <span className="text-xs text-slate-400">{numCursos} curso{numCursos !== 1 ? 's' : ''}</span>
+                      <button onClick={() => setModal({ kind: 'area', mode: 'edit', data: a })}
+                        className="p-1 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600">
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
+                        onClick={() => setConfirm({
+                          title: 'Eliminar área académica',
+                          message: `Se eliminará «${a.nombre}». No es posible si tiene cursos asignados.`,
+                          onConfirm: () => run(async () => {
+                            await areasApi.eliminar(a.id);
+                            await loadNivelData(nivelId);
+                          }, 'Área académica eliminada'),
+                        })}
+                        className="p-1 rounded-md hover:bg-red-100 text-red-400 hover:text-red-600">
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -502,6 +564,7 @@ export default function AdminEstructura() {
           periodoId={periodo?.id ?? ''}
           grados={grados}
           docentes={docentes}
+          areasNivel={areasNivel}
           busy={busy}
           onClose={() => setModal(null)}
           onSubmit={async (payload) => {
@@ -539,8 +602,12 @@ export default function AdminEstructura() {
       if (m.mode === 'create') await estructuraApi.crearGrado({ nivel_id: nivelId, nombre: p.nombre as string, orden: Number(p.orden) });
       else await estructuraApi.actualizarGrado(m.data!.id, { nombre: p.nombre as string, orden: Number(p.orden) });
     } else if (m.kind === 'curso') {
-      if (m.mode === 'create') await estructuraApi.crearCurso({ nivel_id: nivelId, nombre: p.nombre as string, horas_semanales: p.horas ? Number(p.horas) : null, codigo_cneb: (p.codigo as string) || null });
-      else await estructuraApi.actualizarCurso(m.data!.id, { nombre: p.nombre as string, horas_semanales: p.horas ? Number(p.horas) : null, codigo_cneb: (p.codigo as string) || null });
+      const areaId = (p.area_academica_id as string) || null;
+      if (m.mode === 'create') await estructuraApi.crearCurso({ nivel_id: nivelId, nombre: p.nombre as string, horas_semanales: p.horas ? Number(p.horas) : null, codigo_cneb: (p.codigo as string) || null, area_academica_id: areaId });
+      else await estructuraApi.actualizarCurso(m.data!.id, { nombre: p.nombre as string, horas_semanales: p.horas ? Number(p.horas) : null, codigo_cneb: (p.codigo as string) || null, area_academica_id: areaId });
+    } else if (m.kind === 'area') {
+      if (m.mode === 'create') await areasApi.crear({ nivel_id: nivelId, nombre: p.nombre as string });
+      else await areasApi.actualizar(m.data!.id, { nombre: p.nombre as string });
     } else if (m.kind === 'seccion') {
       const tutor = (p.tutor as string) || null;
       if (m.mode === 'create') await estructuraApi.crearSeccion({ grado_id: gradoId, periodo_id: periodo!.id, nombre: p.nombre as string, turno: p.turno as 'Mañana' | 'Tarde' | 'Noche', cupo_maximo: Number(p.cupo), aula: (p.aula as string) || null, docente_tutor_id: tutor });
@@ -558,23 +625,25 @@ function FormModal(props: {
   periodoId: string;
   grados: GradoDTO[];
   docentes: DocenteDTO[];
+  areasNivel: AreaAcademicaDTO[];
   busy: boolean;
   onClose: () => void;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
 }) {
-  const { modal, grados, docentes, busy, onClose, onSubmit } = props;
+  const { modal, grados, docentes, areasNivel, busy, onClose, onSubmit } = props;
   const d = modal.data as Record<string, unknown> | undefined;
 
   const [form, setForm] = useState<Record<string, string>>((): Record<string, string> => {
     if (modal.kind === 'nivel')  return { nombre: (d?.nombre as string) ?? '', descripcion: (d?.descripcion as string) ?? '' };
     if (modal.kind === 'grado')  return { nombre: (d?.nombre as string) ?? '', orden: d?.orden != null ? String(d.orden) : String(grados.length + 1) };
-    if (modal.kind === 'curso')  return { nombre: (d?.nombre as string) ?? '', horas: d?.horas_semanales != null ? String(d.horas_semanales) : '', codigo: (d?.codigo_cneb as string) ?? '' };
+    if (modal.kind === 'curso')  return { nombre: (d?.nombre as string) ?? '', horas: d?.horas_semanales != null ? String(d.horas_semanales) : '', codigo: (d?.codigo_cneb as string) ?? '', area_academica_id: (d?.area_academica_id as string) ?? '' };
+    if (modal.kind === 'area')   return { nombre: (d?.nombre as string) ?? '' };
     return { nombre: (d?.nombre as string) ?? '', turno: (d?.turno as string) ?? 'Mañana', cupo: d?.cupo_maximo != null ? String(d.cupo_maximo) : '30', aula: (d?.aula as string) ?? '', tutor: (d?.docente_tutor_id as string) ?? '' };
   });
   const [err, setErr] = useState('');
 
   const titles: Record<string, string> = {
-    nivel: 'nivel', grado: 'grado', curso: 'curso', seccion: 'sección',
+    nivel: 'nivel', grado: 'grado', curso: 'curso', seccion: 'sección', area: 'área académica',
   };
   const title = `${modal.mode === 'create' ? 'Nuevo' : 'Editar'} ${titles[modal.kind]}`;
 
@@ -603,7 +672,13 @@ function FormModal(props: {
           <div>
             <label className={label}>Nombre <span className="text-red-500">*</span></label>
             <input className={input} value={form.nombre} maxLength={modal.kind === 'seccion' ? 5 : 120}
-              placeholder={modal.kind === 'nivel' ? 'Ej. Primaria' : modal.kind === 'grado' ? 'Ej. 1° Primaria' : modal.kind === 'curso' ? 'Ej. Matemática' : 'Ej. A'}
+              placeholder={
+                modal.kind === 'nivel' ? 'Ej. Primaria'
+                : modal.kind === 'grado' ? 'Ej. 1° Primaria'
+                : modal.kind === 'curso' ? 'Ej. Matemática'
+                : modal.kind === 'area' ? 'Ej. Comunicación'
+                : 'Ej. A'
+              }
               onChange={e => set('nombre', e.target.value)} autoFocus />
           </div>
 
@@ -625,16 +700,25 @@ function FormModal(props: {
           )}
 
           {modal.kind === 'curso' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={label}>Horas/semana</label>
-                <input type="number" min={1} className={input} value={form.horas}
-                  onChange={e => set('horas', e.target.value)} placeholder="Ej. 5" />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={label}>Horas/semana</label>
+                  <input type="number" min={1} className={input} value={form.horas}
+                    onChange={e => set('horas', e.target.value)} placeholder="Ej. 5" />
+                </div>
+                <div>
+                  <label className={label}>Código CNEB</label>
+                  <input className={input} value={form.codigo} maxLength={20}
+                    onChange={e => set('codigo', e.target.value)} placeholder="opcional" />
+                </div>
               </div>
               <div>
-                <label className={label}>Código CNEB</label>
-                <input className={input} value={form.codigo} maxLength={20}
-                  onChange={e => set('codigo', e.target.value)} placeholder="opcional" />
+                <label className={label}>Área académica <span className="text-slate-400">(agrupador de libreta, opcional)</span></label>
+                <select className={input} value={form.area_academica_id} onChange={e => set('area_academica_id', e.target.value)}>
+                  <option value="">— Sin área (independiente) —</option>
+                  {areasNivel.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                </select>
               </div>
             </div>
           )}

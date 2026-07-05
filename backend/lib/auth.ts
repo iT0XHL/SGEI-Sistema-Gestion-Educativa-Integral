@@ -118,10 +118,6 @@ export function canValidateVoucher(user: JwtClaims): boolean {
   return user.rol === 'Admin' || user.rol === 'Secretaria';
 }
 
-export function canExportSiagie(user: JwtClaims): boolean {
-  return user.rol === 'Admin' || user.rol === 'Secretaria';
-}
-
 /** Lanza ForbiddenError si la condición no se cumple. */
 export function assertAccess(condition: boolean, message?: string): void {
   if (!condition) {

@@ -2,6 +2,8 @@ import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { prisma } from '@/lib/prisma';
 import { NotaRepository } from './nota.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import type { JwtClaims } from '@/lib/jwt';
 import type {
   UpsertBatchNotaInput,
@@ -59,10 +61,11 @@ export const NotaService = {
     const docenteId = user.entidadId;
     const bimestreId = input.notas[0]?.bimestre_id;
 
+    let bimestreNombre: string | undefined;
     if (bimestreId) {
       const bimestre = await prisma.bimestre.findUnique({
         where: { id: bimestreId },
-        select: { cerrado: true },
+        select: { cerrado: true, nombre: true },
       });
       if (bimestre?.cerrado) {
         throw new BusinessRuleError(
@@ -70,6 +73,7 @@ export const NotaService = {
           'No se pueden registrar notas en un bimestre cerrado.',
         );
       }
+      bimestreNombre = bimestre?.nombre;
     }
 
     if (user.rol === 'Docente') {
@@ -96,6 +100,19 @@ export const NotaService = {
       newValue: { total: notas.length, bimestreId },
     });
 
+    // Notifica a cada alumno afectado que se registraron/actualizaron notas
+    // (§Bloque 3). Una notificación por alumno, no por competencia, para no
+    // saturar con una nota por cada fila del bimestre.
+    const alumnosNotificados = [...new Set(notas.map((n) => n.alumno_id))];
+    for (const alumnoId of alumnosNotificados) {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.NOTA_REGISTRADA,
+        actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+        contexto: { alumnoId, bimestreNombre },
+        idempotencyExtra: `${alumnoId}:${bimestreId}`,
+      });
+    }
+
     return { registradas: notas.length, notas };
   },
 
@@ -113,7 +130,15 @@ export const NotaService = {
 
     // La nota cerrada será rechazada por el trigger tg_bloquear_nota_cerrada.
     // El error de PostgreSQL es capturado por errorResponse() como AppError.
-    return NotaRepository.update(id, input, user.perfilId);
+    const actualizada = await NotaRepository.update(id, input, user.perfilId);
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.NOTA_ACTUALIZADA,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: { alumnoId: nota.alumno_id, notaId: id },
+    });
+
+    return actualizada;
   },
 
   async desbloquear(id: string, input: DesbloquearNotaInput, user: JwtClaims) {

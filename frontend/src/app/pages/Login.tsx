@@ -119,7 +119,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="relative z-10">
-          <p className="text-sm text-white/30">© 2025 SGEI · Todos los derechos reservados</p>
+          <p className="text-sm text-white/30">© 2026  SGEI · Todos los derechos reservados</p>
         </div>
       </div>
 
@@ -184,7 +184,11 @@ export default function Login() {
                 <label htmlFor="password" className="block text-sm font-medium text-slate-700">
                   Contraseña
                 </label>
-                <button type="button" className="text-xs text-blue-600 hover:text-blue-800 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                >
                   ¿Olvidaste tu contraseña?
                 </button>
               </div>

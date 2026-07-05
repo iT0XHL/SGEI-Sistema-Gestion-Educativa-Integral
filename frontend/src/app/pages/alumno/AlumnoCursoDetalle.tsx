@@ -43,8 +43,8 @@ function estaVencida(fechaLimite: string): boolean {
 
 function actividadActivaBimestre(bimestres: Bimestre[]): Bimestre | null {
   const abiertos = bimestres.filter(b => !b.cerrado);
-  if (abiertos.length > 0) return abiertos.reduce((p, c) => c.numero > p.numero ? c : p);
-  if (bimestres.length > 0) return bimestres.reduce((p, c) => c.numero > p.numero ? c : p);
+  if (abiertos.length > 0) return abiertos.reduce((p, c) => c.numero < p.numero ? c : p);
+  if (bimestres.length > 0) return bimestres.reduce((p, c) => c.numero < p.numero ? c : p);
   return null;
 }
 
@@ -183,7 +183,7 @@ export default function AlumnoCursoDetalle() {
         setLoadingMats(false);
 
         const notasCurso = notasData.filter(
-          n => n.competencia?.curso?.nombre === foundAsig.curso.nombre,
+          n => n.competencia?.curso?.id === foundAsig.curso.id,
         );
         const vals = notasCurso.map(n => Number(n.nota_vigesimal));
         setPromedio(vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null);
@@ -351,7 +351,7 @@ export default function AlumnoCursoDetalle() {
               <p className="text-sm text-white/80 mt-0.5">
                 Prof. {asig.docente.nombres} {asig.docente.apellido_paterno}
               </p>
-              <p className="text-xs text-white/60 mt-1.5">Sección {asig.seccion.nombre}</p>
+              <p className="text-xs text-white/60 mt-1.5">{asig.seccion.grado.nombre} "{asig.seccion.nombre}"</p>
             </div>
             <div className="hidden sm:flex flex-col items-end gap-1">
               <p className="text-xs text-white/60">

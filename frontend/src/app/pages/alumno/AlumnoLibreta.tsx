@@ -4,8 +4,8 @@ import { useSession } from '../../../lib/hooks/useSession';
 import { libretasApi } from '../../../lib/api/libretas.api';
 import { bimestresApi as bimestresApiClient } from '../../../lib/api/bimestres.api';
 import { apiClient, ApiError } from '../../../lib/api/client';
-import { getCourseColor, gradeToLiteral, literalColor } from '../../../lib/courseColors';
-import type { LibretaRow, NotaLiteral } from '../../../types/nota';
+import { getCourseColor, literalColor } from '../../../lib/courseColors';
+import type { LibretaAgrupada } from '../../../types/nota';
 import type { Bimestre } from '../../../lib/api/bimestres.api';
 
 // ── Local types ────────────────────────────────────────────────────────────────
@@ -13,22 +13,7 @@ import type { Bimestre } from '../../../lib/api/bimestres.api';
 interface BimestreOpcion {
   numero: number;
   nombre: string;
-}
-
-interface CompetenciaAgrupada {
-  nombre:    string;
-  notaB1:    number | null;
-  notaB2:    number | null;
-  litActual: NotaLiteral | null;
-}
-
-interface FilaAgrupada {
-  curso:        string;
-  colorIndex:   number;
-  competencias: CompetenciaAgrupada[];
-  promedioB1:   number | null;
-  promedioB2:   number | null;
-  litPromedio:  string;
+  id:     string;
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -37,49 +22,58 @@ export default function AlumnoLibreta() {
   const { session, loading: sessionLoading } = useSession();
 
   // ── Data state ────────────────────────────────────────────────────────────────
-  const [rows,            setRows]            = useState<LibretaRow[]>([]);
   const [bimestresList,   setBimestresList]   = useState<Bimestre[]>([]);
-  const [institucionNombre, setInstitucionNombre] = useState('I.E. San José de Calasanz');
+  const [bimestresDisponibles, setBimestresDisponibles] = useState<BimestreOpcion[]>([]);
+  const [agrupada,        setAgrupada]        = useState<LibretaAgrupada | null>(null);
+  const [institucionNombre, setInstitucionNombre] = useState('');
+  const [alumnoInfo,      setAlumnoInfo]      = useState({ nombre: '', grado: '', seccion: '' });
 
   // ── UI state ──────────────────────────────────────────────────────────────────
   const [bimestreSeleccionado, setBimestreSeleccionado] = useState<number | null>(null);
   const [loading,       setLoading]       = useState(true);
+  const [loadingTabla,  setLoadingTabla]  = useState(false);
   const [bloqueada,     setBloqueada]     = useState(false);
   const [error,         setError]         = useState<string | null>(null);
   const [downloading,   setDownloading]   = useState(false);
   const [errorDescarga, setErrorDescarga] = useState<string | null>(null);
 
-  // ── Data loading ──────────────────────────────────────────────────────────────
+  // ── Carga inicial: bimestres disponibles (a partir de la libreta plana) ───────
 
   useEffect(() => {
     if (sessionLoading || !session) return;
-
     const alumnoId = session.entidadId;
     let aborted = false;
 
-    async function cargar() {
+    async function cargarInicial() {
       try {
         setLoading(true);
         setError(null);
         setBloqueada(false);
 
-        // Parallel: libreta rows + bimestres
-        const [libretaRows, bimestresData] = await Promise.all([
+        const [rows, bimestresData] = await Promise.all([
           libretasApi.obtener(alumnoId),
           bimestresApiClient.listar().catch((): Bimestre[] => []),
         ]);
         if (aborted) return;
 
-        // Institution name (endpoint may not exist — keep fallback)
         try {
           const inst = await apiClient.get<{ nombre: string }>('/api/institucion');
           if (!aborted) setInstitucionNombre(inst.nombre);
         } catch { /* keep default */ }
 
         if (aborted) return;
-        setRows(libretaRows);
         setBimestresList(bimestresData);
+        if (rows.length > 0) {
+          setAlumnoInfo({ nombre: rows[0]!.alumno_nombre, grado: rows[0]!.grado, seccion: rows[0]!.seccion });
+        }
 
+        const numerosConDatos = new Set(rows.map(r => r.bimestre));
+        const disponibles = bimestresData
+          .filter(b => numerosConDatos.has(b.numero))
+          .sort((a, b) => a.numero - b.numero)
+          .map(b => ({ numero: b.numero, nombre: b.nombre, id: b.id }));
+        setBimestresDisponibles(disponibles);
+        if (disponibles.length > 0) setBimestreSeleccionado(disponibles[disponibles.length - 1]!.numero);
       } catch (err) {
         if (aborted) return;
         if (err instanceof ApiError && err.code === 'LIBRETA_BLOQUEADA') {
@@ -92,107 +86,50 @@ export default function AlumnoLibreta() {
       }
     }
 
-    cargar();
+    cargarInicial();
     return () => { aborted = true; };
   }, [session, sessionLoading]);
 
-  // ── Bimestres disponibles (extraídos de las filas) ────────────────────────────
+  // ── Carga de la libreta agrupada (área → curso) para el bimestre elegido ──────
 
-  const bimestresDisponibles = useMemo((): BimestreOpcion[] => {
-    const seen   = new Set<number>();
-    const result: BimestreOpcion[] = [];
-    for (const r of rows) {
-      if (!seen.has(r.bimestre)) {
-        seen.add(r.bimestre);
-        result.push({ numero: r.bimestre, nombre: r.nombre_bimestre });
+  useEffect(() => {
+    if (sessionLoading || !session || bimestreSeleccionado === null) return;
+    const bimestreId = bimestresList.find(b => b.numero === bimestreSeleccionado)?.id;
+    if (!bimestreId) return;
+    let aborted = false;
+
+    async function cargarAgrupada() {
+      try {
+        setLoadingTabla(true);
+        const data = await libretasApi.obtenerAgrupado(session!.entidadId, bimestreId);
+        if (!aborted) setAgrupada(data);
+      } catch (err) {
+        if (!aborted) setError(err instanceof Error ? err.message : 'Error al cargar la libreta agrupada.');
+      } finally {
+        if (!aborted) setLoadingTabla(false);
       }
     }
-    return result.sort((a, b) => a.numero - b.numero);
-  }, [rows]);
 
-  // Auto-seleccionar el bimestre más reciente
-  useEffect(() => {
-    if (bimestresDisponibles.length > 0 && bimestreSeleccionado === null) {
-      setBimestreSeleccionado(
-        bimestresDisponibles[bimestresDisponibles.length - 1]!.numero,
-      );
-    }
-  }, [bimestresDisponibles, bimestreSeleccionado]);
-
-  // ── Agrupación en FilaAgrupada (con rowspan) ──────────────────────────────────
-
-  const filasAgrupadas = useMemo((): FilaAgrupada[] => {
-    if (!bimestreSeleccionado) return [];
-
-    const cursosUnicos = [...new Set(rows.map(r => r.curso))];
-
-    return cursosUnicos.map((curso, idx) => {
-      const filasCurso  = rows.filter(r => r.curso === curso);
-      const compNombres = [...new Set(filasCurso.map(r => r.competencia))];
-
-      const competencias: CompetenciaAgrupada[] = compNombres.map(comp => {
-        const filaB1     = filasCurso.find(r => r.competencia === comp && r.bimestre === 1);
-        const filaB2     = filasCurso.find(r => r.competencia === comp && r.bimestre === 2);
-        const filaActual = filasCurso.find(
-          r => r.competencia === comp && r.bimestre === bimestreSeleccionado,
-        );
-        return {
-          nombre:    comp,
-          notaB1:    filaB1?.nota_vigesimal    ?? null,
-          notaB2:    filaB2?.nota_vigesimal    ?? null,
-          litActual: (filaActual?.nota_literal ?? null) as NotaLiteral | null,
-        };
-      });
-
-      const notasB1    = competencias.map(c => c.notaB1).filter((n): n is number => n !== null);
-      const notasB2    = competencias.map(c => c.notaB2).filter((n): n is number => n !== null);
-      const promedioB1 = notasB1.length > 0 ? notasB1.reduce((a, b) => a + b, 0) / notasB1.length : null;
-      const promedioB2 = notasB2.length > 0 ? notasB2.reduce((a, b) => a + b, 0) / notasB2.length : null;
-      const promedioActual = bimestreSeleccionado === 1 ? promedioB1 : promedioB2;
-
-      return {
-        curso,
-        colorIndex: idx,
-        competencias,
-        promedioB1,
-        promedioB2,
-        litPromedio: promedioActual !== null ? gradeToLiteral(promedioActual) : '—',
-      };
-    });
-  }, [rows, bimestreSeleccionado]);
+    cargarAgrupada();
+    return () => { aborted = true; };
+  }, [session, sessionLoading, bimestreSeleccionado, bimestresList]);
 
   // ── Métricas del summary card ──────────────────────────────────────────────────
 
-  const promedioGeneralB1 = useMemo(() => {
-    const p = filasAgrupadas.map(f => f.promedioB1).filter((n): n is number => n !== null);
-    return p.length > 0 ? p.reduce((a, b) => a + b, 0) / p.length : null;
-  }, [filasAgrupadas]);
+  const areas = agrupada?.areas ?? [];
+  const todosCursos = useMemo(() => areas.flatMap(a => a.cursos), [areas]);
+  const cursosAprobados = todosCursos.filter(c => c.promedio !== null && c.promedio >= 11).length;
+  const cursosAD = todosCursos.filter(c => c.promedio !== null && c.promedio >= 18).length;
 
-  const promedioGeneralB2 = useMemo(() => {
-    const p = filasAgrupadas.map(f => f.promedioB2).filter((n): n is number => n !== null);
-    return p.length > 0 ? p.reduce((a, b) => a + b, 0) / p.length : null;
-  }, [filasAgrupadas]);
+  // "Promedio Anual" solo cuando hay más de un bimestre con datos; por ahora
+  // (solo Bimestre I) es igual al promedio general del bimestre seleccionado.
+  const esAnual = bimestresDisponibles.length > 1;
+  const promedioFinal = agrupada?.promedioAnual ?? null;
+  const literalFinal = agrupada?.literalAnual ?? '—';
+  const nombreBimestreActual = bimestresList.find(b => b.numero === bimestreSeleccionado)?.nombre ?? '';
 
-  const promedioGeneralActual = bimestreSeleccionado === 1 ? promedioGeneralB1 : promedioGeneralB2;
-
-  const cursosAprobados = filasAgrupadas.filter(f => {
-    const p = bimestreSeleccionado === 1 ? f.promedioB1 : f.promedioB2;
-    return p !== null && p >= 11;
-  }).length;
-
-  const cursosAD = filasAgrupadas.filter(f => {
-    const p = bimestreSeleccionado === 1 ? f.promedioB1 : f.promedioB2;
-    return p !== null && p >= 18;
-  }).length;
-
-  const overallLit = promedioGeneralActual !== null ? gradeToLiteral(promedioGeneralActual) : '—';
-  const nombreBimestreActual = bimestresDisponibles.find(b => b.numero === bimestreSeleccionado)?.nombre ?? '';
-
-  // ── Student info ──────────────────────────────────────────────────────────────
-
-  const alumnoNombre = rows[0]?.alumno_nombre ?? session?.nombre ?? '—';
-  const grado        = rows[0]?.grado   ?? '';
-  const seccion      = rows[0]?.seccion ?? '';
+  const alumnoNombre = alumnoInfo.nombre || session?.nombre || '—';
+  const { grado, seccion } = alumnoInfo;
 
   // ── PDF download ──────────────────────────────────────────────────────────────
 
@@ -223,44 +160,35 @@ export default function AlumnoLibreta() {
     }
   }
 
-  // ── Table rows (built imperatively to handle rowspan) ─────────────────────────
+  // ── Table rows (área → curso, con rowspan por área) ───────────────────────────
 
   const tableRows: React.ReactNode[] = [];
 
-  filasAgrupadas.forEach(area => {
-    const c         = getCourseColor(area.colorIndex);
-    const totalRows = area.competencias.length + 1; // competencias + fila promedio
+  areas.forEach((area, areaIdx) => {
+    const c = getCourseColor(areaIdx);
+    const totalRows = area.cursos.length + 1; // cursos + fila de promedio general del área
 
-    area.competencias.forEach((comp, i) => {
-      const litComp = comp.litActual ?? '—';
-
+    area.cursos.forEach((curso, i) => {
       tableRows.push(
-        <tr key={`${area.curso}-comp-${i}`} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+        <tr key={`${area.area_id ?? area.area_nombre}-curso-${curso.curso_id}`} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
           {i === 0 && (
-            <td
-              rowSpan={totalRows}
-              className="px-4 py-3 border-r border-slate-100 align-middle bg-white"
-              style={{ verticalAlign: 'middle' }}
-            >
+            <td rowSpan={totalRows} className="px-4 py-3 border-r border-slate-100 align-middle bg-white" style={{ verticalAlign: 'middle' }}>
               <div className="flex items-center gap-2 mb-0.5">
                 <div className={`size-2.5 rounded-full shrink-0 ${c.dot}`} />
-                <span className="font-semibold text-slate-800 text-sm">{area.curso}</span>
+                <span className="font-semibold text-slate-800 text-sm">{area.area_nombre}</span>
               </div>
             </td>
           )}
           <td className="px-4 py-2.5 text-sm text-slate-600 max-w-[260px]">
-            <p className="leading-snug">{comp.nombre}</p>
-          </td>
-          <td className="text-center px-3 py-2.5 text-slate-500 text-sm w-16">
-            {comp.notaB1 !== null ? comp.notaB1 : <span className="text-slate-300">—</span>}
+            <p className="leading-snug">{curso.curso}</p>
           </td>
           <td className="text-center px-3 py-2.5 font-semibold text-slate-800 text-sm w-16">
-            {comp.notaB2 !== null ? comp.notaB2 : <span className="text-slate-300">—</span>}
+            {curso.promedio !== null ? curso.promedio.toFixed(1) : <span className="text-slate-300">—</span>}
           </td>
           <td className="text-center px-3 py-2.5 w-16">
-            {comp.litActual ? (
-              <span className={`inline-flex items-center justify-center w-8 h-6 rounded-lg text-xs font-bold border ${literalColor(comp.litActual)}`}>
-                {comp.litActual}
+            {curso.literal ? (
+              <span className={`inline-flex items-center justify-center w-8 h-6 rounded-lg text-xs font-bold border ${literalColor(curso.literal)}`}>
+                {curso.literal}
               </span>
             ) : (
               <span className="text-slate-300 text-xs">—</span>
@@ -270,23 +198,19 @@ export default function AlumnoLibreta() {
       );
     });
 
-    // Fila de promedio del área
     tableRows.push(
-      <tr key={`${area.curso}-avg`} className={`border-b-2 border-slate-200 ${c.light}`}>
+      <tr key={`${area.area_id ?? area.area_nombre}-general`} className={`border-b-2 border-slate-200 ${c.light}`}>
         <td className="px-4 py-2.5">
-          <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Promedio del Área</span>
-        </td>
-        <td className="text-center px-3 py-2.5 text-sm font-bold text-slate-600">
-          {area.promedioB1 !== null ? area.promedioB1.toFixed(1) : '—'}
+          <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Promedio General</span>
         </td>
         <td className="text-center px-3 py-2.5">
           <span className="text-base font-bold text-slate-900">
-            {area.promedioB2 !== null ? area.promedioB2.toFixed(1) : '—'}
+            {area.promedioGeneral !== null ? area.promedioGeneral.toFixed(1) : '—'}
           </span>
         </td>
         <td className="text-center px-3 py-2.5">
-          <span className={`inline-flex items-center justify-center w-9 h-7 rounded-xl text-xs font-bold border ${literalColor(area.litPromedio)}`}>
-            {area.litPromedio}
+          <span className={`inline-flex items-center justify-center w-9 h-7 rounded-xl text-xs font-bold border ${literalColor(area.literalGeneral ?? '—')}`}>
+            {area.literalGeneral ?? '—'}
           </span>
         </td>
       </tr>,
@@ -305,7 +229,7 @@ export default function AlumnoLibreta() {
           <p className="text-sm text-slate-500 mt-0.5">
             {loading
               ? 'Cargando…'
-              : `${alumnoNombre}${grado ? ` · ${grado}° Sec. ${seccion}` : ''}`}
+              : `${alumnoNombre}${grado ? ` · ${grado} Sec. ${seccion}` : ''}`}
           </p>
         </div>
 
@@ -408,19 +332,19 @@ export default function AlumnoLibreta() {
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="sm:col-span-2 bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl p-5 text-white">
-              <p className="text-xs text-blue-200 uppercase tracking-wider mb-1">Promedio general</p>
+              <p className="text-xs text-blue-200 uppercase tracking-wider mb-1">{esAnual ? 'Promedio anual' : 'Promedio general'}</p>
               <p className="text-4xl font-bold leading-none">
-                {promedioGeneralActual !== null ? promedioGeneralActual.toFixed(2) : '—'}
+                {promedioFinal !== null ? promedioFinal.toFixed(2) : '—'}
               </p>
               <span className="inline-block mt-2 text-xs font-bold px-2 py-0.5 rounded-lg bg-white/20 text-white border border-white/30">
-                {overallLit}
+                {literalFinal}
               </span>
-              <p className="text-xs text-blue-200 mt-2">{nombreBimestreActual}</p>
+              <p className="text-xs text-blue-200 mt-2">{esAnual ? 'Todos los bimestres' : nombreBimestreActual}</p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Cursos aprobados</p>
               <p className="text-2xl font-bold text-slate-900">
-                {cursosAprobados}/{filasAgrupadas.length}
+                {cursosAprobados}/{todosCursos.length}
               </p>
               <p className="text-xs text-slate-400 mt-1">Nota mínima: 11</p>
             </div>
@@ -451,14 +375,20 @@ export default function AlumnoLibreta() {
                   <p className="text-xs text-slate-500">
                     Grado:{' '}
                     <span className="font-semibold text-slate-700">
-                      {grado ? `${grado}° Secundaria — Sec. ${seccion}` : '—'}
+                      {grado ? `${grado} — Sec. ${seccion}` : '—'}
                     </span>
                   </p>
                 </div>
               </div>
             </div>
 
-            {filasAgrupadas.length === 0 ? (
+            {loadingTabla ? (
+              <div className="p-5 space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-10 bg-slate-100 animate-pulse rounded-xl" />
+                ))}
+              </div>
+            ) : areas.length === 0 ? (
               <div className="py-16 text-center">
                 <p className="text-slate-400 text-sm">No hay notas registradas para este bimestre.</p>
               </div>
@@ -468,16 +398,13 @@ export default function AlumnoLibreta() {
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[160px] border-r border-slate-100">
-                        Área Curricular
+                        Área Académica
                       </th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[220px]">
-                        Competencia
+                        Curso
                       </th>
                       <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16">
-                        Bim. I
-                      </th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16">
-                        Bim. II
+                        {nombreBimestreActual || 'Nota'}
                       </th>
                       <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16">
                         Escala
@@ -489,17 +416,14 @@ export default function AlumnoLibreta() {
                     <tr className="bg-blue-50 border-t-2 border-blue-200">
                       <td className="px-4 py-3 border-r border-blue-100" />
                       <td className="px-4 py-3 text-sm font-bold text-blue-800 uppercase tracking-wider">
-                        Promedio General
-                      </td>
-                      <td className="text-center px-3 py-3 text-sm font-bold text-slate-600">
-                        {promedioGeneralB1 !== null ? promedioGeneralB1.toFixed(1) : '—'}
+                        {esAnual ? 'Promedio Anual' : 'Promedio General'}
                       </td>
                       <td className="text-center px-3 py-3 text-base font-bold text-blue-700">
-                        {promedioGeneralB2 !== null ? promedioGeneralB2.toFixed(1) : '—'}
+                        {promedioFinal !== null ? promedioFinal.toFixed(1) : '—'}
                       </td>
                       <td className="text-center px-3 py-3">
-                        <span className={`inline-flex items-center justify-center w-9 h-7 rounded-xl text-xs font-bold border ${literalColor(overallLit)}`}>
-                          {overallLit}
+                        <span className={`inline-flex items-center justify-center w-9 h-7 rounded-xl text-xs font-bold border ${literalColor(literalFinal)}`}>
+                          {literalFinal}
                         </span>
                       </td>
                     </tr>

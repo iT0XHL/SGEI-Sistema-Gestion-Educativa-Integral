@@ -89,7 +89,7 @@ export default function DocenteDashboard() {
 
         const bimestre = bimestres
           .filter(b => !b.cerrado)
-          .sort((a, b) => b.numero - a.numero)[0] ?? null;
+          .sort((a, b) => a.numero - b.numero)[0] ?? null;
         setBimestreActivo(bimestre);
 
         // Phase 2: student counts per unique section — parallel
@@ -273,7 +273,7 @@ export default function DocenteDashboard() {
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-800">{asig.curso.nombre}</p>
-                          <p className="text-xs text-slate-400">Sec. {asig.seccion.nombre}</p>
+                          <p className="text-xs text-slate-400">{asig.seccion.grado.nombre} "{asig.seccion.nombre}"</p>
                         </div>
                       </div>
                       <ChevronRight className="size-4 text-slate-300 group-hover:text-slate-500 transition-colors" />

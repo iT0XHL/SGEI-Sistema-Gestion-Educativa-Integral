@@ -7,7 +7,7 @@
 //
 //  Si pdfkit no está instalado, el endpoint devuelve 503.
 // ============================================================
-import type { LibretaRow } from '@/modules/libretas/libreta.repository';
+import type { LibretaRowDetallada } from '@/modules/libretas/libreta.repository';
 
 interface CursoGroup {
   curso:        string;
@@ -17,19 +17,32 @@ interface CursoGroup {
   }[];
 }
 
-function agruparPorCurso(rows: LibretaRow[]): CursoGroup[] {
-  const cursoMap = new Map<string, CursoGroup>();
+interface AreaGroup {
+  area:   string;
+  cursos: CursoGroup[];
+}
+
+/** Agrupa área → curso → competencia. Cursos sin área asignada se
+ *  renderizan como su propia banda (usando su propio nombre). */
+function agruparPorArea(rows: LibretaRowDetallada[]): AreaGroup[] {
+  const areaMap = new Map<string, AreaGroup>();
 
   for (const row of rows) {
-    if (!cursoMap.has(row.curso)) {
-      cursoMap.set(row.curso, { curso: row.curso, competencias: [] });
-    }
-    const grupo = cursoMap.get(row.curso)!;
+    const areaKey    = row.area_id ?? `__curso_${row.curso_id}`;
+    const areaNombre = row.area_nombre ?? row.curso;
+    if (!areaMap.has(areaKey)) areaMap.set(areaKey, { area: areaNombre, cursos: [] });
+    const area = areaMap.get(areaKey)!;
 
-    let comp = grupo.competencias.find((c) => c.nombre === row.competencia);
+    let curso = area.cursos.find((c) => c.curso === row.curso);
+    if (!curso) {
+      curso = { curso: row.curso, competencias: [] };
+      area.cursos.push(curso);
+    }
+
+    let comp = curso.competencias.find((c) => c.nombre === row.competencia);
     if (!comp) {
       comp = { nombre: row.competencia, notas: new Map() };
-      grupo.competencias.push(comp);
+      curso.competencias.push(comp);
     }
     comp.notas.set(row.bimestre, {
       vigesimal: row.nota_vigesimal,
@@ -37,14 +50,27 @@ function agruparPorCurso(rows: LibretaRow[]): CursoGroup[] {
     });
   }
 
-  return Array.from(cursoMap.values());
+  return Array.from(areaMap.values());
 }
 
-function bimestresPresentes(rows: LibretaRow[]): number[] {
+function bimestresPresentes(rows: LibretaRowDetallada[]): number[] {
   return [...new Set(rows.map((r) => r.bimestre))].sort((a, b) => a - b);
 }
 
-export async function buildLibretaPdf(rows: LibretaRow[]): Promise<Buffer> {
+/** Convierte un promedio vigesimal a literal usando la escala estándar (AD/A/B/C) mostrada en el pie del documento. */
+function literalDeVigesimal(valor: number | null): string {
+  if (valor === null) return '—';
+  if (valor >= 18) return 'AD';
+  if (valor >= 14) return 'A';
+  if (valor >= 11) return 'B';
+  return 'C';
+}
+
+export async function buildLibretaPdf(
+  rows: LibretaRowDetallada[],
+  opciones: { soloLiteral?: boolean } = {},
+): Promise<Buffer> {
+  const soloLiteral = opciones.soloLiteral ?? false;
   // Dynamic import — no rompe el build si pdfkit no está instalado
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let PDFDocument: any;
@@ -54,9 +80,32 @@ export async function buildLibretaPdf(rows: LibretaRow[]): Promise<Buffer> {
     throw new Error('pdfkit no está instalado. Ejecuta: pnpm add pdfkit @types/pdfkit --filter backend');
   }
 
-  const meta     = rows[0];
-  const cursos   = agruparPorCurso(rows);
-  const bims     = bimestresPresentes(rows);
+  const meta   = rows[0];
+  const areas  = agruparPorArea(rows);
+  const bims   = bimestresPresentes(rows);
+
+  // Peso por (curso, competencia, bimestre) — para el promedio ponderado real.
+  const pesoPorCompetencia = new Map<string, number>();
+  for (const r of rows) pesoPorCompetencia.set(`${r.curso}::${r.competencia}`, r.peso);
+
+  function promedioPonderadoCurso(curso: CursoGroup, bimestre: number): number | null {
+    let sumPonderada = 0;
+    let sumPeso = 0;
+    for (const comp of curso.competencias) {
+      const n = comp.notas.get(bimestre);
+      if (n?.vigesimal != null) {
+        const peso = pesoPorCompetencia.get(`${curso.curso}::${comp.nombre}`) ?? 100;
+        sumPonderada += n.vigesimal * peso;
+        sumPeso += peso;
+      }
+    }
+    return sumPeso > 0 ? sumPonderada / sumPeso : null;
+  }
+
+  function promedioAreaEnBimestre(area: AreaGroup, bimestre: number): number | null {
+    const proms = area.cursos.map((c) => promedioPonderadoCurso(c, bimestre)).filter((n): n is number => n !== null);
+    return proms.length > 0 ? proms.reduce((a, b) => a + b, 0) / proms.length : null;
+  }
 
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
@@ -120,62 +169,82 @@ export async function buildLibretaPdf(rows: LibretaRow[]): Promise<Buffer> {
     });
     doc.y = headerY + HEADER_H;
 
-    // Filas
+    // Filas: área → curso → competencia, + fila "PROMEDIO GENERAL" por área
     let rowBg = false;
-    for (const grupo of cursos) {
-      const startY = doc.y;
-      const totalRows = grupo.competencias.length;
+    for (const area of areas) {
+      const totalCompRows = area.cursos.reduce((acc, c) => acc + c.competencias.length, 0);
+      const totalRows = totalCompRows + area.cursos.length; // + 1 fila "Promedio del curso" cada uno
       const groupH = totalRows * ROW_H;
 
-      // Nueva página si no cabe
       if (doc.y + groupH > doc.page.height - 80) {
         doc.addPage();
       }
 
       const groupStartY = doc.y;
 
-      // Fondo alternado para el grupo
       if (rowBg) {
         doc.rect(LEFT, groupStartY, W, groupH).fillColor('#f8fafc').fill();
       }
       rowBg = !rowBg;
 
-      // Nombre del área (lado izquierdo, centrado verticalmente)
+      // Nombre del área (lado izquierdo, centrado verticalmente sobre todo el bloque)
       doc.fillColor(BLUE)
          .fontSize(8)
          .font('Helvetica-Bold')
-         .text(grupo.curso, LEFT + 4, groupStartY + (groupH - 8) / 2, {
+         .text(area.area, LEFT + 4, groupStartY + (groupH - 8) / 2, {
            width:     COL_CURSO - 8,
            lineBreak: false,
          });
 
-      // Competencias
-      grupo.competencias.forEach((comp, idx) => {
-        const cy = groupStartY + idx * ROW_H;
+      let cy = groupStartY;
+      for (const curso of area.cursos) {
+        curso.competencias.forEach((comp) => {
+          doc.fillColor('#334155')
+             .fontSize(7.5)
+             .font('Helvetica')
+             .text(`${curso.curso} — ${comp.nombre}`, LEFT + COL_CURSO + 4, cy + 4, {
+               width:     COL_COMP - 8,
+               lineBreak: false,
+               ellipsis:  true,
+             });
 
-        doc.fillColor('#334155')
-           .fontSize(7.5)
-           .font('Helvetica')
-           .text(comp.nombre, LEFT + COL_CURSO + 4, cy + 4, {
+          bims.forEach((b, bi) => {
+            const nota = comp.notas.get(b);
+            const x    = LEFT + COL_CURSO + COL_COMP + bi * COL_BIM;
+            const vstr = nota?.vigesimal !== null && nota?.vigesimal !== undefined
+              ? nota.vigesimal.toFixed(1)
+              : '—';
+            const lstr = nota?.literal ?? '';
+            const texto = soloLiteral ? (lstr || '—') : `${vstr} ${lstr}`;
+
+            doc.fillColor('#1e293b')
+               .fontSize(7.5)
+               .font('Helvetica-Bold')
+               .text(texto, x + 2, cy + 4, { width: COL_BIM - 4, align: 'center' });
+          });
+
+          cy += ROW_H;
+        });
+
+        // Fila "Promedio del curso" (ponderado por peso de sus criterios)
+        doc.fillColor('#475569')
+           .fontSize(7)
+           .font('Helvetica-Bold')
+           .text(`Promedio: ${curso.curso}`, LEFT + COL_CURSO + 4, cy + 4, {
              width:     COL_COMP - 8,
              lineBreak: false,
-             ellipsis:  true,
            });
-
         bims.forEach((b, bi) => {
-          const nota = comp.notas.get(b);
+          const prom = promedioPonderadoCurso(curso, b);
           const x    = LEFT + COL_CURSO + COL_COMP + bi * COL_BIM;
-          const vstr = nota?.vigesimal !== null && nota?.vigesimal !== undefined
-            ? nota.vigesimal.toFixed(1)
-            : '—';
-          const lstr = nota?.literal ?? '';
-
+          const textoProm = soloLiteral ? literalDeVigesimal(prom) : (prom !== null ? prom.toFixed(1) : '—');
           doc.fillColor('#1e293b')
-             .fontSize(7.5)
+             .fontSize(7)
              .font('Helvetica-Bold')
-             .text(`${vstr} ${lstr}`, x + 2, cy + 4, { width: COL_BIM - 4, align: 'center' });
+             .text(textoProm, x + 2, cy + 4, { width: COL_BIM - 4, align: 'center' });
         });
-      });
+        cy += ROW_H;
+      }
 
       // Borde inferior del grupo
       doc.moveTo(LEFT, groupStartY + groupH)
@@ -185,6 +254,24 @@ export async function buildLibretaPdf(rows: LibretaRow[]): Promise<Buffer> {
          .stroke();
 
       doc.y = groupStartY + groupH;
+
+      // Fila "PROMEDIO GENERAL" del área (promedio simple de sus cursos)
+      const genY = doc.y;
+      doc.rect(LEFT, genY, W, ROW_H).fillColor('#dbeafe').fill();
+      doc.fillColor(BLUE)
+         .fontSize(7.5)
+         .font('Helvetica-Bold')
+         .text('PROMEDIO GENERAL', LEFT + COL_CURSO + 4, genY + 4, { width: COL_COMP - 8 });
+      bims.forEach((b, bi) => {
+        const prom = promedioAreaEnBimestre(area, b);
+        const x = LEFT + COL_CURSO + COL_COMP + bi * COL_BIM;
+        const textoProm = soloLiteral ? literalDeVigesimal(prom) : (prom !== null ? prom.toFixed(1) : '—');
+        doc.fillColor(BLUE)
+           .fontSize(7.5)
+           .font('Helvetica-Bold')
+           .text(textoProm, x + 2, genY + 4, { width: COL_BIM - 4, align: 'center' });
+      });
+      doc.y = genY + ROW_H;
     }
 
     // ── Escala literal ──────────────────────────────────────────

@@ -10,7 +10,7 @@
 //  Requiere la dependencia `docx`. Si no está instalada, el endpoint
 //  devuelve un error claro (igual que pdfkit en el builder PDF).
 // ============================================================
-import type { LibretaRow } from '@/modules/libretas/libreta.repository';
+import type { LibretaRowDetallada } from '@/modules/libretas/libreta.repository';
 
 /** Mismo contrato que el builder PDF: institución + estudiante + secciones. */
 export interface LibretaDocxMeta {
@@ -37,30 +37,49 @@ export interface LibretaDocxMeta {
   }[];
 }
 
-interface AreaGroup {
-  area: string;
-  competencias: {
-    nombre: string;
-    notas: Map<number, { vigesimal: number | null; literal: string | null }>;
-  }[];
+interface CompGroup {
+  nombre: string;
+  peso:   number;
+  notas:  Map<number, { vigesimal: number | null; literal: string | null }>;
 }
 
-function agruparPorArea(rows: LibretaRow[]): AreaGroup[] {
-  const map = new Map<string, AreaGroup>();
+interface CursoGroup {
+  curso:        string;
+  competencias: CompGroup[];
+}
+
+interface AreaGroup {
+  area:   string;
+  cursos: CursoGroup[];
+}
+
+/** Agrupa área → curso → competencia. Cursos sin área asignada se
+ *  renderizan como su propia banda (usando su propio nombre). */
+function agruparPorArea(rows: LibretaRowDetallada[]): AreaGroup[] {
+  const areaMap = new Map<string, AreaGroup>();
   for (const row of rows) {
-    if (!map.has(row.curso)) map.set(row.curso, { area: row.curso, competencias: [] });
-    const grupo = map.get(row.curso)!;
-    let comp = grupo.competencias.find((c) => c.nombre === row.competencia);
+    const areaKey    = row.area_id ?? `__curso_${row.curso_id}`;
+    const areaNombre = row.area_nombre ?? row.curso;
+    if (!areaMap.has(areaKey)) areaMap.set(areaKey, { area: areaNombre, cursos: [] });
+    const area = areaMap.get(areaKey)!;
+
+    let curso = area.cursos.find((c) => c.curso === row.curso);
+    if (!curso) {
+      curso = { curso: row.curso, competencias: [] };
+      area.cursos.push(curso);
+    }
+
+    let comp = curso.competencias.find((c) => c.nombre === row.competencia);
     if (!comp) {
-      comp = { nombre: row.competencia, notas: new Map() };
-      grupo.competencias.push(comp);
+      comp = { nombre: row.competencia, peso: row.peso, notas: new Map() };
+      curso.competencias.push(comp);
     }
     comp.notas.set(row.bimestre, { vigesimal: row.nota_vigesimal, literal: row.nota_literal });
   }
-  return Array.from(map.values());
+  return Array.from(areaMap.values());
 }
 
-function bimestresPresentes(rows: LibretaRow[]): number[] {
+function bimestresPresentes(rows: LibretaRowDetallada[]): number[] {
   return [...new Set(rows.map((r) => r.bimestre))].sort((a, b) => a - b);
 }
 
@@ -71,20 +90,34 @@ function vigToLiteral(v: number): string {
   return 'C';
 }
 
-function areaCalif(comps: AreaGroup['competencias'], periodo: number): string {
-  const vals = comps
-    .map((c) => c.notas.get(periodo)?.vigesimal)
-    .filter((v): v is number => v !== null && v !== undefined);
+/** Promedio ponderado (por peso de criterio) de un curso en un periodo. */
+function promedioCurso(curso: CursoGroup, periodo: number): number | null {
+  let sumPonderada = 0;
+  let sumPeso = 0;
+  for (const comp of curso.competencias) {
+    const n = comp.notas.get(periodo);
+    if (n?.vigesimal != null) {
+      sumPonderada += n.vigesimal * comp.peso;
+      sumPeso += comp.peso;
+    }
+  }
+  return sumPeso > 0 ? sumPonderada / sumPeso : null;
+}
+
+function areaCalif(cursos: CursoGroup[], periodo: number): string {
+  const vals = cursos
+    .map((c) => promedioCurso(c, periodo))
+    .filter((v): v is number => v !== null);
   if (vals.length === 0) return '';
   return vigToLiteral(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
 
-function areaCalifFinal(comps: AreaGroup['competencias'], periodos: number[]): string {
+function areaCalifFinal(cursos: CursoGroup[], periodos: number[]): string {
   const periodAvgs: number[] = [];
   for (const p of periodos) {
-    const vals = comps
-      .map((c) => c.notas.get(p)?.vigesimal)
-      .filter((v): v is number => v !== null && v !== undefined);
+    const vals = cursos
+      .map((c) => promedioCurso(c, p))
+      .filter((v): v is number => v !== null);
     if (vals.length > 0) {
       periodAvgs.push(vals.reduce((a, b) => a + b, 0) / vals.length);
     }
@@ -94,7 +127,7 @@ function areaCalifFinal(comps: AreaGroup['competencias'], periodos: number[]): s
 }
 
 export async function buildLibretaDocx(
-  rows: LibretaRow[],
+  rows: LibretaRowDetallada[],
   meta: LibretaDocxMeta = {},
 ): Promise<Buffer> {
   // Import dinámico — no rompe el build si `docx` no está instalado.
@@ -207,29 +240,46 @@ export async function buildLibretaDocx(
   for (const grupo of areas) {
     const fill = zebra ? LABELBG : undefined;
     zebra = !zebra;
-    const K = grupo.competencias.length;
+    // Filas que ocupa el área: cada curso aporta sus competencias + 1 fila "Promedio: curso".
+    const K = grupo.cursos.reduce((acc, c) => acc + c.competencias.length + 1, 0);
 
-    grupo.competencias.forEach((comp, idx) => {
-      const cells: InstanceType<typeof TableCell>[] = [];
-      if (idx === 0) {
-        cells.push(cell(grupo.area, { rowSpan: K + 1, bold: true, color: NAVY, fill, width: cArea, align: AlignmentType.LEFT }));
-      }
-      cells.push(cell(comp.nombre, { size: 14, fill, width: compW, align: AlignmentType.LEFT }));
-      periodos.forEach((p) => {
-        const n = comp.notas.get(p);
-        const txt = n?.literal ?? (n?.vigesimal != null ? String(Math.round(n.vigesimal)) : '');
-        cells.push(cell(txt, { bold: true, size: 16, align: AlignmentType.CENTER, fill, width: perW }));
+    let first = true;
+    for (const curso of grupo.cursos) {
+      curso.competencias.forEach((comp) => {
+        const cells: InstanceType<typeof TableCell>[] = [];
+        if (first) {
+          cells.push(cell(grupo.area, { rowSpan: K, bold: true, color: NAVY, fill, width: cArea, align: AlignmentType.LEFT }));
+          first = false;
+        }
+        cells.push(cell(`${curso.curso} — ${comp.nombre}`, { size: 14, fill, width: compW, align: AlignmentType.LEFT }));
+        periodos.forEach((p) => {
+          const n = comp.notas.get(p);
+          const txt = n?.literal ?? (n?.vigesimal != null ? String(Math.round(n.vigesimal)) : '');
+          cells.push(cell(txt, { bold: true, size: 16, align: AlignmentType.CENTER, fill, width: perW }));
+        });
+        cells.push(cell('', { fill, width: cFinal }));
+        gradeRows.push(new TableRow({ children: cells }));
       });
-      cells.push(cell('', { fill, width: cFinal }));
-      gradeRows.push(new TableRow({ children: cells }));
-    });
 
-    // Fila CALIFICATIVO DE ÁREA (la celda de área queda fusionada arriba)
+      // Fila "Promedio: curso" (ponderado por peso de sus criterios)
+      gradeRows.push(new TableRow({
+        children: [
+          cell(`Promedio: ${curso.curso}`, { bold: true, size: 13, fill, width: compW, align: AlignmentType.RIGHT }),
+          ...periodos.map((p) => {
+            const prom = promedioCurso(curso, p);
+            return cell(prom !== null ? prom.toFixed(1) : '', { bold: true, size: 14, align: AlignmentType.CENTER, fill, width: perW });
+          }),
+          cell('', { fill, width: cFinal }),
+        ],
+      }));
+    }
+
+    // Fila CALIFICATIVO DE ÁREA (promedio simple de los cursos del área)
     gradeRows.push(new TableRow({
       children: [
         cell('CALIFICATIVO DE ÁREA', { bold: true, size: 13, align: AlignmentType.RIGHT, fill: AREABG, width: compW }),
-        ...periodos.map((p) => cell(areaCalif(grupo.competencias, p), { bold: true, size: 16, align: AlignmentType.CENTER, fill: AREABG, width: perW })),
-        cell(areaCalifFinal(grupo.competencias, periodos), { bold: true, size: 16, align: AlignmentType.CENTER, fill: AREABG, width: cFinal }),
+        ...periodos.map((p) => cell(areaCalif(grupo.cursos, p), { bold: true, size: 16, align: AlignmentType.CENTER, fill: AREABG, width: perW })),
+        cell(areaCalifFinal(grupo.cursos, periodos), { bold: true, size: 16, align: AlignmentType.CENTER, fill: AREABG, width: cFinal }),
       ],
     }));
   }

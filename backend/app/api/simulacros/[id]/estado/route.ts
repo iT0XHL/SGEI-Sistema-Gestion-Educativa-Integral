@@ -16,6 +16,6 @@ export const PATCH = withRole(['Admin', 'Docente'], async (req, { params, user }
   if (user.rol === 'Docente' && estado !== 'Activo') {
     throw new ForbiddenError('FORBIDDEN', 'Solo el administrador puede concluir el simulacro.');
   }
-  const sim = await SimulacroService.cambiarEstado(params.id, estado);
+  const sim = await SimulacroService.cambiarEstado(params.id, estado, user);
   return ok(sim, `Simulacro ${estado === 'Activo' ? 'activado' : estado === 'Concluido' ? 'concluido' : 'actualizado'}`);
 });

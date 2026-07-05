@@ -4,9 +4,11 @@ import {
   FileOutput, Info, X, Loader2,
 } from 'lucide-react';
 import { siagieApi } from '@/lib/api/siagie.api';
+import { periodosApi } from '../../../lib/api/periodos.api';
 import type { SiagieStats, SiagieValidacion } from '@/types/siagie';
 
 export default function SecretariaSIAGIE() {
+  const [periodoId,  setPeriodoId]  = useState<string | undefined>(undefined);
   const [stats,      setStats]      = useState<SiagieStats | null>(null);
   const [checks,     setChecks]     = useState<SiagieValidacion[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -23,7 +25,12 @@ export default function SecretariaSIAGIE() {
     try {
       setLoading(true);
       setLoadError(null);
-      const [s, v] = await Promise.all([siagieApi.stats(), siagieApi.validar()]);
+      // El acta SIAGIE debe limitarse SIEMPRE al año lectivo activo, nunca a
+      // todos los períodos históricos a la vez.
+      const { periodo } = await periodosApi.activo();
+      if (!periodo) throw new Error('No hay un período académico activo configurado.');
+      setPeriodoId(periodo.id);
+      const [s, v] = await Promise.all([siagieApi.stats(periodo.id), siagieApi.validar(periodo.id)]);
       setStats(s);
       setChecks(v);
     } catch (e) {
@@ -36,10 +43,11 @@ export default function SecretariaSIAGIE() {
   useEffect(() => { loadData(); }, []);
 
   async function handleValidate() {
+    if (!periodoId) return;
     setValidating(true);
     setExported(false);
     try {
-      const v = await siagieApi.validar();
+      const v = await siagieApi.validar(periodoId);
       setChecks(v);
       setDismissed(new Set());
     } catch {
@@ -50,11 +58,12 @@ export default function SecretariaSIAGIE() {
   }
 
   async function handleExport() {
+    if (!periodoId) return;
     setExporting(true);
     setExportErr(null);
     setExported(false);
     try {
-      await siagieApi.exportar();
+      await siagieApi.exportar(periodoId);
       setExported(true);
     } catch (e) {
       setExportErr((e as Error).message ?? 'Error al exportar.');

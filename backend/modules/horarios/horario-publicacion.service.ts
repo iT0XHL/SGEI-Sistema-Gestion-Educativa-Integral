@@ -14,6 +14,9 @@ import { AuditService } from '@/modules/auditoria/audit.service';
 import { PeriodoService } from '@/modules/periodo/periodo.service';
 import { HorarioPublicacionRepository } from './horario-publicacion.repository';
 import { HorarioDescansoRepository } from './horario-descanso.repository';
+import { NivelHorarioConfigRepository } from './nivel-horario-config.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import type { JwtClaims } from '@/lib/jwt';
 
 function assertAdminOnly(user: JwtClaims) {
@@ -89,7 +92,7 @@ export const HorarioPublicacionService = {
     assertAdminOnly(user);
     const periodoId = await resolverPeriodoId(periodoIdInput);
 
-    const docente = await prisma.docente.findUnique({ where: { id: docenteId }, select: { id: true } });
+    const docente = await prisma.docente.findUnique({ where: { id: docenteId }, select: { id: true, perfil_usuario_id: true } });
     if (!docente) throw new NotFoundError('Docente');
 
     const bloques = await HorarioPublicacionRepository.bloquesVivosDeDocente(docenteId, periodoId);
@@ -108,6 +111,12 @@ export const HorarioPublicacionService = {
       newValue: { tipo: 'DOCENTE', periodoId, total_bloques: bloques.length },
     });
 
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.HORARIO_ACTUALIZADO,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: { docenteId, destinatariosExplicitos: [docente.perfil_usuario_id] },
+    });
+
     return resultado;
   },
 
@@ -115,7 +124,7 @@ export const HorarioPublicacionService = {
     assertAdminOnly(user);
     const periodoId = await resolverPeriodoId(periodoIdInput);
 
-    const seccion = await prisma.seccion.findUnique({ where: { id: seccionId }, select: { id: true } });
+    const seccion = await prisma.seccion.findUnique({ where: { id: seccionId }, select: { id: true, nombre: true, grado: { select: { nombre: true } } } });
     if (!seccion) throw new NotFoundError('Sección');
 
     const bloques = await HorarioPublicacionRepository.bloquesVivosDeSeccion(seccionId, periodoId);
@@ -132,6 +141,12 @@ export const HorarioPublicacionService = {
       entidadAfectada: 'horario_publicacion',
       entidadId: seccionId,
       newValue: { tipo: 'SECCION', periodoId, total_bloques: bloques.length },
+    });
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.HORARIO_ACTUALIZADO,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: { seccionId, seccionNombre: `${seccion.grado.nombre} "${seccion.nombre}"` },
     });
 
     return resultado;
@@ -181,9 +196,12 @@ export const HorarioPublicacionService = {
       select: { seccion: { select: { grado: { select: { nivel_id: true } } } } },
     });
     const nivelIds = [...new Set(asignaciones.map((a) => a.seccion.grado.nivel_id))];
-    const descansos = nivelIds.length ? await HorarioDescansoRepository.listarPorNiveles(nivelIds, periodoId) : [];
+    const [descansos, jornadas] = await Promise.all([
+      nivelIds.length ? HorarioDescansoRepository.listarPorNiveles(nivelIds, periodoId) : Promise.resolve([]),
+      nivelIds.length ? NivelHorarioConfigRepository.listarPorNiveles(nivelIds, periodoId) : Promise.resolve([]),
+    ]);
 
-    return { ...publicado, descansos };
+    return { ...publicado, descansos, jornadas };
   },
 
   /**
@@ -205,8 +223,11 @@ export const HorarioPublicacionService = {
     const publicado = await HorarioPublicacionRepository.obtenerPublicado('SECCION', alumno.seccion_id, periodoId);
     if (!publicado) throw new NotFoundError('Horario publicado de la sección');
 
-    const descansos = await HorarioDescansoRepository.listarPorNiveles([alumno.seccion.grado.nivel_id], periodoId);
+    const [descansos, jornadas] = await Promise.all([
+      HorarioDescansoRepository.listarPorNiveles([alumno.seccion.grado.nivel_id], periodoId),
+      NivelHorarioConfigRepository.listarPorNiveles([alumno.seccion.grado.nivel_id], periodoId),
+    ]);
 
-    return { ...publicado, descansos };
+    return { ...publicado, descansos, jornadas };
   },
 };

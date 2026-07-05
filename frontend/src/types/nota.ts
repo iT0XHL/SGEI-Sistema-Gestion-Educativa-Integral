@@ -23,7 +23,7 @@ export interface Nota {
   competencia?: {
     nombre: string;
     tipo:   string;
-    curso?: { nombre: string };
+    curso?: { id: string; nombre: string };
   };
   bimestre?: {
     nombre: string;
@@ -87,6 +87,37 @@ export interface LibretaRow {
   cerrada:          boolean;
   fecha_registro:   string | null;
   bloquea_libreta:  boolean;
+}
+
+// ── Libreta agrupada (área → curso → criterio, con pesos) ─────
+export interface LibretaRowDetallada extends LibretaRow {
+  curso_id:       string;
+  competencia_id: string;
+  area_id:        string | null;
+  area_nombre:    string | null;
+  peso:           number;
+}
+
+export interface CursoAgrupado {
+  curso_id:     string;
+  curso:        string;
+  competencias: LibretaRowDetallada[];
+  promedio:     number | null;
+  literal:      string | null;
+}
+
+export interface AreaAgrupada {
+  area_id:         string | null;
+  area_nombre:     string;
+  cursos:          CursoAgrupado[];
+  promedioGeneral: number | null;
+  literalGeneral:  string | null;
+}
+
+export interface LibretaAgrupada {
+  areas:         AreaAgrupada[];
+  promedioAnual: number | null;
+  literalAnual:  string | null;
 }
 
 // ── Label helpers ─────────────────────────────────────────────

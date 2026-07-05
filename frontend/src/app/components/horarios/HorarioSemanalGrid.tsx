@@ -1,6 +1,7 @@
 import { X, Edit2 } from 'lucide-react';
 import { COLOR_MAP } from '../../data/mockData';
-import { HOURS, DAYS, DAY_TO_NUMBER, seSolapan } from './horarioConstants';
+import { DAYS, DAY_TO_NUMBER, seSolapan } from './horarioConstants';
+import type { Franja } from './horarioSlots';
 
 const COLOR_LIST = ['blue', 'emerald', 'amber', 'purple', 'indigo', 'red', 'pink', 'teal'] as const;
 
@@ -19,36 +20,28 @@ export interface HorarioGridBloque {
   nivel?: string;
 }
 
-// Forma mínima compatible con DescansoDTO (frontend/src/lib/api/horarios.api.ts)
-// sin importarlo directamente, para no acoplar el grid a esa capa.
-export interface HorarioGridDescanso {
-  tipo: 'RECREO' | 'REFRIGERIO';
-  hora_inicio: string;
-  hora_fin: string;
-}
-
 interface HorarioSemanalGridProps {
   bloques: HorarioGridBloque[];
   mode: 'edit' | 'readonly';
   /** Etiqueta secundaria a mostrar bajo el curso: la sección (vista por Docente) o el docente (vista por Sección/Alumno). */
   mostrarEtiqueta?: 'docente' | 'seccion' | 'ninguna';
-  /** Recreo/Refrigerio del/los nivel(es) relevantes — mismo horario para Docente y Alumno. */
-  descansos?: HorarioGridDescanso[];
+  /** Franjas del nivel (o niveles combinados) — filas de clase + Recreo/Refrigerio en su lugar real. */
+  franjas: Franja[];
   onEdit?: (bloque: HorarioGridBloque) => void;
   onDelete?: (bloque: HorarioGridBloque) => void;
 }
 
-const DESCANSO_LABEL: Record<HorarioGridDescanso['tipo'], string> = {
+const DESCANSO_LABEL: Record<'RECREO' | 'REFRIGERIO', string> = {
   RECREO: 'Recreo',
   REFRIGERIO: 'Refrigerio / Almuerzo',
 };
 
-const DESCANSO_STYLE: Record<HorarioGridDescanso['tipo'], string> = {
+const DESCANSO_STYLE: Record<'RECREO' | 'REFRIGERIO', string> = {
   RECREO: 'bg-amber-50 border-amber-200 text-amber-700',
   REFRIGERIO: 'bg-orange-50 border-orange-200 text-orange-700',
 };
 
-export function HorarioSemanalGrid({ bloques, mode, mostrarEtiqueta = 'ninguna', descansos = [], onEdit, onDelete }: HorarioSemanalGridProps) {
+export function HorarioSemanalGrid({ bloques, mode, mostrarEtiqueta = 'ninguna', franjas, onEdit, onDelete }: HorarioSemanalGridProps) {
   const cursoColor = new Map<string, typeof COLOR_LIST[number]>();
   let colorIdx = 0;
   function colorDe(curso: string) {
@@ -58,9 +51,6 @@ export function HorarioSemanalGrid({ bloques, mode, mostrarEtiqueta = 'ninguna',
     }
     return COLOR_MAP[cursoColor.get(curso)!];
   }
-
-  // Franjas horarias fijas: cada par consecutivo de HOURS es una fila.
-  const slots = HOURS.slice(0, -1).map((h, i) => ({ inicio: h, fin: HOURS[i + 1]! }));
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -73,19 +63,17 @@ export function HorarioSemanalGrid({ bloques, mode, mostrarEtiqueta = 'ninguna',
           </div>
         ))}
 
-        {/* Filas por franja horaria */}
-        {slots.map((slot) => {
-          const descanso = descansos.find((d) => seSolapan(slot.inicio, slot.fin, d.hora_inicio, d.hora_fin));
-
-          if (descanso) {
+        {/* Filas por franja */}
+        {franjas.map((franja) => {
+          if (franja.tipo !== 'CLASE') {
             return (
-              <div key={slot.inicio} className="contents">
+              <div key={`${franja.tipo}-${franja.hora_inicio}`} className="contents">
                 <div className="border-b border-r border-slate-100 px-1 py-2 text-center bg-slate-50">
-                  <p className="text-[10px] text-slate-400">{slot.inicio}</p>
+                  <p className="text-[10px] text-slate-400">{franja.hora_inicio}</p>
                 </div>
-                <div className={`col-span-5 border-b border-slate-100 px-3 py-2 flex items-center justify-center gap-2 border ${DESCANSO_STYLE[descanso.tipo]}`}>
+                <div className={`col-span-5 border-b border-slate-100 px-3 py-2 flex items-center justify-center gap-2 border ${DESCANSO_STYLE[franja.tipo]}`}>
                   <p className="text-xs font-semibold">
-                    {DESCANSO_LABEL[descanso.tipo]} · {descanso.hora_inicio}–{descanso.hora_fin}
+                    {DESCANSO_LABEL[franja.tipo]} · {franja.hora_inicio}–{franja.hora_fin}
                   </p>
                 </div>
               </div>
@@ -93,13 +81,13 @@ export function HorarioSemanalGrid({ bloques, mode, mostrarEtiqueta = 'ninguna',
           }
 
           return (
-            <div key={slot.inicio} className="contents">
+            <div key={`CLASE-${franja.hora_inicio}`} className="contents">
               <div className="border-b border-r border-slate-100 px-1 py-2 text-center bg-slate-50">
-                <p className="text-[10px] text-slate-400">{slot.inicio}</p>
+                <p className="text-[10px] text-slate-400">{franja.hora_inicio}</p>
               </div>
               {DAYS.map((day) => {
                 const item = bloques.find(
-                  (b) => b.dia_semana === DAY_TO_NUMBER[day] && seSolapan(slot.inicio, slot.fin, b.hora_inicio, b.hora_fin),
+                  (b) => b.dia_semana === DAY_TO_NUMBER[day] && seSolapan(franja.hora_inicio, franja.hora_fin, b.hora_inicio, b.hora_fin),
                 );
 
                 if (!item) {

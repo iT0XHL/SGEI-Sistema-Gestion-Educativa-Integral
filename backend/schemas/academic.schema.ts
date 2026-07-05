@@ -169,6 +169,20 @@ export const UpdateSeccionSchema = z.object({
 });
 export type UpdateSeccionInput = z.infer<typeof UpdateSeccionSchema>;
 
+// ── Área académica (agrupador visual de libreta, no participa en
+//    horario/asignacion_docente) ────────────────────────────────
+export const CreateAreaAcademicaSchema = z.object({
+  nivel_id: uuid,
+  nombre: z.string().trim().min(1).max(120),
+  orden: z.coerce.number().int().positive().optional().nullable(),
+});
+export type CreateAreaAcademicaInput = z.infer<typeof CreateAreaAcademicaSchema>;
+
+export const UpdateAreaAcademicaSchema = CreateAreaAcademicaSchema.partial().omit({
+  nivel_id: true,
+});
+export type UpdateAreaAcademicaInput = z.infer<typeof UpdateAreaAcademicaSchema>;
+
 // ── Curso ─────────────────────────────────────────────────────
 export const CreateCursoSchema = z.object({
   nivel_id: uuid,
@@ -176,24 +190,28 @@ export const CreateCursoSchema = z.object({
   codigo_cneb: z.string().trim().max(20).optional().nullable(),
   descripcion: z.string().trim().optional().nullable(),
   horas_semanales: z.coerce.number().int().positive().optional().nullable(),
+  area_academica_id: uuid.optional().nullable(),
 });
 export type CreateCursoInput = z.infer<typeof CreateCursoSchema>;
 
 export const UpdateCursoSchema = CreateCursoSchema.partial();
 export type UpdateCursoInput = z.infer<typeof UpdateCursoSchema>;
 
-// ── Competencia ───────────────────────────────────────────────
+// ── Competencia (UI: "Criterio de Evaluación") ────────────────
 export const CreateCompetenciaSchema = z.object({
   curso_id: uuid,
+  grado_id: uuid.optional().nullable(),
   nombre: z.string().trim().min(1).max(200),
   descripcion: z.string().trim().optional().nullable(),
   tipo: z.enum(['regular', 'transversal']),
   orden: z.coerce.number().int().positive().optional().nullable(),
+  peso: z.coerce.number().gt(0).max(100).default(100),
 });
 export type CreateCompetenciaInput = z.infer<typeof CreateCompetenciaSchema>;
 
 export const UpdateCompetenciaSchema = CreateCompetenciaSchema.partial().omit({
   curso_id: true,
+  grado_id: true,
 });
 export type UpdateCompetenciaInput = z.infer<typeof UpdateCompetenciaSchema>;
 
@@ -203,6 +221,12 @@ export const ReordenarCompetenciasSchema = z.object({
     .min(1),
 });
 export type ReordenarCompetenciasInput = z.infer<typeof ReordenarCompetenciasSchema>;
+
+export const CopiarCompetenciasAGradoSchema = z.object({
+  curso_id: uuid,
+  grado_id: uuid,
+});
+export type CopiarCompetenciasAGradoInput = z.infer<typeof CopiarCompetenciasAGradoSchema>;
 
 // ── Asignación docente ────────────────────────────────────────
 export const CreateAsignacionSchema = z.object({
@@ -252,7 +276,7 @@ export const SeccionesQuery = z.object({
   periodoId: uuid.optional(),
   gradoId: uuid.optional(),
 });
-export const CompetenciasQuery = z.object({ cursoId: uuid.optional() });
+export const CompetenciasQuery = z.object({ cursoId: uuid.optional(), gradoId: uuid.optional() });
 export const AsignacionesQuery = z.object({
   periodoId: uuid.optional(),
   seccionId: uuid.optional(),

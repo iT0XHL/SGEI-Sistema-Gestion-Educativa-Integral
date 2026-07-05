@@ -25,6 +25,20 @@ export const ChangePasswordSchema = z
   });
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
 
+export const ForgotPasswordSchema = z.object({
+  email: z.string().trim().email('Correo inválido').max(50),
+});
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token requerido'),
+  password_nueva: z
+    .string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres')
+    .max(128),
+});
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
+
 export const AdminResetPasswordSchema = z.object({
   password_nueva: z
     .string()

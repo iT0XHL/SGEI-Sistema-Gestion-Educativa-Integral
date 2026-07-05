@@ -6,15 +6,17 @@
 //  Los export "por docente" y "por sección" replican tal cual la
 //  grilla hora×día que ve el usuario en pantalla (mismo componente
 //  visual que frontend/src/app/components/horarios/HorarioSemanalGrid.tsx):
-//  franjas horarias fijas como filas, Lunes–Viernes como columnas,
-//  casillas vacías en blanco, y una banda de Recreo/Refrigerio a todo
-//  el ancho cuando aplica.
+//  franjas de la jornada del nivel (hora de inicio + duración de la
+//  hora escolar, ver lib/horario-slots.ts) como filas, Lunes–Viernes
+//  como columnas, casillas vacías en blanco, y una banda de
+//  Recreo/Refrigerio a todo el ancho en su lugar real.
 //
 //  INSTALACIÓN REQUERIDA:
 //    pnpm add pdfkit @types/pdfkit --filter backend
 //
 //  Si pdfkit no está instalado, el endpoint devuelve 503.
 // ============================================================
+import type { Franja } from '@/lib/horario-slots';
 
 // Forma mínima común entre un bloque "borrador" (HorarioRow de
 // academic.repository) y un bloque "publicado" (snapshot de
@@ -31,19 +33,10 @@ export interface HorarioPdfBloque {
   nivel: string;
 }
 
-export interface HorarioPdfDescanso {
-  tipo: 'RECREO' | 'REFRIGERIO';
-  hora_inicio: string;
-  hora_fin: string;
-}
-
 const DIA_LABEL: Record<number, string> = {
   1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado',
 };
 
-// Mismas franjas que frontend/src/app/components/horarios/horarioConstants.ts —
-// necesario para que el PDF calce en una sola hoja y coincida con la UI.
-const HOURS = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'];
 const DAYS = [1, 2, 3, 4, 5];
 const DAY_LABEL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
@@ -58,7 +51,7 @@ const CURSO_PALETTE = [
   { bg: '#f0fdfa', text: '#0f766e' }, // teal
 ];
 
-const DESCANSO_STYLE: Record<HorarioPdfDescanso['tipo'], { bg: string; text: string; label: string }> = {
+const DESCANSO_STYLE: Record<'RECREO' | 'REFRIGERIO', { bg: string; text: string; label: string }> = {
   RECREO: { bg: '#fffbeb', text: '#b45309', label: 'Recreo' },
   REFRIGERIO: { bg: '#fff7ed', text: '#c2410c', label: 'Refrigerio / Almuerzo' },
 };
@@ -87,7 +80,7 @@ function dibujarGrid(
   titulo: string,
   subtitulo: string,
   bloques: HorarioPdfBloque[],
-  descansos: HorarioPdfDescanso[],
+  franjas: Franja[],
   variante: 'docente' | 'seccion',
 ) {
   const LEFT = 40;
@@ -129,9 +122,7 @@ function dibujarGrid(
 
   dibujarEncabezado();
 
-  const slots = HOURS.slice(0, -1).map((h, i) => ({ inicio: h, fin: HOURS[i + 1]! }));
-
-  for (const slot of slots) {
+  for (const franja of franjas) {
     if (y + ROW_H > doc.page.height - 40) {
       doc.addPage();
       y = 40;
@@ -141,23 +132,21 @@ function dibujarGrid(
     doc.rect(LEFT, y, COL_HORA, ROW_H).fillColor('#f8fafc').fill();
     doc.rect(LEFT, y, COL_HORA, ROW_H).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
     doc.fillColor('#94a3b8').fontSize(7).font('Helvetica')
-      .text(slot.inicio, LEFT, y + ROW_H / 2 - 4, { width: COL_HORA, align: 'center' });
+      .text(franja.hora_inicio, LEFT, y + ROW_H / 2 - 4, { width: COL_HORA, align: 'center' });
 
-    const descanso = descansos.find((d) => seSolapan(slot.inicio, slot.fin, d.hora_inicio, d.hora_fin));
-
-    if (descanso) {
-      const style = DESCANSO_STYLE[descanso.tipo];
+    if (franja.tipo !== 'CLASE') {
+      const style = DESCANSO_STYLE[franja.tipo];
       const x = LEFT + COL_HORA;
       const w = W - COL_HORA;
       doc.rect(x, y, w, ROW_H).fillColor(style.bg).fill();
       doc.rect(x, y, w, ROW_H).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
       doc.fillColor(style.text).fontSize(8.5).font('Helvetica-Bold')
-        .text(`${style.label} · ${descanso.hora_inicio}–${descanso.hora_fin}`, x, y + ROW_H / 2 - 5, { width: w, align: 'center' });
+        .text(`${style.label} · ${franja.hora_inicio}–${franja.hora_fin}`, x, y + ROW_H / 2 - 5, { width: w, align: 'center' });
     } else {
       for (let i = 0; i < DAYS.length; i++) {
         const dia = DAYS[i]!;
         const x = LEFT + COL_HORA + i * COL_DAY;
-        const item = bloques.find((b) => b.dia_semana === dia && seSolapan(slot.inicio, slot.fin, b.hora_inicio, b.hora_fin));
+        const item = bloques.find((b) => b.dia_semana === dia && seSolapan(franja.hora_inicio, franja.hora_fin, b.hora_inicio, b.hora_fin));
 
         if (!item) {
           doc.rect(x, y, COL_DAY, ROW_H).fillColor('#ffffff').fill();
@@ -192,7 +181,7 @@ function dibujarGrid(
     y += ROW_H;
   }
 
-  if (bloques.length === 0 && descansos.length === 0) {
+  if (bloques.length === 0) {
     doc.fillColor('#64748b').fontSize(9).font('Helvetica').text('Sin bloques de horario registrados.', LEFT, y + 10);
   }
 }
@@ -285,7 +274,7 @@ function dibujarTabla(doc: any, titulo: string, subtitulo: string, rows: Horario
 export async function buildHorarioDocentePdf(
   bloques: HorarioPdfBloque[],
   docenteNombre: string,
-  descansos: HorarioPdfDescanso[] = [],
+  franjas: Franja[],
 ): Promise<Buffer> {
   const PDFDocument = await loadPdfKit();
   return new Promise<Buffer>((resolve, reject) => {
@@ -294,7 +283,7 @@ export async function buildHorarioDocentePdf(
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
-    dibujarGrid(doc, 'Horario del Docente', docenteNombre, bloques, descansos, 'docente');
+    dibujarGrid(doc, 'Horario del Docente', docenteNombre, bloques, franjas, 'docente');
     doc.end();
   });
 }
@@ -302,7 +291,7 @@ export async function buildHorarioDocentePdf(
 export async function buildHorarioSeccionPdf(
   bloques: HorarioPdfBloque[],
   seccionNombre: string,
-  descansos: HorarioPdfDescanso[] = [],
+  franjas: Franja[],
 ): Promise<Buffer> {
   const PDFDocument = await loadPdfKit();
   return new Promise<Buffer>((resolve, reject) => {
@@ -311,7 +300,7 @@ export async function buildHorarioSeccionPdf(
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
-    dibujarGrid(doc, 'Horario de Sección', seccionNombre, bloques, descansos, 'seccion');
+    dibujarGrid(doc, 'Horario de Sección', seccionNombre, bloques, franjas, 'seccion');
     doc.end();
   });
 }
@@ -333,7 +322,7 @@ export interface HorarioPdfEntrada {
   titulo: string;
   subtitulo: string;
   bloques: HorarioPdfBloque[];
-  descansos: HorarioPdfDescanso[];
+  franjas: Franja[];
   variante: 'docente' | 'seccion';
 }
 
@@ -357,7 +346,7 @@ export async function buildHorarioMultiplePdf(entradas: HorarioPdfEntrada[]): Pr
     } else {
       entradas.forEach((entrada, i) => {
         if (i > 0) doc.addPage();
-        dibujarGrid(doc, entrada.titulo, entrada.subtitulo, entrada.bloques, entrada.descansos, entrada.variante);
+        dibujarGrid(doc, entrada.titulo, entrada.subtitulo, entrada.bloques, entrada.franjas, entrada.variante);
       });
     }
 

@@ -44,7 +44,7 @@ export default function DocenteAsistenciaHistorial() {
       asignaciones.map(a => ({
         id:        a.id,
         seccionId: a.seccion_id,
-        label:     `${a.curso.nombre} — ${a.seccion.nombre}`,
+        label:     `${a.curso.nombre} — ${a.seccion.grado.nombre} "${a.seccion.nombre}"`,
       })),
     [asignaciones],
   );

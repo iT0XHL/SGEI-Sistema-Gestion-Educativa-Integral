@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Save, Lock, Eye, AlertCircle, CheckCircle2, ChevronDown, Info } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Save, Lock, Eye, AlertCircle, CheckCircle2, ChevronDown, Info, FileDown, FileUp, X, AlertTriangle } from 'lucide-react';
 import { useSession } from '../../../lib/hooks/useSession';
 import { apiClient } from '../../../lib/api/client';
 import { notasApi } from '../../../lib/api/notas.api';
@@ -9,6 +9,7 @@ import { literalColor, gradeToLiteral } from '../../../lib/courseColors';
 import type { AsignacionDocente } from '../../../lib/api/alumnos.api';
 import type { Bimestre } from '../../../lib/api/bimestres.api';
 import type { ResumenAsistencia } from '../../../types/asistencia';
+import type { PreviewImportacion } from '../../../lib/api/notas.api';
 
 interface Competencia {
   id:          string;
@@ -17,12 +18,14 @@ interface Competencia {
   descripcion: string | null;
   tipo:        'regular' | 'transversal';
   orden:       number;
+  peso:        number;
 }
 
 interface AsignacionOpcion {
   id:        string;
   cursoId:   string;
   seccionId: string;
+  gradoId:   string;
   label:     string;
 }
 
@@ -55,12 +58,22 @@ export default function DocenteNotas() {
   const [saved,        setSaved]        = useState(false);
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState<string | null>(null);
+  const [refreshTick,  setRefreshTick]  = useState(0);
+
+  // Importación desde Excel
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [descargando,      setDescargando]      = useState(false);
+  const [subiendoPreview,  setSubiendoPreview]  = useState(false);
+  const [importPreview,    setImportPreview]    = useState<PreviewImportacion | null>(null);
+  const [importError,      setImportError]      = useState<string | null>(null);
+  const [confirmando,      setConfirmando]      = useState(false);
 
   const opciones: AsignacionOpcion[] = asignaciones.map(a => ({
     id:        a.id,
     cursoId:   a.curso_id,
     seccionId: a.seccion_id,
-    label:     `${a.curso.nombre} — ${a.seccion.nombre}`,
+    gradoId:   a.seccion.grado_id,
+    label:     `${a.curso.nombre} — ${a.seccion.grado.nombre} "${a.seccion.nombre}"`,
   }));
 
   // Carga inicial: asignaciones + bimestres en paralelo
@@ -83,7 +96,7 @@ export default function DocenteNotas() {
 
         const bimestreActivo = bims
           .filter(b => !b.cerrado)
-          .sort((a, b) => b.numero - a.numero)[0] ?? bims[0] ?? null;
+          .sort((a, b) => a.numero - b.numero)[0] ?? bims[0] ?? null;
 
         if (asigs.length > 0) {
           const primera = asigs[0]!;
@@ -91,7 +104,8 @@ export default function DocenteNotas() {
             id:        primera.id,
             cursoId:   primera.curso_id,
             seccionId: primera.seccion_id,
-            label:     `${primera.curso.nombre} — ${primera.seccion.nombre}`,
+            gradoId:   primera.seccion.grado_id,
+            label:     `${primera.curso.nombre} — ${primera.seccion.grado.nombre} "${primera.seccion.nombre}"`,
           });
         }
         setBimestreSel(bimestreActivo);
@@ -119,7 +133,7 @@ export default function DocenteNotas() {
     async function cargarDatos() {
       try {
         const [competenciasData, resumen, notasExistentes] = await Promise.all([
-          apiClient.get<Competencia[]>('/api/competencias', { cursoId: asignacionSel!.cursoId }),
+          apiClient.get<Competencia[]>('/api/competencias', { cursoId: asignacionSel!.cursoId, gradoId: asignacionSel!.gradoId }),
           asistenciasApi.resumen(asignacionSel!.seccionId),
           notasApi.listar({
             docenteId:  session!.entidadId,
@@ -169,7 +183,7 @@ export default function DocenteNotas() {
 
     cargarDatos();
     return () => { aborted = true; };
-  }, [asignacionSel, bimestreSel, session]);
+  }, [asignacionSel, bimestreSel, session, refreshTick]);
 
   function handleGradeChange(alumnoId: string, compId: string, value: string) {
     if (locked) return;
@@ -186,17 +200,21 @@ export default function DocenteNotas() {
     }));
   }
 
+  /** Promedio ponderado por peso de criterio: sum(nota*peso)/sum(peso). */
   function computeAvg(alumnoId: string): number | null {
-    const values = competencias
-      .map(comp => {
-        const raw = cellGrades[alumnoId]?.[comp.id] ?? '';
-        const v = parseFloat(raw);
-        return (!isNaN(v) && v >= 0 && v <= 20) ? v : null;
-      })
-      .filter((v): v is number => v !== null);
-
-    if (values.length === 0) return null;
-    return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+    let sumPonderada = 0;
+    let sumPeso = 0;
+    for (const comp of competencias) {
+      const raw = cellGrades[alumnoId]?.[comp.id] ?? '';
+      const v = parseFloat(raw);
+      if (!isNaN(v) && v >= 0 && v <= 20) {
+        const peso = comp.peso ?? 100;
+        sumPonderada += v * peso;
+        sumPeso += peso;
+      }
+    }
+    if (sumPeso === 0) return null;
+    return Math.round((sumPonderada / sumPeso) * 10) / 10;
   }
 
   const totalFilled = alumnos.filter(alumno =>
@@ -250,6 +268,79 @@ export default function DocenteNotas() {
   function handleLock() {
     if (!saved) return;
     setLocked(true);
+  }
+
+  async function handleDescargarPlantilla() {
+    if (!asignacionSel || !bimestreSel) return;
+    setDescargando(true);
+    setImportError(null);
+    try {
+      const blob = await notasApi.descargarPlantilla(asignacionSel.id, bimestreSel.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `plantilla_notas_${asignacionSel.label.replace(/[^\p{L}\p{N}]+/gu, '_')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Error al descargar la plantilla.');
+    } finally {
+      setDescargando(false);
+    }
+  }
+
+  async function handleArchivoSeleccionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setSubiendoPreview(true);
+    setImportError(null);
+    setImportPreview(null);
+    try {
+      const data = await notasApi.previsualizarImportacion(file);
+      setImportPreview(data);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Error al leer el archivo.');
+    } finally {
+      setSubiendoPreview(false);
+    }
+  }
+
+  async function handleConfirmarImportacion() {
+    if (!importPreview || !bimestreSel) return;
+    setConfirmando(true);
+    setImportError(null);
+    try {
+      const notasPayload = importPreview.filas
+        .filter(f => f.errores.length === 0)
+        .flatMap(f =>
+          f.celdas
+            .filter(c => c.valor !== null && !c.error)
+            .map(c => ({
+              alumno_id:       f.alumno_id,
+              competencia_id:  c.competencia_id,
+              bimestre_id:     bimestreSel.id,
+              nota_vigesimal:  c.valor as number,
+              tipo_evaluacion: 'Final' as const,
+            }))
+        );
+
+      if (notasPayload.length === 0) {
+        setImportError('No hay notas válidas para importar en este archivo.');
+        return;
+      }
+
+      await notasApi.upsertBatch({ notas: notasPayload });
+      setImportPreview(null);
+      setSaved(true);
+      setRefreshTick(t => t + 1);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Error al importar las notas.');
+    } finally {
+      setConfirmando(false);
+    }
   }
 
   if (loading || sessionLoading) {
@@ -367,6 +458,16 @@ export default function DocenteNotas() {
         </div>
       )}
 
+      {importError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <AlertCircle className="size-5 text-red-500 shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 flex-1">{importError}</p>
+          <button onClick={() => setImportError(null)} className="text-red-400 hover:text-red-600">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       {/* Tabla de notas */}
       {loadingDatos ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-2">
@@ -399,7 +500,7 @@ export default function DocenteNotas() {
                   </th>
                   {competencias.map((comp, i) => (
                     <th key={comp.id} className="text-center px-2 py-3 text-xs font-semibold text-slate-500 min-w-[100px]">
-                      <div className="max-w-[90px] leading-tight">C{i + 1}</div>
+                      <div className="max-w-[90px] leading-tight">C{i + 1} ({Number(comp.peso)}%)</div>
                       <div className="text-[10px] font-normal text-slate-400 truncate max-w-[90px] mt-0.5" title={comp.nombre}>
                         {comp.nombre.slice(0, 20)}{comp.nombre.length > 20 ? '…' : ''}
                       </div>
@@ -474,13 +575,40 @@ export default function DocenteNotas() {
 
           {/* Acciones */}
           <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center gap-3 justify-between">
-            <button
-              onClick={() => setPreview(p => !p)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <Eye className="size-4" />
-              {preview ? 'Ocultar' : 'Vista previa'} de libreta
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setPreview(p => !p)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Eye className="size-4" />
+                {preview ? 'Ocultar' : 'Vista previa'} de libreta
+              </button>
+
+              <button
+                onClick={handleDescargarPlantilla}
+                disabled={descargando || !asignacionSel || !bimestreSel}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <FileDown className="size-4" />
+                {descargando ? 'Generando…' : 'Descargar plantilla'}
+              </button>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={subiendoPreview || locked || !asignacionSel || !bimestreSel}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <FileUp className="size-4" />
+                {subiendoPreview ? 'Leyendo…' : 'Importar notas'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={handleArchivoSeleccionado}
+              />
+            </div>
 
             <div className="flex gap-2">
               <button
@@ -518,6 +646,102 @@ export default function DocenteNotas() {
             <p className="text-sm text-amber-700 mt-0.5">
               Las notas del {bimestreSel?.nombre ?? 'bimestre'} han sido cerradas. Para realizar correcciones, solicita autorización al Administrador.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de vista previa de importación */}
+      {importPreview && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Confirmar importación de notas</h2>
+                <p className="text-xs text-slate-500 mt-0.5">{importPreview.asignacion_label} · {importPreview.bimestre_nombre}</p>
+              </div>
+              <button onClick={() => setImportPreview(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-3 flex flex-wrap gap-4 text-xs border-b border-slate-100 bg-slate-50">
+              <span className="text-slate-600">Filas: <strong>{importPreview.resumen.total_filas}</strong></span>
+              <span className="text-emerald-700">Celdas válidas: <strong>{importPreview.resumen.celdas_validas}</strong></span>
+              <span className="text-red-700">Celdas con error: <strong>{importPreview.resumen.celdas_con_error}</strong></span>
+            </div>
+
+            {(importPreview.columnas_obsoletas.length > 0 || importPreview.columnas_faltantes.length > 0) && (
+              <div className="px-5 py-3 border-b border-slate-100 space-y-1.5">
+                {importPreview.columnas_obsoletas.length > 0 && (
+                  <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                    <span>Estas columnas ya no existen (criterio eliminado) y serán ignoradas: <strong>{importPreview.columnas_obsoletas.join(', ')}</strong></span>
+                  </div>
+                )}
+                {importPreview.columnas_faltantes.length > 0 && (
+                  <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                    <span>Faltan estos criterios nuevos en el archivo (descarga la plantilla de nuevo para incluirlos): <strong>{importPreview.columnas_faltantes.join(', ')}</strong></span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-auto px-5 py-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 sticky top-0 bg-white">
+                    <th className="text-left py-2 pr-3 text-xs font-semibold text-slate-500 uppercase">Alumno</th>
+                    {importPreview.filas[0]?.celdas.map(c => (
+                      <th key={c.competencia_id} className="text-center py-2 px-2 text-xs font-semibold text-slate-500 min-w-[90px]">{c.competencia_nombre}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {importPreview.filas.map(f => (
+                    <tr key={f.alumno_id} className={f.errores.length > 0 ? 'bg-red-50/50' : ''}>
+                      <td className="py-2 pr-3">
+                        <p className="font-medium text-slate-800">{f.alumno_nombre}</p>
+                        {f.errores.map((e, i) => (
+                          <p key={i} className="text-[11px] text-red-600 flex items-center gap-1 mt-0.5">
+                            <AlertTriangle className="size-3" /> {e}
+                          </p>
+                        ))}
+                      </td>
+                      {f.celdas.map(c => (
+                        <td key={c.competencia_id} className="text-center py-2 px-2">
+                          <span className={`inline-block px-2 py-1 rounded-lg text-xs font-medium ${
+                            c.error
+                              ? 'bg-red-100 text-red-700'
+                              : c.valor !== null
+                                ? 'bg-emerald-50 text-emerald-800'
+                                : 'text-slate-300'
+                          }`} title={c.error || undefined}>
+                            {c.valor !== null ? c.valor : c.error ? '⚠' : '—'}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setImportPreview(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmarImportacion}
+                disabled={confirmando || importPreview.resumen.celdas_validas === 0}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+              >
+                {confirmando ? 'Importando…' : 'Confirmar e importar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

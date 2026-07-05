@@ -24,9 +24,24 @@ model Credencial {
   created_at        DateTime       @default(now()) @db.Timestamptz(6)
   updated_at        DateTime       @default(now()) @db.Timestamptz(6)
   perfil            PerfilUsuario?
+  tokens_recuperacion TokenRecuperacion[]
 
   @@index([usuario_login], map: "idx_credencial_login")
   @@map("credencial")
+  @@schema("auth_schema")
+}
+
+model TokenRecuperacion {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  credencial_id String     @db.Uuid
+  token_hash    String     @unique @db.VarChar(64)
+  expira_en     DateTime   @db.Timestamptz(6)
+  usado         Boolean    @default(false)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+  credencial    Credencial @relation(fields: [credencial_id], references: [id], onDelete: Cascade)
+
+  @@index([credencial_id])
+  @@map("token_recuperacion")
   @@schema("auth_schema")
 }
 
@@ -99,14 +114,34 @@ model InstitucionEducativa {
 }
 
 model Nivel {
-  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nombre      String            @unique @db.VarChar(30)
-  descripcion String?
-  cursos      Curso[]
-  grados      Grado[]
-  descansos   HorarioDescanso[]
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre         String               @unique @db.VarChar(30)
+  descripcion    String?
+  cursos         Curso[]
+  grados         Grado[]
+  descansos      HorarioDescanso[]
+  horario_config NivelHorarioConfig[]
+  areas          AreaAcademica[]
 
   @@map("nivel")
+  @@schema("academic_schema")
+}
+
+// Agrupador puramente visual para la libreta (ej. "Matemática" agrupa
+// Aritmética/Álgebra/Trigonometría/R.M./Geometría). No participa en
+// horario ni asignacion_docente — eso sigue atado a Curso directamente.
+model AreaAcademica {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id   String   @db.Uuid
+  nombre     String   @db.VarChar(120)
+  orden      Int?     @db.SmallInt
+  activo     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  nivel      Nivel    @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
+  cursos     Curso[]
+
+  @@unique([nivel_id, nombre])
+  @@map("area_academica")
   @@schema("academic_schema")
 }
 
@@ -120,6 +155,7 @@ model Grado {
   cursos              GradoCurso[]
   simulacro_preguntas SimulacroPregunta[]
   simulacro_examenes  SimulacroExamen[]
+  competencias        Competencia[]
 
   @@unique([nivel_id, orden])
   @@map("grado")
@@ -144,6 +180,7 @@ model PeriodoAcademico {
   simulacros            Simulacro[]
   horario_publicaciones HorarioPublicacion[]
   horario_descansos     HorarioDescanso[]
+  horario_config        NivelHorarioConfig[]
 
   @@map("periodo_academico")
   @@schema("academic_schema")
@@ -288,10 +325,12 @@ model Curso {
   codigo_cneb         String?             @db.VarChar(20)
   descripcion         String?
   horas_semanales     Int?                @db.SmallInt
+  area_academica_id   String?             @db.Uuid
   actividades         Actividad[]
   asignaciones        AsignacionDocente[]
   competencias        Competencia[]
   nivel               Nivel               @relation(fields: [nivel_id], references: [id], onUpdate: NoAction)
+  area_academica      AreaAcademica?      @relation(fields: [area_academica_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   materiales          Material[]
   grados              GradoCurso[]
   simulacro_preguntas SimulacroPregunta[]
@@ -429,11 +468,14 @@ model GradoCurso {
 model Competencia {
   id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   curso_id    String  @db.Uuid
+  grado_id    String? @db.Uuid
   nombre      String  @db.VarChar(200)
   descripcion String?
   tipo        String  @db.VarChar(20)
   orden       Int?    @db.SmallInt
+  peso        Decimal @default(100.00) @db.Decimal(5, 2)
   curso       Curso   @relation(fields: [curso_id], references: [id], onUpdate: NoAction)
+  grado       Grado?  @relation(fields: [grado_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   notas       Nota[]
 
   @@map("competencia")
@@ -540,6 +582,25 @@ model HorarioDescanso {
 
   @@unique([nivel_id, periodo_id, tipo])
   @@map("horario_descanso")
+  @@schema("academic_schema")
+}
+
+// Jornada escolar por nivel: hora de inicio y duración (min) de una
+// "hora escolar" — los bloques de Horario se generan sumando esta
+// duración desde hora_inicio_jornada, con Recreo/Refrigerio como
+// anclas fijas que reinician la suma. Ver backend/lib/horario-slots.ts.
+model NivelHorarioConfig {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nivel_id            String           @db.Uuid
+  periodo_id          String           @db.Uuid
+  hora_inicio_jornada DateTime         @db.Time(6)
+  duracion_hora_min   Int              @db.SmallInt
+  total_horas_dia     Int              @default(8) @db.SmallInt
+  nivel               Nivel            @relation(fields: [nivel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  periodo             PeriodoAcademico @relation(fields: [periodo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([nivel_id, periodo_id])
+  @@map("nivel_horario_config")
   @@schema("academic_schema")
 }
 

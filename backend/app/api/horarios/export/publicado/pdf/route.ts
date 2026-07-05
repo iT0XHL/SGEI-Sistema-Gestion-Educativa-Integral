@@ -17,6 +17,7 @@ import { HorarioPublicacionService } from '@/modules/horarios/horario-publicacio
 import { PeriodoService } from '@/modules/periodo/periodo.service';
 import { BusinessRuleError } from '@/errors/http-errors';
 import { prisma } from '@/lib/prisma';
+import { generarFranjas, mergeFranjas } from '@/lib/horario-slots';
 import { buildHorarioDocentePdf, buildHorarioSeccionPdf } from '@/pdf/horario.builder';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,10 @@ export const GET = withAuth(async (req, { user }) => {
       const docente = await prisma.docente.findUnique({ where: { id }, select: { nombres: true, apellido_paterno: true } });
       if (!docente) throw new NotFoundError('Docente');
       const nombre = `${docente.nombres} ${docente.apellido_paterno}`;
-      pdfBuffer = await buildHorarioDocentePdf(data.bloques, nombre, data.descansos);
+      const franjas = mergeFranjas(
+        data.jornadas.map((j) => generarFranjas(j.hora_inicio_jornada, j.duracion_hora_min, data.descansos.filter((d) => d.nivel_id === j.nivel_id), j.total_horas_dia)),
+      );
+      pdfBuffer = await buildHorarioDocentePdf(data.bloques, nombre, franjas);
       filename = `horario_${nombre.replace(/\s+/g, '_')}.pdf`;
     } else {
       const data = await HorarioPublicacionService.horarioPublicadoDeAlumno(id, periodoId, user);
@@ -50,7 +54,10 @@ export const GET = withAuth(async (req, { user }) => {
       });
       if (!alumno) throw new NotFoundError('Alumno');
       const nombre = `${alumno.seccion.grado.nombre} "${alumno.seccion.nombre}" — ${alumno.seccion.grado.nivel.nombre}`;
-      pdfBuffer = await buildHorarioSeccionPdf(data.bloques, nombre, data.descansos);
+      const franjas = mergeFranjas(
+        data.jornadas.map((j) => generarFranjas(j.hora_inicio_jornada, j.duracion_hora_min, data.descansos.filter((d) => d.nivel_id === j.nivel_id), j.total_horas_dia)),
+      );
+      pdfBuffer = await buildHorarioSeccionPdf(data.bloques, nombre, franjas);
       filename = `horario_${alumno.seccion.grado.nombre}_${alumno.seccion.nombre}.pdf`.replace(/\s+/g, '_');
     }
 

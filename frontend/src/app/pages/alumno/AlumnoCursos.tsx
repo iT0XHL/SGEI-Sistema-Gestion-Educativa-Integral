@@ -27,7 +27,7 @@ function buildCourseItems(
   horarios: HorarioRow[],
 ): CourseItem[] {
   return asignaciones.map((asig, idx) => {
-    const notasCurso = notas.filter(n => n.competencia?.curso?.nombre === asig.curso.nombre);
+    const notasCurso = notas.filter(n => n.competencia?.curso?.id === asig.curso.id);
     const valores = notasCurso.map(n => Number(n.nota_vigesimal));
     const promedio = valores.length > 0
       ? valores.reduce((a, b) => a + b, 0) / valores.length
@@ -91,9 +91,9 @@ export default function AlumnoCursos() {
 
         const abiertos = bimestres.filter(b => !b.cerrado);
         const bimestreActivo = abiertos.length > 0
-          ? abiertos.reduce((p, c) => c.numero > p.numero ? c : p)
+          ? abiertos.reduce((p, c) => c.numero < p.numero ? c : p)
           : bimestres.length > 0
-            ? bimestres.reduce((p, c) => c.numero > p.numero ? c : p)
+            ? bimestres.reduce((p, c) => c.numero < p.numero ? c : p)
             : null;
         if (bimestreActivo) setBimestre(bimestreActivo);
 

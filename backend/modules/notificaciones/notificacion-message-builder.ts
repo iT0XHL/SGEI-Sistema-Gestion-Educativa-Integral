@@ -34,6 +34,7 @@ export interface NotificacionContexto {
   docenteId?:     string;
   docenteNombre?: string;
   seccionId?:     string;
+  seccionNombre?: string;
   cursoId?:       string;
   cursoNombre?:   string;
   bimestreNombre?: string;
@@ -49,6 +50,8 @@ export interface NotificacionContexto {
   pagoId?:        string;
   libretaId?:     string;
   periodoNombre?: string;
+  simulacroId?:   string;
+  simulacroNombre?: string;
 
   // Permite sobre-escribir título / cuerpo / url (comunicados manuales)
   tituloOverride?: string;
@@ -199,9 +202,35 @@ export function buildNotificationMessage(
       entidadId = ctx.pagoId ?? null;
       break;
 
+    case NotificationEvents.PAGO_POR_VENCER:
+      titulo = 'Pago próximo a vencer';
+      cuerpo = `Tienes un pago pendiente que vence pronto${ctx.periodoNombre ? ` (${ctx.periodoNombre})` : ''}. Ingresa para revisar el detalle.`;
+      url    = '/alumno/pagos';
+      entidadId = ctx.pagoId ?? null;
+      break;
+
+    case NotificationEvents.ASISTENCIA_PENDIENTE:
+      titulo = 'Asistencia sin registrar';
+      cuerpo = 'Aún no registras tu asistencia de hoy. Ingresa para completarla.';
+      url    = '/docente/asistencia';
+      break;
+
     case NotificationEvents.COMUNICADO_GENERAL:
       titulo = ctx.tituloOverride ?? 'Nuevo comunicado';
       cuerpo = ctx.cuerpoOverride ?? `${actor} publicó un nuevo comunicado.`;
+      url    = ctx.urlOverride ?? '/';
+      break;
+
+    case NotificationEvents.SIMULACRO_PROGRAMADO:
+      titulo = 'Simulacro activo';
+      cuerpo = `${actor} activó el simulacro${ctx.simulacroNombre ? ` "${ctx.simulacroNombre}"` : ''}. Ingresa para registrar tus preguntas.`;
+      url    = '/docente/simulacro';
+      entidadId = ctx.simulacroId ?? null;
+      break;
+
+    case NotificationEvents.HORARIO_ACTUALIZADO:
+      titulo = 'Tu horario ha cambiado';
+      cuerpo = `${actor} actualizó el horario${ctx.seccionNombre ? ` de ${ctx.seccionNombre}` : ''}. Ingresa para revisar los cambios.`;
       url    = ctx.urlOverride ?? '/';
       break;
 

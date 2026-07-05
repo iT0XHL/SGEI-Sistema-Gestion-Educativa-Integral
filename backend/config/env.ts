@@ -30,6 +30,14 @@ const EnvSchema = z.object({
   // No requerido para desarrollo local sin archivos.
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_SERVICE_KEY: z.string().min(1).optional(),
+
+  // Secreto compartido para autenticar al cron de notificaciones diarias.
+  CRON_SECRET: z.string().min(16).optional(),
+
+  // Envío de emails transaccionales (recuperación de contraseña).
+  // Sin configurar: el envío se registra en logs en vez de enviarse (modo dev).
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().default('SGEI <no-reply@sgei.local>'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
