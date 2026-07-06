@@ -75,35 +75,25 @@ const T = {
   COL_OBSERV:          58,  // BF (merged BF-BJ)
 };
 
-// Áreas MINEDU DCN 2009 — orden corresponde a cols AL-AU (índices 0-9)
-const AREAS_MINEDU: Array<{ letra: string; nombre: string; aliases: string[] }> = [
-  { letra: 'A', nombre: 'Matemática',                              aliases: ['matematica', 'matematicas', 'math'] },
-  { letra: 'B', nombre: 'Comunicación',                            aliases: ['comunicacion', 'lenguaje', 'castellano'] },
-  { letra: 'C', nombre: 'Idioma extranjero/originario',            aliases: ['ingles', 'idioma extranjero', 'idioma', 'quechua', 'aimara'] },
-  { letra: 'D', nombre: 'Educación por el Arte',                   aliases: ['arte', 'arte y cultura', 'educacion por el arte'] },
-  { letra: 'E', nombre: 'Ciencias Sociales',                       aliases: ['ciencias sociales', 'historia', 'geografia', 'cs sociales', 'hge'] },
-  { letra: 'F', nombre: 'Persona, Familia y Relaciones Humanas',   aliases: ['persona familia y relaciones humanas', 'pfrh', 'dpcc', 'desarrollo personal'] },
-  { letra: 'G', nombre: 'Educación Física',                        aliases: ['educacion fisica', 'ed fisica', 'efisica'] },
-  { letra: 'H', nombre: 'Educación Religiosa',                     aliases: ['educacion religiosa', 'ed religiosa', 'religion'] },
-  { letra: 'I', nombre: 'Ciencia, Tecnología y Ambiente',          aliases: ['ciencia tecnologia y ambiente', 'cta', 'cyt', 'ciencia y tecnologia', 'ciencias'] },
-  { letra: 'J', nombre: 'Educación para el Trabajo',               aliases: ['educacion para el trabajo', 'ept', 'computacion', 'informatica'] },
-];
+// ── Layout dinámico de las columnas de área ────────────────────
+// El acta ya NO usa la lista fija DCN-2009. Las columnas de área se
+// construyen desde las áreas REALES presentes en la BD (por
+// area_academica, ordenadas por `orden`; los cursos sin área se
+// muestran como su propia columna). Las columnas del template que
+// sobran se limpian (nombre + letra en blanco) → "se eliminan las
+// que no existen".
+//
+// Rango físico aprovechable con celda-nombre vertical (fila 13):
+//   AL(38) … AV(48) = 11 columnas.  Fila de letras: fila 22.
+const AREA_NAME_ROW   = 13;
+const AREA_LETTER_ROW = 22;
+const MAX_AREA_COLS   = 11;            // AL..AV
+const LETRAS_AREA     = 'ABCDEFGHIJKLMNO'.split('');
 
-// Mapeo directo área_academica.nombre (catálogo fino, poblado en SQL/19)
-// → índice de AREAS_MINEDU. Se usa PRIMERO, antes de caer al alias-matching
-// por nombre de curso — así los 21 cursos finos (Aritmética, Álgebra, R.M.,
-// Física, Historia, Geografía, etc.) se agrupan por su área real en vez de
-// desbordar el cupo de 5 columnas "taller".
-const AREA_ACADEMICA_A_MINEDU: Record<string, number> = {
-  'matematica':             0, // A
-  'comunicacion':           1, // B
-  'ingles':                 2, // C
-  'arte y cultura':         3, // D
-  'ciencias sociales':      4, // E
-  'dpcc':                   5, // F
-  'educacion fisica':       6, // G
-  'ciencia y tecnologia':   8, // I
-};
+// Cursos que NO se reportan en el acta SIAGIE aunque se dicten y califiquen en
+// la libreta interna. Se comparan por nombre normalizado (minúsculas, sin
+// acentos). Ej.: Religión no va en el acta oficial de esta institución.
+const CURSOS_EXCLUIDOS_SIAGIE = new Set(['religion']);
 
 // ════════════════════════════════════════════════════════════
 //  Public API
@@ -145,19 +135,38 @@ export async function buildSiagieExcel(input: BuildInput): Promise<Buffer> {
     return Buffer.from(await outputWb.xlsx.writeBuffer());
   }
 
-  // Una hoja "Acta N" clonada del template por cada (grado, sección)
+  // Una hoja clonada del template por cada (grado, sección). El nombre de la
+  // pestaña lleva el GRADO y la SECCIÓN para que sea visible a qué pertenece.
+  const usados = new Set<string>();
   actas.forEach((acta, i) => {
-    const newSheet = outputWb.addWorksheet(`Acta ${i + 1}`);
+    const newSheet = outputWb.addWorksheet(nombreHoja(acta, i, usados));
     cloneSheet(templateSheet, newSheet);
     inyectarDatos(newSheet, acta);
   });
 
-  // Hojas auxiliares
-  if (input.detalle.length > 0) construirHojaDetalle(outputWb, input.detalle);
-  if (actas.length > 0)         construirHojaResumen(outputWb, actas);
+  // Hojas auxiliares (el Detalle también omite los cursos excluidos del acta)
+  const detalleFiltrado = input.detalle.filter(
+    (r) => !CURSOS_EXCLUIDOS_SIAGIE.has(normalizar(r.curso)),
+  );
+  if (detalleFiltrado.length > 0) construirHojaDetalle(outputWb, detalleFiltrado);
+  if (actas.length > 0)           construirHojaResumen(outputWb, actas);
 
   const buf = await outputWb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+/** Nombre de pestaña con grado + sección, saneado para Excel (≤31 chars, único). */
+function nombreHoja(acta: ActaData, i: number, usados: Set<string>): string {
+  const sanitizar = (s: string) => s.replace(/[:\\/?*[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  const base = (sanitizar(`${acta.grado} ${acta.seccion}`) || `Acta ${i + 1}`).slice(0, 31);
+  let nombre = base;
+  let n = 2;
+  while (usados.has(nombre.toLowerCase())) {
+    const suf = ` (${n++})`;
+    nombre = base.slice(0, 31 - suf.length) + suf;
+  }
+  usados.add(nombre.toLowerCase());
+  return nombre;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -227,9 +236,10 @@ function inyectarDatos(ws: any, acta: ActaData): void {
   setVal(ws, T.CELL_IE_RESOLUCION, m.resolucion_creacion ?? '');
   setVal(ws, T.CELL_IE_MODALIDAD,  m.modalidad);
   setVal(ws, T.CELL_IE_GESTION,    m.gestion);
-  setVal(ws, T.CELL_GRADO,         acta.grado);
-  setVal(ws, T.CELL_SECCION,       acta.seccion);
-  setVal(ws, T.CELL_TURNO,         acta.turno);
+  // Grado + Sección (+ Turno) en el recuadro vacío bajo la etiqueta "Grado (3)"
+  // del template (X16:AB16). Así queda VISIBLE en la hoja impresa a qué grado y
+  // sección pertenece el acta (además del nombre de la pestaña).
+  setVal(ws, { row: 16, col: 24 }, `${acta.grado} - Secc. "${acta.seccion}" - ${acta.turno}`);
   setVal(ws, T.CELL_PERIODO_ANIO,  m.anio_escolar);
   setVal(ws, T.CELL_PERIODO_INI,   formatDate(m.fecha_inicio_periodo));
   setVal(ws, T.CELL_PERIODO_FIN,   formatDate(m.fecha_fin_periodo));
@@ -237,6 +247,29 @@ function inyectarDatos(ws: any, acta: ActaData): void {
   setVal(ws, T.CELL_UBI_PROV,      m.provincia);
   setVal(ws, T.CELL_UBI_DIST,      m.distrito);
   setVal(ws, T.CELL_UBI_CP,        m.centro_poblado ?? '');
+
+  // ── Encabezados dinámicos de área (fila 13) + limpieza ───
+  // Escribe el nombre real de cada área en su columna y BORRA las
+  // columnas de área/taller/especialidad del template que sobran.
+  const usadas = Math.min(acta.areas.length, MAX_AREA_COLS);
+  if (acta.areas.length > MAX_AREA_COLS) {
+    console.warn(
+      `[siagie] Acta ${acta.grado}/${acta.seccion}: ${acta.areas.length} áreas con nota ` +
+      `exceden las ${MAX_AREA_COLS} columnas del template; se muestran las primeras ${MAX_AREA_COLS}.`,
+    );
+  }
+  // Nombres de área (fila 13): AL(38) … AV(48)
+  for (let c = T.COL_AREA_START; c <= T.COL_ESP_OCUP; c++) {
+    const i = c - T.COL_AREA_START;
+    ws.getCell(AREA_NAME_ROW, c).value = i < usadas ? acta.areas[i].nombre : '';
+  }
+  // Letras (fila 22): AL(38) … BA(53) — deja A,B,C… para las usadas, borra el resto
+  for (let c = T.COL_AREA_START; c <= T.COL_TALLER_START + 4; c++) {
+    const i = c - T.COL_AREA_START;
+    ws.getCell(AREA_LETTER_ROW, c).value = i < usadas ? (LETRAS_AREA[i] ?? '') : '';
+  }
+  // Sin talleres en este colegio → limpia el rótulo "Talleres" (AW12)
+  ws.getCell(12, T.COL_TALLER_START).value = '';
 
   // ── Filas de alumnos ────────────────────────────────────
   acta.alumnos.slice(0, T.DATA_END_ROW - T.DATA_START_ROW + 1).forEach((al, idx) => {
@@ -252,17 +285,10 @@ function inyectarDatos(ws: any, acta: ActaData): void {
     // Sexo
     setVal(ws, { row, col: T.COL_SEXO },           al.sexo);
 
-    // Áreas (10) — cols AL-AU
-    for (let i = 0; i < 10; i++) {
-      setNotaCell(ws, row, T.COL_AREA_START + i, al.areas[i]);
-    }
-
-    // Especialidad ocupacional
-    setNotaCell(ws, row, T.COL_ESP_OCUP, al.especialidad);
-
-    // Talleres (5) — cols AW-BA
-    for (let i = 0; i < 5; i++) {
-      setNotaCell(ws, row, T.COL_TALLER_START + i, al.talleres[i]);
+    // Áreas dinámicas — una columna por área real presente en la BD
+    const usados = Math.min(acta.areas.length, MAX_AREA_COLS);
+    for (let i = 0; i < usados; i++) {
+      setNotaCell(ws, row, T.COL_AREA_START + i, areaLiteral(al, acta.areas[i].key));
     }
 
     // N° Áreas Desaprobadas
@@ -291,38 +317,26 @@ function setVal(ws: any, coord: { row: number; col: number }, value: string | nu
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function setNotaCell(ws: any, row: number, col: number, literal: string): void {
-  const cell = ws.getCell(row, col);
-  cell.value = literal || '';
-  if (literal) {
-    const colors = literalColor(literal);
-    // Solo sobreescribimos font color + fill, manteniendo border/alignment del template
-    const baseStyle = cell.style || {};
-    cell.style = {
-      ...baseStyle,
-      font: { ...(baseStyle.font ?? {}), bold: true, size: 9, color: { argb: colors.font } },
-      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.bg } },
-    };
-  }
+  // Notas en BLANCO Y NEGRO: solo el valor, conservando el estilo del template
+  // (borde/alineación, texto negro). Sin resaltado de color ni relleno.
+  ws.getCell(row, col).value = literal || '';
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function setSituacionCell(ws: any, row: number, col: number, value: string): void {
-  const cell = ws.getCell(row, col);
-  cell.value = value || '';
-  const c = situacionColor(value);
-  if (c) {
-    const baseStyle = cell.style || {};
-    cell.style = {
-      ...baseStyle,
-      font: { ...(baseStyle.font ?? {}), bold: true, size: 8, color: { argb: c.font } },
-      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: c.bg } },
-    };
-  }
+  // Situación final también en blanco y negro (sin color).
+  ws.getCell(row, col).value = value || '';
 }
 
 // ════════════════════════════════════════════════════════════
 //  Agrupación (notas → Acta) — sin cambios respecto a la versión previa
 // ════════════════════════════════════════════════════════════
+
+interface AreaCol {
+  key:    string;   // area_academica_id, o `curso:<id>` para cursos sin área
+  nombre: string;
+  orden:  number;
+}
 
 interface ActaData {
   grado:    string;
@@ -331,7 +345,7 @@ interface ActaData {
   nivel:    string;
   meta:     NotaFinalSiagie;
   alumnos:  AlumnoActa[];
-  talleres: string[];
+  areas:    AreaCol[];   // columnas dinámicas, ordenadas por area.orden
 }
 
 interface AlumnoActa {
@@ -342,11 +356,7 @@ interface AlumnoActa {
   apellido_materno:          string;
   nombres:                   string;
   sexo:                      string;
-  areas:                     string[];     // length 10 — literal final (post-promedio)
-  areasAcc:                  number[][];   // length 10 — notas acumuladas antes de promediar
-  especialidad:              string;
-  especialidadAcc:           number[];
-  talleres:                  string[];     // length 5
+  notasPorArea:              Map<string, number[]>; // areaKey → notas de sus cursos
   comportamiento:            string;
   numero_areas_desaprobadas: number | null;
   situacion_final:           string;
@@ -354,24 +364,57 @@ interface AlumnoActa {
   observaciones:             string;
 }
 
+/** Literal final del área de un alumno (promedio de las notas de sus cursos). */
+function areaLiteral(al: AlumnoActa, areaKey: string): string {
+  const notas = al.notasPorArea.get(areaKey);
+  if (!notas || notas.length === 0) return '';
+  return notaToLiteral(notas.reduce((a, b) => a + b, 0) / notas.length);
+}
+
+/** Normaliza un nombre (minúsculas, sin acentos ni símbolos) para usar como clave. */
+function normalizar(s: string): string {
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
-  const map = new Map<string, ActaData>();
+  const map     = new Map<string, ActaData>();
+  const catalog = new Map<string, Map<string, AreaCol>>(); // actaKey → (areaKey → AreaCol)
 
   for (const r of rows) {
+    // Cursos excluidos del acta oficial (p. ej. Religión): no generan columna.
+    if (CURSOS_EXCLUIDOS_SIAGIE.has(normalizar(r.curso))) continue;
+
     const key = `${r.grado}|${r.seccion}|${r.periodo_id}`;
     let acta  = map.get(key);
     if (!acta) {
       acta = {
-        grado:    r.grado,
-        seccion:  r.seccion,
-        turno:    r.turno,
-        nivel:    r.nivel_educativo,
-        meta:     r,
-        alumnos:  [],
-        talleres: [],
+        grado:   r.grado,
+        seccion: r.seccion,
+        turno:   r.turno,
+        nivel:   r.nivel_educativo,
+        meta:    r,
+        alumnos: [],
+        areas:   [],
       };
       map.set(key, acta);
+      catalog.set(key, new Map());
     }
+
+    // Área real del curso; si el curso no tiene área, es su propia columna.
+    // La clave es el NOMBRE normalizado (no el id): area_academica tiene una
+    // fila por (nivel, nombre), así que un mismo área ("Inglés") puede venir con
+    // varios ids — se fusionan en una sola columna.
+    const areaNombre = r.area_nombre ?? r.curso;
+    const areaKey    = normalizar(areaNombre);
+    const orden      = r.area_orden ?? 900; // cursos sin área → después de las áreas reales
+    const cat = catalog.get(key)!;
+    const prev = cat.get(areaKey);
+    if (!prev) cat.set(areaKey, { key: areaKey, nombre: areaNombre, orden });
+    else if (orden < prev.orden) prev.orden = orden; // conserva el menor orden
 
     let alumno = acta.alumnos.find(a => a.numero_documento === r.numero_documento);
     if (!alumno) {
@@ -383,11 +426,7 @@ function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
         apellido_materno:          r.apellido_materno,
         nombres:                   r.nombres,
         sexo:                      r.sexo,
-        areas:                     Array(10).fill(''),
-        areasAcc:                  Array.from({ length: 10 }, () => []),
-        especialidad:              '',
-        especialidadAcc:           [],
-        talleres:                  Array(5).fill(''),
+        notasPorArea:              new Map(),
         comportamiento:            r.comportamiento ?? '',
         numero_areas_desaprobadas: r.numero_areas_desaprobadas,
         situacion_final:           r.situacion_final ?? '',
@@ -397,24 +436,22 @@ function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
       acta.alumnos.push(alumno);
     }
 
-    const cls = clasificarCurso(r.curso, r.area_nombre, acta.talleres);
-    if (cls.tipo === 'area')              alumno.areasAcc[cls.index].push(r.nota_promedio);
-    else if (cls.tipo === 'especialidad') alumno.especialidadAcc.push(r.nota_promedio);
-    else if (cls.tipo === 'taller')       alumno.talleres[cls.index] = notaToLiteral(r.nota_promedio);
+    // Acumula la nota del curso bajo su área (varios cursos de una misma área
+    // se promedian a una sola nota literal por área en el acta).
+    if (r.nota_promedio > 0) {
+      if (!alumno.notasPorArea.has(areaKey)) alumno.notasPorArea.set(areaKey, []);
+      alumno.notasPorArea.get(areaKey)!.push(r.nota_promedio);
+    }
   }
 
-  // Los cursos de una misma área MINEDU (ej. Aritmética+Álgebra+Trigonometría+
-  // R.M.+Geometría → "Matemática") se promedian en una sola nota por área,
-  // en vez de que el último curso procesado sobrescriba a los anteriores.
-  for (const acta of map.values()) {
-    for (const alumno of acta.alumnos) {
-      alumno.areas = alumno.areasAcc.map((notas) =>
-        notas.length > 0 ? notaToLiteral(notas.reduce((a, b) => a + b, 0) / notas.length) : '',
-      );
-      alumno.especialidad = alumno.especialidadAcc.length > 0
-        ? notaToLiteral(alumno.especialidadAcc.reduce((a, b) => a + b, 0) / alumno.especialidadAcc.length)
-        : '';
-    }
+  // Ordena las columnas de área (por orden pedagógico real; los cursos sin área
+  // van al final por nombre), DEJANDO SOLO las áreas/cursos con al menos una
+  // nota real en la sección — así se eliminan los cursos genéricos placeholder
+  // (sin notas) y quedan únicamente los que existen de verdad. Ordena alumnos.
+  for (const [key, acta] of map) {
+    acta.areas = [...catalog.get(key)!.values()]
+      .filter((a) => acta.alumnos.some((al) => (al.notasPorArea.get(a.key)?.length ?? 0) > 0))
+      .sort((a, b) => (a.orden - b.orden) || a.nombre.localeCompare(b.nombre));
     acta.alumnos.sort((a, b) => a.numero_orden - b.numero_orden);
   }
 
@@ -422,49 +459,6 @@ function agruparPorActa(rows: NotaFinalSiagie[]): ActaData[] {
     const g = a.grado.localeCompare(b.grado);
     return g !== 0 ? g : a.seccion.localeCompare(b.seccion);
   });
-}
-
-function clasificarCurso(
-  nombre:      string,
-  areaNombre:  string | null,
-  talleres:    string[],
-): { tipo: 'area'; index: number } | { tipo: 'especialidad' } | { tipo: 'taller'; index: number } {
-  // 1) Vía area_academica_id (catálogo fino nuevo) — resuelve directo por
-  //    área asignada al curso, sin depender del nombre del curso en sí.
-  if (areaNombre) {
-    const idx = AREA_ACADEMICA_A_MINEDU[normalizar(areaNombre)];
-    if (idx !== undefined) return { tipo: 'area', index: idx };
-  }
-
-  // 2) Fallback: alias-matching por nombre de curso (catálogo viejo de 8
-  //    cursos genéricos, y los cursos finos sin área asignada — Religión,
-  //    Oratoria, Psicología, Plan Lector — que van a "taller" a propósito).
-  const norm = normalizar(nombre);
-  for (let i = 0; i < AREAS_MINEDU.length; i++) {
-    const area = AREAS_MINEDU[i];
-    if (norm === normalizar(area.nombre)) return { tipo: 'area', index: i };
-    for (const alias of area.aliases) {
-      if (norm.includes(alias)) return { tipo: 'area', index: i };
-    }
-  }
-  if (norm.includes('especialidad') || norm.includes('ocupacional')) {
-    return { tipo: 'especialidad' };
-  }
-  let idx = talleres.indexOf(nombre);
-  if (idx === -1) {
-    idx = talleres.findIndex(t => t === '');
-    if (idx === -1) idx = 0;
-    talleres[idx] = nombre;
-  }
-  return { tipo: 'taller', index: idx };
-}
-
-function normalizar(s: string): string {
-  return s.toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -483,27 +477,6 @@ function notaToLiteral(nota: number): string {
   if (nota >= 14) return 'A';
   if (nota >= 11) return 'B';
   return 'C';
-}
-
-function literalColor(literal: string): { font: string; bg: string } {
-  switch (literal) {
-    case 'AD': return { font: 'FF064E3B', bg: 'FFD1FAE5' };
-    case 'A':  return { font: 'FF1E3A8A', bg: 'FFDBEAFE' };
-    case 'B':  return { font: 'FF92400E', bg: 'FFFEF3C7' };
-    case 'C':  return { font: 'FF7F1D1D', bg: 'FFFEE2E2' };
-    default:   return { font: 'FF334155', bg: 'FFFFFFFF' };
-  }
-}
-
-function situacionColor(s: string): { font: string; bg: string } | null {
-  switch (s) {
-    case 'Promovido':   return { font: 'FF064E3B', bg: 'FFD1FAE5' };
-    case 'Repitente':   return { font: 'FF92400E', bg: 'FFFEF3C7' };
-    case 'Retirado':
-    case 'Trasladado':  return { font: 'FF7F1D1D', bg: 'FFFEE2E2' };
-    case 'Fallecido':   return { font: 'FF334155', bg: 'FFF1F5F9' };
-    default:            return null;
-  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -534,13 +507,13 @@ function construirHojaDetalle(
   const headerRow = ws.getRow(1);
   headerRow.height = 24;
   headerRow.eachCell((cell: import('exceljs').Cell) => {
-    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
-    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+    // Blanco y negro: encabezado en negrita, sin relleno de color.
+    cell.font      = { bold: true, size: 9 };
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     cell.border    = thinBorder();
   });
 
-  rows.forEach((r, idx) => {
+  rows.forEach((r) => {
     const row = ws.addRow([
       r.numero_orden, r.codigo_estudiante ?? '', r.numero_documento,
       r.apellido_paterno, r.apellido_materno, r.nombres,
@@ -551,12 +524,7 @@ function construirHojaDetalle(
       r.comportamiento ?? '', r.motivo_retiro ?? '', r.observaciones ?? '',
       formatDate(r.fecha_registro_nota),
     ]);
-    if (idx % 2 === 1) {
-      row.eachCell((cell: import('exceljs').Cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
-      });
-    }
-    row.font = { size: 9 };
+    row.font = { size: 9 };  // sin zebra de color
   });
 
   const widths = [8, 13, 12, 18, 18, 22, 6, 12, 10, 10, 14, 24, 12, 32, 12, 12, 8, 16, 14, 10, 14, 22, 26, 14];
@@ -573,8 +541,8 @@ function construirHojaResumen(
   const ws = workbook.addWorksheet('Resumen');
   ws.addRow(['Acta', 'Grado', 'Sección', 'Turno', 'Nivel', 'Alumnos']);
   ws.getRow(1).eachCell((cell: import('exceljs').Cell) => {
-    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } };
+    // Blanco y negro: encabezado en negrita, sin relleno de color.
+    cell.font      = { bold: true, size: 10 };
     cell.alignment = { vertical: 'middle', horizontal: 'center' };
     cell.border    = thinBorder();
   });

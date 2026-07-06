@@ -1,0 +1,58 @@
+# ============================================================
+# SGEI Backend — imagen de PRODUCCIÓN (multi-stage)
+# Etapa 1 compila (prisma generate + next build); la etapa 2
+# solo lleva dependencias de runtime + .next → imagen liviana
+# apta para un VPS pequeño (KVM 1).
+# ============================================================
+
+# ── Etapa 1: build ──────────────────────────────────────────
+FROM node:20-slim AS builder
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY . .
+
+# next build importa las rutas y config/env.ts valida el entorno con Zod;
+# estos valores dummy solo existen en la etapa de build (no van al runtime).
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build" \
+    JWT_SECRET="dummy-secret-solo-para-next-build-0123456789abcdef0123456789"
+
+# build = prisma generate && next build
+RUN npm run build
+
+# ── Etapa 2: runtime ────────────────────────────────────────
+FROM node:20-slim
+
+# openssl (Prisma) + curl (healthcheck del compose)
+RUN apt-get update && apt-get install -y openssl curl && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+# Cliente Prisma generado en el build (con --ignore-scripts no se regenera)
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+
+COPY --from=builder /app/.next ./.next
+COPY next.config.js ./
+COPY prisma ./prisma
+
+# Plantillas oficiales (SIAGIE .xlsx) — se leen en runtime con process.cwd()
+COPY resources ./resources
+
+# Directorio de uploads (imágenes de simulacros); en el compose se monta
+# como volumen para que sobreviva a los redeploys
+RUN mkdir -p public/uploads
+
+EXPOSE 3001
+
+CMD ["npm", "run", "start"]

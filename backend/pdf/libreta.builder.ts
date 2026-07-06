@@ -1,77 +1,33 @@
 // ============================================================
 //  pdf/libreta.builder.ts
-//  Genera el PDF de la libreta de notas usando pdfkit.
+//  Genera la "BOLETA DE NOTAS" en PDF (solo lectura) para el alumno,
+//  con el formato de la IEP Virgen del Carmen - Las Viñas
+//  (referencia: resources/LIBRETANUEVA.pdf). Mismo modelo de datos
+//  (BoletaData) que el .docx editable de Secretaría.
 //
-//  INSTALACIÓN REQUERIDA:
-//    pnpm add pdfkit @types/pdfkit --filter backend
-//
-//  Si pdfkit no está instalado, el endpoint devuelve 503.
+//  Requiere pdfkit. Si no está instalado, el endpoint devuelve 503.
 // ============================================================
-import type { LibretaRowDetallada } from '@/modules/libretas/libreta.repository';
+import type { BoletaData } from '@/modules/libretas/boleta.types';
 
-interface CursoGroup {
-  curso:        string;
-  competencias: {
-    nombre:   string;
-    notas:    Map<number, { vigesimal: number | null; literal: string | null }>;
-  }[];
-}
+const CRITERIOS_GENERAL = [
+  'Asiste a la I.E. uniformado y aseado.',
+  'Cumple con el llenado de agenda diariamente.',
+  'Participa en las actividades que se realiza en la I.E.',
+  'Respeta y cumple el Reglamento Interno.',
+  'ORATORIA',
+  'COMPORTAMIENTO',
+];
+const CRITERIOS_PADRE = [
+  'Asistió a reuniones puntualmente organizadas por la Profesora.',
+  'Cumple con el horario establecido de la I.E. al ingreso y salida de su hijo (a).',
+  'Firma diariamente el cuaderno de control.',
+  'Manda correctamente uniformado a la I.E.',
+  'Apoya al estudiante en su proceso de aprendizaje.',
+  'Respeta el Reglamento Interno de la I.E.',
+];
+const ROMANOS: Record<number, string> = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
 
-interface AreaGroup {
-  area:   string;
-  cursos: CursoGroup[];
-}
-
-/** Agrupa área → curso → competencia. Cursos sin área asignada se
- *  renderizan como su propia banda (usando su propio nombre). */
-function agruparPorArea(rows: LibretaRowDetallada[]): AreaGroup[] {
-  const areaMap = new Map<string, AreaGroup>();
-
-  for (const row of rows) {
-    const areaKey    = row.area_id ?? `__curso_${row.curso_id}`;
-    const areaNombre = row.area_nombre ?? row.curso;
-    if (!areaMap.has(areaKey)) areaMap.set(areaKey, { area: areaNombre, cursos: [] });
-    const area = areaMap.get(areaKey)!;
-
-    let curso = area.cursos.find((c) => c.curso === row.curso);
-    if (!curso) {
-      curso = { curso: row.curso, competencias: [] };
-      area.cursos.push(curso);
-    }
-
-    let comp = curso.competencias.find((c) => c.nombre === row.competencia);
-    if (!comp) {
-      comp = { nombre: row.competencia, notas: new Map() };
-      curso.competencias.push(comp);
-    }
-    comp.notas.set(row.bimestre, {
-      vigesimal: row.nota_vigesimal,
-      literal:   row.nota_literal,
-    });
-  }
-
-  return Array.from(areaMap.values());
-}
-
-function bimestresPresentes(rows: LibretaRowDetallada[]): number[] {
-  return [...new Set(rows.map((r) => r.bimestre))].sort((a, b) => a - b);
-}
-
-/** Convierte un promedio vigesimal a literal usando la escala estándar (AD/A/B/C) mostrada en el pie del documento. */
-function literalDeVigesimal(valor: number | null): string {
-  if (valor === null) return '—';
-  if (valor >= 18) return 'AD';
-  if (valor >= 14) return 'A';
-  if (valor >= 11) return 'B';
-  return 'C';
-}
-
-export async function buildLibretaPdf(
-  rows: LibretaRowDetallada[],
-  opciones: { soloLiteral?: boolean } = {},
-): Promise<Buffer> {
-  const soloLiteral = opciones.soloLiteral ?? false;
-  // Dynamic import — no rompe el build si pdfkit no está instalado
+export async function buildLibretaPdf(data: BoletaData): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let PDFDocument: any;
   try {
@@ -80,227 +36,182 @@ export async function buildLibretaPdf(
     throw new Error('pdfkit no está instalado. Ejecuta: pnpm add pdfkit @types/pdfkit --filter backend');
   }
 
-  const meta   = rows[0];
-  const areas  = agruparPorArea(rows);
-  const bims   = bimestresPresentes(rows);
-
-  // Peso por (curso, competencia, bimestre) — para el promedio ponderado real.
-  const pesoPorCompetencia = new Map<string, number>();
-  for (const r of rows) pesoPorCompetencia.set(`${r.curso}::${r.competencia}`, r.peso);
-
-  function promedioPonderadoCurso(curso: CursoGroup, bimestre: number): number | null {
-    let sumPonderada = 0;
-    let sumPeso = 0;
-    for (const comp of curso.competencias) {
-      const n = comp.notas.get(bimestre);
-      if (n?.vigesimal != null) {
-        const peso = pesoPorCompetencia.get(`${curso.curso}::${comp.nombre}`) ?? 100;
-        sumPonderada += n.vigesimal * peso;
-        sumPeso += peso;
-      }
-    }
-    return sumPeso > 0 ? sumPonderada / sumPeso : null;
-  }
-
-  function promedioAreaEnBimestre(area: AreaGroup, bimestre: number): number | null {
-    const proms = area.cursos.map((c) => promedioPonderadoCurso(c, bimestre)).filter((n): n is number => n !== null);
-    return proms.length > 0 ? proms.reduce((a, b) => a + b, 0) / proms.length : null;
-  }
+  // Paleta
+  const NAVY = '#1F3864', YELLOW = '#FFF200', HEADGRAY = '#D9D9D9', BLUEHDR = '#DDEBF7';
+  const GREEN = '#E2EFDA', LABELBLUE = '#DDEBF7', LINE = '#7F7F7F', INK = '#000000', GRAY = '#404040';
 
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
-    doc.on('end',  () => resolve(Buffer.concat(chunks)));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const W      = doc.page.width - 80;   // usable width
-    const LEFT   = 40;
-    const GRAY   = '#64748b';
-    const BLUE   = '#1e40af';
-    const HEADER = '#1e3a5f';
+    const LEFT = 40;
+    const W = doc.page.width - 80;          // usable width ≈ 515
+    const RIGHT = LEFT + W;
+    const PAGE_BOTTOM = doc.page.height - 50;
 
-    // ── Encabezado ──────────────────────────────────────────────
-    doc.fillColor(HEADER)
-       .fontSize(13)
-       .font('Helvetica-Bold')
-       .text('I.E. SAN JOSÉ DE CALASANZ', LEFT, 40, { width: W, align: 'center' });
-
-    doc.fillColor(GRAY)
-       .fontSize(9)
-       .font('Helvetica')
-       .text('LIBRETA DE NOTAS — EDUCACIÓN SECUNDARIA', LEFT, 56, { width: W, align: 'center' });
-
-    doc.moveDown(0.4);
-    doc.moveTo(LEFT, doc.y).lineTo(LEFT + W, doc.y).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
-    doc.moveDown(0.4);
-
-    // Datos del alumno
-    const info = [
-      `Alumno: ${meta?.alumno_nombre ?? '—'}`,
-      `Grado:  ${meta?.grado ?? '—'}° Secundaria — Sección ${meta?.seccion ?? '—'}`,
-    ];
-    doc.fillColor('#1e293b').fontSize(9).font('Helvetica-Bold');
-    info.forEach((line) => {
-      doc.text(line, LEFT, doc.y, { width: W });
-      doc.moveDown(0.2);
-    });
-
-    doc.moveDown(0.5);
-    doc.moveTo(LEFT, doc.y).lineTo(LEFT + W, doc.y).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
-    doc.moveDown(0.6);
-
-    // ── Tabla de notas ──────────────────────────────────────────
-    const COL_CURSO  = 140;
-    const COL_COMP   = 195;
-    const COL_BIM    = Math.floor((W - COL_CURSO - COL_COMP) / (bims.length || 1));
-    const ROW_H      = 16;
-    const HEADER_H   = 20;
-
-    // Cabecera de tabla
-    const headerY = doc.y;
-    doc.rect(LEFT, headerY, W, HEADER_H).fillColor('#1e3a5f').fill();
-    doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
-    doc.text('Área Curricular', LEFT + 4,     headerY + 5, { width: COL_CURSO - 4 });
-    doc.text('Competencia',     LEFT + COL_CURSO + 4, headerY + 5, { width: COL_COMP - 4 });
-    bims.forEach((b, i) => {
-      const x = LEFT + COL_CURSO + COL_COMP + i * COL_BIM;
-      doc.text(`Bim. ${b}`, x + 2, headerY + 5, { width: COL_BIM - 4, align: 'center' });
-    });
-    doc.y = headerY + HEADER_H;
-
-    // Filas: área → curso → competencia, + fila "PROMEDIO GENERAL" por área
-    let rowBg = false;
-    for (const area of areas) {
-      const totalCompRows = area.cursos.reduce((acc, c) => acc + c.competencias.length, 0);
-      const totalRows = totalCompRows + area.cursos.length; // + 1 fila "Promedio del curso" cada uno
-      const groupH = totalRows * ROW_H;
-
-      if (doc.y + groupH > doc.page.height - 80) {
-        doc.addPage();
+    // ── Helper: celda con borde + texto ──────────────────────────
+    function box(x: number, y: number, w: number, h: number, text: string, o: {
+      align?: 'left' | 'center' | 'right'; fill?: string; bold?: boolean; size?: number; color?: string; wrap?: boolean;
+    } = {}) {
+      if (o.fill) doc.rect(x, y, w, h).fillColor(o.fill).fill();
+      doc.rect(x, y, w, h).strokeColor(LINE).lineWidth(0.5).stroke();
+      const size = o.size ?? 8;
+      doc.fillColor(o.color ?? INK).font(o.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size);
+      if (o.wrap) {
+        doc.text(text, x + 3, y + 3, { width: w - 6, align: o.align ?? 'left' });
+      } else {
+        doc.text(text, x + 3, y + (h - size) / 2 - 1, { width: w - 6, align: o.align ?? 'left', lineBreak: false, ellipsis: true });
       }
-
-      const groupStartY = doc.y;
-
-      if (rowBg) {
-        doc.rect(LEFT, groupStartY, W, groupH).fillColor('#f8fafc').fill();
-      }
-      rowBg = !rowBg;
-
-      // Nombre del área (lado izquierdo, centrado verticalmente sobre todo el bloque)
-      doc.fillColor(BLUE)
-         .fontSize(8)
-         .font('Helvetica-Bold')
-         .text(area.area, LEFT + 4, groupStartY + (groupH - 8) / 2, {
-           width:     COL_CURSO - 8,
-           lineBreak: false,
-         });
-
-      let cy = groupStartY;
-      for (const curso of area.cursos) {
-        curso.competencias.forEach((comp) => {
-          doc.fillColor('#334155')
-             .fontSize(7.5)
-             .font('Helvetica')
-             .text(`${curso.curso} — ${comp.nombre}`, LEFT + COL_CURSO + 4, cy + 4, {
-               width:     COL_COMP - 8,
-               lineBreak: false,
-               ellipsis:  true,
-             });
-
-          bims.forEach((b, bi) => {
-            const nota = comp.notas.get(b);
-            const x    = LEFT + COL_CURSO + COL_COMP + bi * COL_BIM;
-            const vstr = nota?.vigesimal !== null && nota?.vigesimal !== undefined
-              ? nota.vigesimal.toFixed(1)
-              : '—';
-            const lstr = nota?.literal ?? '';
-            const texto = soloLiteral ? (lstr || '—') : `${vstr} ${lstr}`;
-
-            doc.fillColor('#1e293b')
-               .fontSize(7.5)
-               .font('Helvetica-Bold')
-               .text(texto, x + 2, cy + 4, { width: COL_BIM - 4, align: 'center' });
-          });
-
-          cy += ROW_H;
-        });
-
-        // Fila "Promedio del curso" (ponderado por peso de sus criterios)
-        doc.fillColor('#475569')
-           .fontSize(7)
-           .font('Helvetica-Bold')
-           .text(`Promedio: ${curso.curso}`, LEFT + COL_CURSO + 4, cy + 4, {
-             width:     COL_COMP - 8,
-             lineBreak: false,
-           });
-        bims.forEach((b, bi) => {
-          const prom = promedioPonderadoCurso(curso, b);
-          const x    = LEFT + COL_CURSO + COL_COMP + bi * COL_BIM;
-          const textoProm = soloLiteral ? literalDeVigesimal(prom) : (prom !== null ? prom.toFixed(1) : '—');
-          doc.fillColor('#1e293b')
-             .fontSize(7)
-             .font('Helvetica-Bold')
-             .text(textoProm, x + 2, cy + 4, { width: COL_BIM - 4, align: 'center' });
-        });
-        cy += ROW_H;
-      }
-
-      // Borde inferior del grupo
-      doc.moveTo(LEFT, groupStartY + groupH)
-         .lineTo(LEFT + W, groupStartY + groupH)
-         .strokeColor('#e2e8f0')
-         .lineWidth(0.5)
-         .stroke();
-
-      doc.y = groupStartY + groupH;
-
-      // Fila "PROMEDIO GENERAL" del área (promedio simple de sus cursos)
-      const genY = doc.y;
-      doc.rect(LEFT, genY, W, ROW_H).fillColor('#dbeafe').fill();
-      doc.fillColor(BLUE)
-         .fontSize(7.5)
-         .font('Helvetica-Bold')
-         .text('PROMEDIO GENERAL', LEFT + COL_CURSO + 4, genY + 4, { width: COL_COMP - 8 });
-      bims.forEach((b, bi) => {
-        const prom = promedioAreaEnBimestre(area, b);
-        const x = LEFT + COL_CURSO + COL_COMP + bi * COL_BIM;
-        const textoProm = soloLiteral ? literalDeVigesimal(prom) : (prom !== null ? prom.toFixed(1) : '—');
-        doc.fillColor(BLUE)
-           .fontSize(7.5)
-           .font('Helvetica-Bold')
-           .text(textoProm, x + 2, genY + 4, { width: COL_BIM - 4, align: 'center' });
-      });
-      doc.y = genY + ROW_H;
     }
+    const gv = (v: string | null | undefined) => v ?? '';
 
-    // ── Escala literal ──────────────────────────────────────────
-    doc.moveDown(1);
-    doc.fillColor(GRAY)
-       .fontSize(7.5)
-       .font('Helvetica')
-       .text(
-         'Escala literal:  AD (18–20) Logro destacado  ·  A (14–17) Logro esperado  ·  B (11–13) En proceso  ·  C (00–10) En inicio',
-         LEFT,
-         doc.y,
-         { width: W },
-       );
+    // ── Encabezado institucional ─────────────────────────────────
+    const nombreLimpio = data.institucion.nombre.replace(/^IEP\s+/i, '').trim();
+    doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(11)
+       .text('INSTITUCIÓN EDUCATIVA PARTICULAR', LEFT, 42, { width: W, align: 'center' });
+    doc.fontSize(16).text(`"${nombreLimpio.toUpperCase()}"`, LEFT, doc.y, { width: W, align: 'center' });
+    doc.fillColor(GRAY).font('Helvetica').fontSize(9)
+       .text(data.institucion.niveles_texto, LEFT, doc.y + 1, { width: W, align: 'center' });
 
-    // ── Pie de página ───────────────────────────────────────────
-    const footerY = doc.page.height - 40;
-    doc.moveTo(LEFT, footerY - 6)
-       .lineTo(LEFT + W, footerY - 6)
-       .strokeColor('#cbd5e1')
-       .lineWidth(0.5)
-       .stroke();
-    doc.fillColor(GRAY)
-       .fontSize(7)
-       .text(
-         `Generado el ${new Date().toLocaleDateString('es-PE')} — SGEI v2.1`,
-         LEFT,
-         footerY,
-         { width: W, align: 'right' },
-       );
+    // Barra amarilla
+    let y = doc.y + 6;
+    box(LEFT, y, W, 22, `BOLETA DE NOTAS - ${data.anio}`, { align: 'center', fill: YELLOW, bold: true, size: 15 });
+    y += 22 + 8;
+
+    // ── Datos del estudiante ─────────────────────────────────────
+    const lblW = Math.round(W * 0.22), midLbl = Math.round(W * 0.15);
+    box(LEFT, y, lblW, 16, 'APELLIDOS Y NOMBRES:', { fill: LABELBLUE, bold: true, size: 8 });
+    box(LEFT + lblW, y, W - lblW, 16, data.alumno.nombre, { size: 9, bold: true });
+    y += 16;
+    const salonValW = W - lblW - midLbl - (W - lblW - midLbl) / 2;
+    box(LEFT, y, lblW, 16, 'SALÓN:', { fill: LABELBLUE, bold: true, size: 8 });
+    box(LEFT + lblW, y, salonValW, 16, data.alumno.salon, { size: 9 });
+    box(LEFT + lblW + salonValW, y, midLbl, 16, 'NIVEL:', { fill: LABELBLUE, bold: true, size: 8 });
+    box(LEFT + lblW + salonValW + midLbl, y, W - lblW - salonValW - midLbl, 16, data.alumno.nivel, { size: 9 });
+    y += 16;
+    box(LEFT, y, lblW, 16, 'TUTOR(A):', { fill: LABELBLUE, bold: true, size: 8 });
+    box(LEFT + lblW, y, W - lblW, 16, gv(data.tutor), { size: 9 });
+    y += 16 + 8;
+
+    // ── Tabla de notas ───────────────────────────────────────────
+    const cArea = 92, cCurso = 150, cBim = 40, cAnual = W - cArea - cCurso - cBim * 4;
+    const xArea = LEFT, xCurso = LEFT + cArea, xBim0 = xCurso + cCurso, xAnual = xBim0 + cBim * 4;
+    const RH = 15;
+
+    function drawGradeHeader(yy: number): number {
+      box(xArea, yy, cArea + cCurso, RH, 'ASIGNATURAS', { align: 'center', fill: HEADGRAY, bold: true, size: 8 });
+      box(xBim0, yy, cBim * 4, RH, 'BIMESTRE', { align: 'center', fill: BLUEHDR, bold: true, size: 8 });
+      box(xAnual, yy, cAnual, RH * 2, 'PROMEDIO ANUAL', { align: 'center', fill: GREEN, bold: true, size: 7.5, wrap: true });
+      const y2 = yy + RH;
+      data.bimestres.forEach((b, i) => box(xBim0 + i * cBim, y2, cBim, RH, ROMANOS[b] ?? String(b), { align: 'center', fill: BLUEHDR, bold: true, size: 8 }));
+      return y2 + RH;
+    }
+    y = drawGradeHeader(y);
+
+    for (const area of data.areas) {
+      const cursoRows = area.cursos.length;
+      const blockH = area.tienePromedioGeneral ? (cursoRows + 1) * RH : cursoRows * RH;
+      if (y + blockH > PAGE_BOTTOM) { doc.addPage(); y = 50; y = drawGradeHeader(y); }
+
+      if (!area.tienePromedioGeneral) {
+        const u = area.cursos[0];
+        const mismo = u && u.curso.toUpperCase() === area.area_nombre.toUpperCase();
+        if (mismo) {
+          box(xArea, y, cArea + cCurso, RH, area.area_nombre, { bold: true, size: 8 });
+        } else {
+          box(xArea, y, cArea, RH, area.area_nombre, { bold: true, size: 8 });
+          box(xCurso, y, cCurso, RH, u?.curso ?? '', { size: 8 });
+        }
+        data.bimestres.forEach((b, i) => box(xBim0 + i * cBim, y, cBim, RH, gv(u?.literalPorBim[b]), { align: 'center', bold: true, size: 9 }));
+        box(xAnual, y, cAnual, RH, gv(u?.literalAnual), { align: 'center', bold: true, size: 9, fill: GREEN });
+        y += RH;
+        continue;
+      }
+
+      const areaTop = y;
+      area.cursos.forEach((curso) => {
+        box(xCurso, y, cCurso, RH, curso.curso, { size: 8 });
+        data.bimestres.forEach((b, i) => box(xBim0 + i * cBim, y, cBim, RH, gv(curso.literalPorBim[b]), { align: 'center', bold: true, size: 9 }));
+        box(xAnual, y, cAnual, RH, gv(curso.literalAnual), { align: 'center', bold: true, size: 9, fill: GREEN });
+        y += RH;
+      });
+      // Etiqueta del área (rowspan sobre las filas de curso)
+      box(xArea, areaTop, cArea, cursoRows * RH, area.area_nombre, { bold: true, size: 8, align: 'left' });
+      // Fila PROMEDIO GENERAL
+      box(xArea, y, cArea + cCurso, RH, 'PROMEDIO GENERAL', { align: 'center', fill: HEADGRAY, bold: true, size: 8 });
+      data.bimestres.forEach((b, i) => box(xBim0 + i * cBim, y, cBim, RH, gv(area.generalPorBim[b]), { align: 'center', fill: HEADGRAY, bold: true, size: 9 }));
+      box(xAnual, y, cAnual, RH, gv(area.generalAnual), { align: 'center', fill: GREEN, bold: true, size: 9 });
+      y += RH;
+    }
+    y += 10;
+
+    // ── ASISTENCIA Y PUNTUALIDAD (datos reales) ──────────────────
+    if (y + RH * 5 > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+    const aLbl1 = 110, aLbl2 = 175, aBim = (W - aLbl1 - aLbl2) / 4;
+    box(xArea, y, aLbl1 + aLbl2, RH, '', { fill: '#FFFFFF' });
+    box(xArea + aLbl1 + aLbl2, y, aBim * 4, RH, 'BIMESTRE', { align: 'center', fill: BLUEHDR, bold: true, size: 8 });
+    y += RH;
+    box(xArea, y, aLbl1 + aLbl2, RH, '', { fill: '#FFFFFF' });
+    data.bimestres.forEach((b, i) => box(xArea + aLbl1 + aLbl2 + i * aBim, y, aBim, RH, ROMANOS[b] ?? String(b), { align: 'center', fill: BLUEHDR, bold: true, size: 8 }));
+    y += RH;
+    const asisDefs = [
+      { et: 'TARDANZA', get: (b: number) => data.asistencia.find((x) => x.bimestre === b)?.tardanza ?? 0 },
+      { et: 'FALTAS JUSTIFICADAS', get: (b: number) => data.asistencia.find((x) => x.bimestre === b)?.faltas_just ?? 0 },
+      { et: 'FALTAS INJUSTIFICADAS', get: (b: number) => data.asistencia.find((x) => x.bimestre === b)?.faltas_injust ?? 0 },
+    ];
+    box(xArea, y, aLbl1, RH * 3, 'ASISTENCIA Y PUNTUALIDAD', { align: 'center', fill: HEADGRAY, bold: true, size: 7.5, wrap: true });
+    asisDefs.forEach((r) => {
+      box(xArea + aLbl1, y, aLbl2, RH, r.et, { size: 8 });
+      data.bimestres.forEach((b, i) => box(xArea + aLbl1 + aLbl2 + i * aBim, y, aBim, RH, String(r.get(b)), { align: 'center', size: 8 }));
+      y += RH;
+    });
+    y += 10;
+
+    // ── Tablas de criterios en blanco ────────────────────────────
+    function criteriosTable(titulo: string, primeraCol: string, criterios: string[]) {
+      const cCrit = Math.round(W * 0.62), cB = (W - cCrit) / 4, critH = 24;
+      const needed = RH * 2 + criterios.length * critH;
+      if (y + needed > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+      box(xArea, y, cCrit, RH, titulo, { align: 'center', fill: HEADGRAY, bold: true, size: 8 });
+      box(xArea + cCrit, y, cB * 4, RH, 'BIMESTRE', { align: 'center', fill: BLUEHDR, bold: true, size: 8 });
+      y += RH;
+      box(xArea, y, cCrit, RH, primeraCol, { align: 'center', fill: HEADGRAY, bold: true, size: 8 });
+      data.bimestres.forEach((b, i) => box(xArea + cCrit + i * cB, y, cB, RH, ROMANOS[b] ?? String(b), { align: 'center', fill: BLUEHDR, bold: true, size: 8 }));
+      y += RH;
+      criterios.forEach((c) => {
+        box(xArea, y, cCrit, critH, c, { size: 8, wrap: true });
+        data.bimestres.forEach((_, i) => box(xArea + cCrit + i * cB, y, cB, critH, '', {}));
+        y += critH;
+      });
+      y += 8;
+    }
+    criteriosTable('EVALUACIÓN GENERAL', '', CRITERIOS_GENERAL);
+    criteriosTable('EVALUACIÓN DEL PADRE DE FAMILIA', 'CRITERIOS', CRITERIOS_PADRE);
+
+    // ── CONCLUSIÓN DESCRIPTIVA POR PERIODO ───────────────────────
+    const concH = 26, cBimW = 90;
+    if (y + RH + data.bimestres.length * concH > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+    box(xArea, y, cBimW, RH, 'BIMESTRE', { align: 'center', fill: HEADGRAY, bold: true, size: 8 });
+    box(xArea + cBimW, y, W - cBimW, RH, 'CONCLUSIÓN DESCRIPTIVA POR PERIODO', { align: 'center', fill: HEADGRAY, bold: true, size: 8 });
+    y += RH;
+    data.bimestres.forEach((b) => {
+      box(xArea, y, cBimW, concH, ROMANOS[b] ?? String(b), { align: 'center', fill: BLUEHDR, bold: true, size: 9 });
+      box(xArea + cBimW, y, W - cBimW, concH, '', {});
+      y += concH;
+    });
+    y += 24;
+
+    // ── Firmas ───────────────────────────────────────────────────
+    if (y + 60 > PAGE_BOTTOM) { doc.addPage(); y = 60; }
+    const sigW = 170, sigH = 44;
+    doc.rect(xArea, y, sigW, sigH).strokeColor(LINE).lineWidth(0.5).stroke();
+    doc.rect(RIGHT - sigW, y, sigW, sigH).strokeColor(LINE).lineWidth(0.5).stroke();
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(8);
+    doc.text('TUTOR (A)', xArea, y + sigH + 3, { width: sigW, align: 'center' });
+    doc.text('FIRMA Y SELLO DE DIRECCIÓN', RIGHT - sigW, y + sigH + 3, { width: sigW, align: 'center' });
 
     doc.end();
   });

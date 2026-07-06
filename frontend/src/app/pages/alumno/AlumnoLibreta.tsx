@@ -143,7 +143,7 @@ export default function AlumnoLibreta() {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
-      a.download = `libreta_${alumnoNombre.replace(/\s+/g, '_')}_${nombreBimestreActual}.pdf`;
+      a.download = `boleta_${alumnoNombre.replace(/\s+/g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

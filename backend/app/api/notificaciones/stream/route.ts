@@ -17,6 +17,7 @@ import { env } from '@/config/env';
 // SSE necesita Node (EventEmitter) y respuesta dinámica sin caché.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const HEARTBEAT_MS = 25_000;
 
@@ -83,6 +84,11 @@ export function GET(req: NextRequest): Response {
 
       // El cliente cerró la conexión (cambió de página, cerró pestaña, etc.).
       req.signal.addEventListener('abort', cleanup);
+
+      // Evita que Node.js cierre el socket por inactividad
+      const socket = (req as unknown as { socket?: import('net').Socket }).socket;
+      if (socket?.setTimeout) socket.setTimeout(0);
+      if (socket?.setNoDelay) socket.setNoDelay(true);
     },
   });
 

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import type { LibretaDocxMeta } from '@/word/libreta.docx.builder';
+import type { BoletaData, BoletaArea, BoletaCurso, BoletaAsistencia } from './boleta.types';
 
 export interface LibretaRow {
   alumno_id:        string;
@@ -61,6 +61,7 @@ export interface LibretaRowDetallada extends LibretaRow {
   competencia_id: string;
   area_id:        string | null;
   area_nombre:    string | null;
+  area_orden:     number | null;
   peso:           number;
 }
 
@@ -214,37 +215,157 @@ export const LibretaRepository = {
     }));
   },
 
-  /** Metadatos (institución + estudiante + periodos) para el .docx de la libreta. */
-  async metaPdf(alumnoId: string): Promise<LibretaDocxMeta> {
-    const inst = await prisma.$queryRaw<Array<{
-      nombre: string | null; codigo_modular: string | null; codigo_ugel: string | null;
-      nombre_ugel: string | null; departamento: string | null; modalidad: string | null;
-    }>>`
-      SELECT nombre, codigo_modular, codigo_ugel, nombre_ugel, departamento, modalidad
-      FROM academic_schema.institucion_educativa LIMIT 1
+  /**
+   * Ensambla la BOLETA DE NOTAS anual completa del alumno (formato IEP Virgen
+   * del Carmen — resources/LIBRETANUEVA.pdf). Es la fuente única que consumen
+   * los DOS generadores: el .docx editable de Secretaría y el .pdf del Alumno.
+   *
+   * Notas en literal por área → curso, con 4 columnas de bimestre + anual, y
+   * el desglose de asistencia (tardanzas / faltas justificadas / injustificadas)
+   * por bimestre a partir de las fechas reales.
+   */
+  async boletaData(alumnoId: string): Promise<BoletaData> {
+    const BIMS = [1, 2, 3, 4];
+
+    // 1. Institución + alumno + tutor de la sección.
+    const inst = await prisma.$queryRaw<Array<{ nombre: string | null }>>`
+      SELECT nombre FROM academic_schema.institucion_educativa LIMIT 1
     `;
-    const al = await prisma.$queryRaw<Array<{ dni: string | null; nivel: string | null; anio: number | null }>>`
-      SELECT a.dni,
-             n.nombre AS nivel,
-             p."año"  AS anio
+    const metaRows = await prisma.$queryRaw<Array<{
+      alumno_nombre: string; grado: string; seccion: string; nivel: string;
+      anio: number | null; dni: string | null; tutor: string | null; periodo_id: string;
+    }>>`
+      SELECT
+        (a.nombres || ' ' || a.apellido_paterno || ' ' || a.apellido_materno) AS alumno_nombre,
+        g.nombre AS grado, s.nombre AS seccion, n.nombre AS nivel,
+        p."año" AS anio, a.dni, a.periodo_id::text AS periodo_id,
+        CASE WHEN dt.id IS NULL THEN NULL
+             ELSE (dt.nombres || ' ' || dt.apellido_paterno || ' ' || dt.apellido_materno)
+        END AS tutor
       FROM academic_schema.alumno a
-      JOIN academic_schema.seccion s   ON s.id = a.seccion_id
-      JOIN academic_schema.grado g     ON g.id = s.grado_id
-      JOIN academic_schema.nivel n     ON n.id = g.nivel_id
+      JOIN academic_schema.seccion s ON s.id = a.seccion_id
+      JOIN academic_schema.grado g   ON g.id = s.grado_id
+      JOIN academic_schema.nivel n   ON n.id = g.nivel_id
       JOIN academic_schema.periodo_academico p ON p.id = a.periodo_id
+      LEFT JOIN academic_schema.docente dt ON dt.id = s.docente_tutor_id
       WHERE a.id = ${alumnoId}::uuid
       LIMIT 1
     `;
-    const periodos = await prisma.$queryRaw<Array<{ numero: number }>>`
-      SELECT DISTINCT bimestre AS numero
-      FROM academic_schema.mv_libreta_alumno WHERE alumno_id = ${alumnoId}::uuid ORDER BY 1
-    `;
+    const m = metaRows[0];
+
+    // 2. Notas de todos los bimestres + escala literal del período.
+    const rows   = await LibretaRepository.detalleConArea(alumnoId);
+    const escala = m?.periodo_id ? await LibretaRepository.escalaLiteral(m.periodo_id) : [];
+    const literalDe = (nota: number | null): string | null => {
+      if (nota === null) return null;
+      return (
+        escala.find((e) => nota >= e.rango_inferior && nota <= e.rango_superior)?.escala ??
+        (nota >= 18 ? 'AD' : nota >= 14 ? 'A' : nota >= 11 ? 'B' : 'C')
+      );
+    };
+
+    // 3. Rollup área → curso → bimestre (promedio ponderado por peso de criterio).
+    interface Acc { sumP: number; sumW: number }
+    interface CursoAcc { curso: string; bim: Map<number, Acc> }
+    interface AreaAcc { area_nombre: string; orden: number | null; cursos: Map<string, CursoAcc> }
+    const areaMap = new Map<string, AreaAcc>();
+
+    for (const r of rows) {
+      const areaKey    = r.area_id ?? `__curso_${r.curso_id}`;
+      const areaNombre = r.area_nombre ?? r.curso;
+      if (!areaMap.has(areaKey)) areaMap.set(areaKey, { area_nombre: areaNombre, orden: r.area_orden, cursos: new Map() });
+      const area = areaMap.get(areaKey)!;
+      if (!area.cursos.has(r.curso_id)) area.cursos.set(r.curso_id, { curso: r.curso, bim: new Map() });
+      const curso = area.cursos.get(r.curso_id)!;
+      if (r.nota_vigesimal !== null) {
+        const acc = curso.bim.get(r.bimestre) ?? { sumP: 0, sumW: 0 };
+        acc.sumP += r.nota_vigesimal * r.peso;
+        acc.sumW += r.peso;
+        curso.bim.set(r.bimestre, acc);
+      }
+    }
+
+    const promVig  = (acc?: Acc): number | null => (acc && acc.sumW > 0 ? acc.sumP / acc.sumW : null);
+    const promedio = (vals: (number | null)[]): number | null => {
+      const ok = vals.filter((v): v is number => v !== null);
+      return ok.length ? ok.reduce((a, b) => a + b, 0) / ok.length : null;
+    };
+
+    // Orden pedagógico por area_academica.orden (áreas sin orden / bandas de un
+    // curso suelto van al final, conservando su orden de aparición).
+    const areasOrdenadas = [...areaMap.values()].sort(
+      (a, b) => (a.orden ?? 9999) - (b.orden ?? 9999),
+    );
+
+    const areas: BoletaArea[] = areasOrdenadas.map((area) => {
+      const cursos: BoletaCurso[] = [...area.cursos.values()].map((c) => {
+        const literalPorBim: Record<number, string | null> = {};
+        const vigPorBim: (number | null)[] = [];
+        for (const b of BIMS) {
+          const v = promVig(c.bim.get(b));
+          vigPorBim.push(v);
+          literalPorBim[b] = literalDe(v);
+        }
+        return { curso: c.curso, literalPorBim, literalAnual: literalDe(promedio(vigPorBim)) };
+      });
+
+      const generalPorBim: Record<number, string | null> = {};
+      const areaVigPorBim: (number | null)[] = [];
+      for (const b of BIMS) {
+        const av = promedio([...area.cursos.values()].map((c) => promVig(c.bim.get(b))));
+        areaVigPorBim.push(av);
+        generalPorBim[b] = literalDe(av);
+      }
+      return {
+        area_nombre: area.area_nombre,
+        cursos,
+        tienePromedioGeneral: area.cursos.size > 1,
+        generalPorBim,
+        generalAnual: literalDe(promedio(areaVigPorBim)),
+      };
+    });
+
+    // 4. Asistencia por bimestre (corte por fechas reales del bimestre).
+    const asistRows = m?.periodo_id
+      ? await prisma.$queryRaw<Array<{ bimestre: number; tardanza: number; faltas_just: number; faltas_injust: number }>>`
+          SELECT b.numero AS bimestre,
+            count(a.id) FILTER (WHERE a.estado = 'T')::int AS tardanza,
+            count(a.id) FILTER (WHERE a.estado = 'J')::int AS faltas_just,
+            count(a.id) FILTER (WHERE a.estado = 'F')::int AS faltas_injust
+          FROM academic_schema.bimestre b
+          LEFT JOIN academic_schema.asistencia a
+            ON a.alumno_id = ${alumnoId}::uuid
+           AND a.fecha BETWEEN b.fecha_inicio AND b.fecha_fin
+          WHERE b.periodo_id = ${m.periodo_id}::uuid
+          GROUP BY b.numero ORDER BY b.numero
+        `
+      : [];
+    const asistencia: BoletaAsistencia[] = BIMS.map((b) => {
+      const row = asistRows.find((x) => Number(x.bimestre) === b);
+      return {
+        bimestre:      b,
+        tardanza:      Number(row?.tardanza ?? 0),
+        faltas_just:   Number(row?.faltas_just ?? 0),
+        faltas_injust: Number(row?.faltas_injust ?? 0),
+      };
+    });
+
     return {
-      institucion: inst[0] ?? {},
-      nivel: al[0]?.nivel ?? null,
-      dni: al[0]?.dni ?? null,
-      anio: al[0]?.anio ?? null,
-      periodos: periodos.map((p) => Number(p.numero)),
+      institucion: {
+        nombre:        inst[0]?.nombre ?? 'IEP Virgen del Carmen - Las Viñas',
+        niveles_texto: 'INICIAL - PRIMARIA - SECUNDARIA',
+      },
+      alumno: {
+        nombre: m?.alumno_nombre ?? '',
+        salon:  [m?.grado, m?.seccion].filter(Boolean).join(' '),
+        nivel:  (m?.nivel ?? '').toUpperCase(),
+        dni:    m?.dni ?? null,
+      },
+      tutor:      m?.tutor ?? null,
+      anio:       m?.anio ?? new Date().getFullYear(),
+      bimestres:  BIMS,
+      areas,
+      asistencia,
     };
   },
 
@@ -497,6 +618,7 @@ export const LibretaRepository = {
         comp.peso::float                                     AS peso,
         area.id::text                                        AS area_id,
         area.nombre                                          AS area_nombre,
+        area.orden                                           AS area_orden,
         b.numero                                             AS bimestre,
         b.nombre                                             AS nombre_bimestre,
         n.nota_vigesimal,
@@ -522,6 +644,7 @@ export const LibretaRepository = {
       ...r,
       nota_vigesimal: r.nota_vigesimal !== null ? parseFloat(String(r.nota_vigesimal)) : null,
       peso: Number(r.peso),
+      area_orden: r.area_orden !== null ? Number(r.area_orden) : null,
     }));
     if (mapped.length > 0) return mapped;
     return LibretaRepository.detalleConAreaSnapshot(alumnoId, bimestreId);
@@ -550,6 +673,7 @@ export const LibretaRepository = {
         COALESCE(comp.peso::float, 100)             AS peso,
         area.id::text                               AS area_id,
         area.nombre                                 AS area_nombre,
+        area.orden                                  AS area_orden,
         b.numero                                    AS bimestre,
         b.nombre                                    AS nombre_bimestre,
         ld.nota_vigesimal,
@@ -574,6 +698,7 @@ export const LibretaRepository = {
       ...r,
       nota_vigesimal: r.nota_vigesimal !== null ? parseFloat(String(r.nota_vigesimal)) : null,
       peso: Number(r.peso),
+      area_orden: r.area_orden !== null ? Number(r.area_orden) : null,
     }));
   },
 

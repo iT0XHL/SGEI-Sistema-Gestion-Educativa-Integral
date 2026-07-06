@@ -122,9 +122,9 @@ export default function AdminCuentas() {
   // ── Carga inicial ───────────────────────────────────────────
   useEffect(() => {
     Promise.all([
-      docentesAdminApi.listar({ limit: 100 }),
-      usuariosApi.listar({ limit: 100 }),
-      alumnosAdminApi.listar({ limit: 100 }),
+      docentesAdminApi.listar({ limit: 500 }),
+      usuariosApi.listar({ limit: 500 }),
+      alumnosAdminApi.listar({ limit: 500 }),
     ])
       .then(([docRes, usrRes, aluRes]) => {
         setDocenteRows(docRes.items);
@@ -254,9 +254,9 @@ export default function AdminCuentas() {
     showToast(message);
     // Reload data
     Promise.all([
-      docentesAdminApi.listar({ limit: 100 }),
-      usuariosApi.listar({ limit: 100 }),
-      alumnosAdminApi.listar({ limit: 100 }),
+      docentesAdminApi.listar({ limit: 500 }),
+      usuariosApi.listar({ limit: 500 }),
+      alumnosAdminApi.listar({ limit: 500 }),
     ]).then(([docRes, usrRes, aluRes]) => {
       setDocenteRows(docRes.items);
       setStaffRows(usrRes.items);

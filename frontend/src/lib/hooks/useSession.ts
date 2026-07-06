@@ -30,11 +30,7 @@ export function useSession(): UseSessionResult {
     queryKey: ['session'],
     queryFn: () => authApi.me(),
     retry: false,
-    // staleTime 0 = se revalida en cada montaje (igual que antes: sesión fresca
-    // por navegación), pero las llamadas simultáneas (AppShell + página) se
-    // deduplican en una sola petición en vuelo y la vista usa la cache al
-    // instante mientras revalida.
-    staleTime: 0,
+    staleTime: 300_000,
   });
 
   const httpStatus = error != null ? statusOf(error) : undefined;

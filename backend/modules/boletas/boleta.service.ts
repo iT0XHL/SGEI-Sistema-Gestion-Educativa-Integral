@@ -36,40 +36,29 @@ export const BoletaService = {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo el alumno puede subir comprobantes.');
     }
 
-    // Verificar que el pago pertenece al alumno
     const pago = await PagoRepository.findOne(input.pago_id);
     if (!pago) throw new NotFoundError('Pago');
     if (pago.alumno_id !== user.entidadId) {
       throw new ForbiddenError('PAGO_AJENO', 'Este pago no te pertenece.');
     }
 
-    // Solo puede subir si el pago está Pendiente o Rechazado (re-envío)
     if (pago.estado !== 'Pendiente' && pago.estado !== 'Rechazado') {
       throw new ConflictError(
         `No puedes subir una boleta para un pago en estado "${pago.estado}".`,
       );
     }
 
-    // Si ya existe boleta anterior (re-envío), eliminar del Storage y de BD
     const existente = await BoletaRepository.findByPagoId(input.pago_id);
     if (existente) {
-      if (StorageService.isConfigured()) {
-        await StorageService.delete(BUCKETS.BOLETAS_PAGOS, existente.url_archivo).catch(() => {});
-      }
+      await StorageService.delete(BUCKETS.BOLETAS_PAGOS, existente.url_archivo).catch(() => {});
       await BoletaRepository.delete(existente.id, user.perfilId);
     }
 
-    // Subir archivo a Storage
-    let urlArchivo: string;
-    if (StorageService.isConfigured()) {
-      urlArchivo = await StorageService.upload(
-        BUCKETS.BOLETAS_PAGOS,
-        `${user.entidadId}/${input.pago_id}`,
-        archivo,
-      );
-    } else {
-      urlArchivo = `mock/${user.entidadId}/${input.pago_id}/${archivo.name}`;
-    }
+    const urlArchivo = await StorageService.upload(
+      BUCKETS.BOLETAS_PAGOS,
+      `${user.entidadId}/${input.pago_id}`,
+      archivo,
+    );
 
     const boleta = await BoletaRepository.create(
       {
@@ -96,7 +85,7 @@ export const BoletaService = {
       actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
       contexto: {
         boletaId:    boleta.id,
-        alumnoNombre: `${boleta.pago.alumno.nombres} ${boleta.pago.alumno.apellido_paterno}`,
+        alumnoId:    user.entidadId,
       },
     });
 
@@ -104,23 +93,13 @@ export const BoletaService = {
   },
 
   async revisar(input: RevisarBoletaInput, user: JwtClaims) {
-    if (user.rol !== 'Admin' && user.rol !== 'Secretaria') {
-      throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo Admin y Secretaria pueden revisar boletas.');
+    if (user.rol !== 'Secretaria' && user.rol !== 'Admin') {
+      throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo Secretaría y Admin pueden revisar boletas.');
     }
 
     const boleta = await BoletaRepository.findOne(input.boleta_id);
     if (!boleta) throw new NotFoundError('Boleta');
 
-    if (boleta.estado_revision !== 'En_Revision') {
-      throw new ConflictError(
-        `La boleta ya fue procesada (estado: ${boleta.estado_revision}).`,
-      );
-    }
-
-    // El SP financial_schema.revisar_boleta:
-    // - valida estado actual
-    // - actualiza boleta y pago
-    // - crea notificación si Rechazada
     await BoletaRepository.revisar(
       input.boleta_id,
       user.perfilId,
@@ -129,31 +108,30 @@ export const BoletaService = {
       user.perfilId,
     );
 
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.BOLETA_REVISADA,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        boletaId: boleta.id,
+        alumnoId: boleta.pago?.alumno_id!,
+      },
+    });
+
     await AuditService.log({
       usuarioId:       user.perfilId,
       tipo:            'UPDATE',
       modulo:          'boletas',
       entidadAfectada: 'boleta_pago',
-      entidadId:       input.boleta_id,
-      oldValue: { estado_revision: 'En_Revision' },
-      newValue: { estado_revision: input.nuevo_estado, observacion: input.observacion_rechazo },
+      entidadId:       boleta.id,
+      newValue: { estado_revision: input.nuevo_estado },
+      oldValue: { estado_revision: boleta.estado_revision },
     });
 
-    return BoletaRepository.findOne(input.boleta_id);
   },
 
-  async getArchivoUrl(id: string, user: JwtClaims) {
-    const boleta = await BoletaRepository.findOne(id);
-    if (!boleta) throw new NotFoundError('Boleta');
-
-    if (user.rol === 'Alumno' && boleta.pago.alumno_id !== user.entidadId) {
-      throw new ForbiddenError('BOLETA_AJENA', 'No tienes acceso a este archivo.');
-    }
-
-    if (!StorageService.isConfigured()) {
-      return { url: boleta.url_archivo, expira_en: null };
-    }
-    const url = await StorageService.getSignedUrl(BUCKETS.BOLETAS_PAGOS, boleta.url_archivo);
-    return { url, expira_en: 300 };
+  async getArchivoUrl(id: string, user: JwtClaims): Promise<{ url: string; expira_en: number | null }> {
+    const boleta = await this.obtener(id, user);
+    const signedUrl = await StorageService.getSignedUrl(BUCKETS.BOLETAS_PAGOS, boleta.url_archivo);
+    return { url: signedUrl, expira_en: 300 };
   },
 };

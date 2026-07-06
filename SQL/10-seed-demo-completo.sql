@@ -14,7 +14,7 @@
 --    08-horarios-descanso.sql, 09-competencia-grado.sql
 --
 --  IDs constantes reutilizados de esos archivos:
---    periodo activo 2025      = 00000000-0000-0000-0004-000000000003
+--    periodo activo 2026      = 00000000-0000-0000-0004-000000000003
 --    bimestre I                = 00000000-0000-0000-0007-000000000001
 --    nivel Secundaria           = 00000000-0000-0000-0004-000000000001
 --    nivel Primaria              = 00000000-0000-0000-0004-000000000010
@@ -166,7 +166,7 @@ ins_perfil AS (
 ins_docente AS (
   INSERT INTO academic_schema.docente
     (id, perfil_usuario_id, dni, nombres, apellido_paterno, apellido_materno, especialidad, telefono, email_institucional, activo, fecha_ingreso)
-  SELECT ip.pre_docente_id, ip.perfil_id, n.dni, n.nombres, n.ap_pat, n.ap_mat, n.especialidad, '987654321', n.usuario_login, TRUE, DATE '2025-03-01'
+  SELECT ip.pre_docente_id, ip.perfil_id, n.dni, n.nombres, n.ap_pat, n.ap_mat, n.especialidad, '987654321', n.usuario_login, TRUE, DATE '2026-03-01'
   FROM ins_perfil ip JOIN nuevos_id n ON n.pre_docente_id = ip.pre_docente_id
   RETURNING id
 )
@@ -294,14 +294,18 @@ JOIN academic_schema.grado g ON g.id = se.grado_id
 JOIN academic_schema.nivel n ON n.id = g.nivel_id;
 
 -- ============================================================
--- 6) Recreo/Refrigerio de Primaria (Secundaria ya se configuró en
---    pruebas manuales previas) — horarios más tempranos, propios
---    de niños de Primaria.
+-- 6) Recreo/Refrigerio — ambos niveles (Primaria horarios más
+--    tempranos; Secundaria con bloques después).
 -- ============================================================
 INSERT INTO academic_schema.horario_descanso (nivel_id, periodo_id, tipo, hora_inicio, hora_fin)
 VALUES
+  -- Primaria
   ('00000000-0000-0000-0004-000000000010', '00000000-0000-0000-0004-000000000003', 'RECREO',     '10:15', '10:35'),
-  ('00000000-0000-0000-0004-000000000010', '00000000-0000-0000-0004-000000000003', 'REFRIGERIO', '12:00', '12:45')
+  ('00000000-0000-0000-0004-000000000010', '00000000-0000-0000-0004-000000000003', 'REFRIGERIO', '12:00', '12:45'),
+  -- Secundaria (OBLIGATORIO para que 16-horario-completo-nuevo.sql
+  -- no salte a los docentes de este nivel)
+  ('00000000-0000-0000-0004-000000000001', '00000000-0000-0000-0004-000000000003', 'RECREO',     '10:00', '10:20'),
+  ('00000000-0000-0000-0004-000000000001', '00000000-0000-0000-0004-000000000003', 'REFRIGERIO', '12:30', '13:15')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================
@@ -347,7 +351,7 @@ WITH base AS (
     (SELECT apellido FROM tmp_apellidos LIMIT 1 OFFSET ((e.rn - 1) % 16)) AS ap_pat,
     (SELECT apellido FROM tmp_apellidos LIMIT 1 OFFSET ((e.rn + 5) % 16)) AS ap_mat,
     lpad((71000000 + e.rn)::text, 8, '0') AS dni,
-    'SIAGIE-2025-' || lpad(e.rn::text, 4, '0') AS siagie,
+    'SIAGIE-2026-' || lpad(e.rn::text, 4, '0') AS siagie,
     (CASE WHEN e.rn % 2 = 0 THEN 'M' ELSE 'F' END) AS sexo,
     gen_random_uuid() AS pre_alumno_id,
     g.orden AS grado_orden, n.nombre AS nivel_nombre
@@ -360,8 +364,8 @@ base2 AS (
     -- translate() quita tildes/ñ: un email con acentos no pasa la
     -- validación z.string().email() del backend (solo ASCII).
     translate(lower(b.nombre), 'áéíóúñ', 'aeioun') || '.' || translate(lower(b.ap_pat), 'áéíóúñ', 'aeioun') || b.rn || '@sgei.edu.pe' AS usuario_login,
-    (CASE WHEN b.nivel_nombre = 'Primaria' THEN make_date(2025 - (5 + b.grado_orden), 6, 15)
-          ELSE make_date(2025 - (11 + b.grado_orden), 6, 15) END) AS fecha_nac
+    (CASE WHEN b.nivel_nombre = 'Primaria' THEN make_date(2026 - (5 + b.grado_orden), 6, 15)
+          ELSE make_date(2026 - (11 + b.grado_orden), 6, 15) END) AS fecha_nac
   FROM base b
 ),
 ins_cred AS (
@@ -450,8 +454,8 @@ SELECT na.id, (SELECT id FROM financial_schema.concepto_pago WHERE nombre = 'Pen
        (SELECT id FROM auth_schema.perfil_usuario WHERE rol = 'Admin' LIMIT 1)
 FROM nuevos_alumnos na
 CROSS JOIN (VALUES
-  (3::smallint, 'Pagado',    DATE '2025-03-31', DATE '2025-03-05'),
-  (4::smallint, 'Pendiente', DATE '2025-04-30', NULL::date)
+  (3::smallint, 'Pagado',    DATE '2026-03-31', DATE '2026-03-05'),
+  (4::smallint, 'Pendiente', DATE '2026-04-30', NULL::date)
 ) AS m(mes, estado, venc, pago_fecha);
 
 -- Muestra de boletas subidas (En_Revision) sobre 15 pagos Pendiente.
@@ -463,8 +467,8 @@ WITH pendientes AS (
 )
 INSERT INTO financial_schema.boleta_pago (pago_id, url_archivo, nombre_archivo, banco, numero_operacion, estado_revision)
 SELECT pago_id,
-       'https://sgei.edu.pe/uploads/vouchers/' || alumno_id::text || '_abril_2025.jpg',
-       'comprobante_pago_abril_2025.jpg', 'Banco de la Nación', lpad(rn::text, 10, '0'),
+       'https://sgei.edu.pe/uploads/vouchers/' || alumno_id::text || '_abril_2026.jpg',
+       'comprobante_pago_abril_2026.jpg', 'Banco de la Nación', lpad(rn::text, 10, '0'),
        'En_Revision'::financial_schema.estado_revision_boleta
 FROM pendientes
 WHERE rn <= 15
@@ -472,10 +476,10 @@ ON CONFLICT (pago_id) DO NOTHING;
 
 -- ============================================================
 -- 10) Asistencia — todos los alumnos del período, semana
---     representativa dentro del Bimestre I (05-05 al 09-05-2025).
+--     representativa dentro del Bimestre I (05-05 al 09-05-2026).
 -- ============================================================
 WITH dias AS (
-  SELECT * FROM (VALUES (DATE '2025-05-05'), (DATE '2025-05-06'), (DATE '2025-05-07'), (DATE '2025-05-08'), (DATE '2025-05-09')) AS d(fecha)
+  SELECT * FROM (VALUES (DATE '2026-05-05'), (DATE '2026-05-06'), (DATE '2026-05-07'), (DATE '2026-05-08'), (DATE '2026-05-09')) AS d(fecha)
 ),
 alumno_docente AS (
   SELECT a.id AS alumno_id, a.seccion_id,

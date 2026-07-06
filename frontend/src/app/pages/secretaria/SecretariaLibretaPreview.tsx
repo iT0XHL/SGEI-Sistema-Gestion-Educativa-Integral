@@ -171,7 +171,7 @@ export default function SecretariaLibretaPreview() {
         <div className="bg-slate-50 border-b border-slate-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">I.E. SAN JOSÉ DE CALASANZ</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">IEP VIRGEN DEL CARMEN - LAS VIÑAS</p>
               <h2 className="text-sm font-bold text-slate-800 mt-0.5">LIBRETA DE NOTAS — {bimestreNombre.toUpperCase()}</h2>
             </div>
             <div className="text-right">

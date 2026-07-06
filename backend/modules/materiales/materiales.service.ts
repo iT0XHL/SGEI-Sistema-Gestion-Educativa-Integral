@@ -1,16 +1,10 @@
-// ============================================================
-//  modules/materiales/materiales.service.ts
-//  RBAC:
-//    Docente  → CRUD en sus propios materiales (secciones asignadas)
-//    Alumno   → lectura de materiales visibles de su sección
-//    Admin    → lectura global, puede editar/eliminar cualquiera
-//    Secretaria → sin acceso
-// ============================================================
 import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
 import { AsistenciaAlumnosRepository } from '@/modules/asistencias/asistencia-alumnos.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { prisma } from '@/lib/prisma';
 import { MaterialesRepository } from './materiales.repository';
 import { TIPOS_CON_ARCHIVO } from './materiales.types';
@@ -88,7 +82,6 @@ export const MaterialesService = {
       });
     }
 
-    // Admin: lista global con todos los filtros.
     return MaterialesRepository.list(filters);
   },
 
@@ -113,7 +106,6 @@ export const MaterialesService = {
     return material;
   },
 
-  /** Crea material cuya URL es una dirección externa (enlace/video). */
   async createFromUrl(input: CreateMaterialInput, user: JwtClaims) {
     if (user.rol !== 'Docente' && user.rol !== 'Admin') {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo Docente y Admin pueden crear materiales.');
@@ -143,10 +135,20 @@ export const MaterialesService = {
       newValue: { titulo: material.titulo, tipo: material.tipo },
     });
 
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.MATERIAL_PUBLICADO,
+      actor: { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        materialId: material.id,
+        materialTitulo: material.titulo,
+        seccionId: material.seccion_id,
+        cursoId: material.curso_id,
+      },
+    });
+
     return material;
   },
 
-  /** Crea material subiendo un archivo a Supabase Storage. */
   async createFromFile(
     data: { curso_id: string; seccion_id: string; titulo: string; descripcion?: string | null; tipo: 'PDF' | 'imagen' | 'otro'; visible: boolean },
     file: File,
@@ -188,6 +190,17 @@ export const MaterialesService = {
       newValue: { titulo: material.titulo, tipo: material.tipo },
     });
 
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.MATERIAL_PUBLICADO,
+      actor: { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        materialId: material.id,
+        materialTitulo: material.titulo,
+        seccionId: material.seccion_id,
+        cursoId: material.curso_id,
+      },
+    });
+
     return material;
   },
 
@@ -222,8 +235,7 @@ export const MaterialesService = {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Sin permisos para eliminar materiales.');
     }
 
-    // Si es un archivo en Storage, eliminarlo también.
-    if (TIPOS_CON_ARCHIVO.includes(material.tipo) && StorageService.isConfigured()) {
+    if (TIPOS_CON_ARCHIVO.includes(material.tipo)) {
       await StorageService.delete(BUCKETS.MATERIALES, material.url);
     }
 
@@ -241,10 +253,6 @@ export const MaterialesService = {
     return { id };
   },
 
-  /**
-   * Genera URL firmada temporal (300 s) para materiales almacenados en Storage.
-   * Para materiales con URL externa (enlace/video), retorna la URL directamente.
-   */
   async getArchivoUrl(id: string, user: JwtClaims): Promise<{ url: string; tipo: string; es_firmada: boolean }> {
     const material = await this.get(id, user);
 

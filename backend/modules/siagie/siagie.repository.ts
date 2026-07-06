@@ -25,6 +25,7 @@ export interface NotaFinalSiagie {
   codigo_cneb:               string | null;
   area_academica_id:         string | null;
   area_nombre:               string | null;
+  area_orden:                number | null;
   nota_promedio:             number;
   comportamiento:            string | null;
   numero_areas_desaprobadas: number | null;
@@ -157,132 +158,100 @@ export const SiagieRepository = {
   },
 
   /**
-   * Devuelve los registros del MV agregados a nivel (alumno, curso):
-   * primero promedia nota_vigesimal por (alumno, curso, bimestre),
-   * luego promedia esos promedios bimestrales por (alumno, curso).
+   * Devuelve notas finales agregadas a nivel (alumno, curso) para TODOS los
+   * alumnos (con o sin notas). Parte desde alumno con LEFT JOIN para incluir
+   * incluso a quienes aún no tienen notas registradas.
    * Usado por el builder de "Acta Consolidada".
    */
   async obtenerNotasFinales(periodoId?: string): Promise<NotaFinalSiagie[]> {
-    const where = periodoId
-      ? Prisma.sql`WHERE periodo_id = ${periodoId}::uuid`
-      : Prisma.sql``;
+    const periodoCond = periodoId
+      ? Prisma.sql`pa.id = ${periodoId}::uuid`
+      : Prisma.sql`pa.activo = TRUE`;
 
     const rows = await prisma.$queryRaw<NotaFinalSiagie[]>`
-      SELECT
-        periodo_id,
-        seccion_id,
-        alumno_id,
-        grado,
-        seccion,
-        turno,
-        nivel_educativo,
-        numero_orden,
-        codigo_estudiante,
-        numero_documento,
-        apellido_paterno,
-        apellido_materno,
-        nombres,
-        sexo,
-        curso_id,
-        curso,
-        codigo_cneb,
-        area_academica_id,
-        area_nombre,
-        ROUND(AVG(bimestre_avg), 2) AS nota_promedio,
-        MAX(comportamiento) AS comportamiento,
-        MAX(numero_areas_desaprobadas) AS numero_areas_desaprobadas,
-        MAX(situacion_final) AS situacion_final,
-        MAX(motivo_retiro) AS motivo_retiro,
-        MAX(observaciones) AS observaciones,
-        codigo_ugel,
-        nombre_ugel,
-        nombre_ie,
-        codigo_modular,
-        resolucion_creacion,
-        modalidad,
-        gestion,
-        departamento,
-        provincia,
-        distrito,
-        centro_poblado,
-        fecha_inicio_periodo,
-        fecha_fin_periodo,
-        anio_escolar
-      FROM (
+      WITH cursos_por_grado AS (
+        SELECT DISTINCT gc.grado_id, gc.curso_id
+        FROM academic_schema.grado_curso gc
+      ),
+      promedios_alumno_curso AS (
         SELECT
-          periodo_id,
-          seccion_id,
-          alumno_id,
-          grado,
-          seccion,
-          turno,
-          nivel_educativo,
-          numero_orden,
-          codigo_estudiante,
-          numero_documento,
-          apellido_paterno,
-          apellido_materno,
-          nombres,
-          sexo,
-          curso_id,
-          curso,
-          codigo_cneb,
-          area_academica_id,
-          area_nombre,
-          numero_bimestre,
-          comportamiento,
-          numero_areas_desaprobadas,
-          situacion_final,
-          motivo_retiro,
-          observaciones,
-          codigo_ugel,
-          nombre_ugel,
-          nombre_ie,
-          codigo_modular,
-          resolucion_creacion,
-          modalidad,
-          gestion,
-          departamento,
-          provincia,
-          distrito,
-          centro_poblado,
-          fecha_inicio_periodo,
-          fecha_fin_periodo,
-          anio_escolar,
-          AVG(nota_vigesimal) AS bimestre_avg
-        FROM  audit_schema.formato_siagie
-        ${where}
-        GROUP BY
-          periodo_id, seccion_id, alumno_id,
-          grado, seccion, turno, nivel_educativo,
-          numero_orden, codigo_estudiante, numero_documento,
-          apellido_paterno, apellido_materno, nombres, sexo,
-          curso_id, curso, codigo_cneb, area_academica_id, area_nombre, numero_bimestre,
-          comportamiento, numero_areas_desaprobadas, situacion_final,
-          motivo_retiro, observaciones,
-          codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
-          resolucion_creacion, modalidad, gestion,
-          departamento, provincia, distrito, centro_poblado,
-          fecha_inicio_periodo, fecha_fin_periodo, anio_escolar
-      ) sub
-      GROUP BY
-        periodo_id, seccion_id, alumno_id,
-        grado, seccion, turno, nivel_educativo,
-        numero_orden, codigo_estudiante, numero_documento,
-        apellido_paterno, apellido_materno, nombres, sexo,
-        curso_id, curso, codigo_cneb, area_academica_id, area_nombre,
-        codigo_ugel, nombre_ugel, nombre_ie, codigo_modular,
-        resolucion_creacion, modalidad, gestion,
-        departamento, provincia, distrito, centro_poblado,
-        fecha_inicio_periodo, fecha_fin_periodo, anio_escolar
-      ORDER BY anio_escolar, grado, seccion, numero_orden, curso
+          n.alumno_id,
+          comp.curso_id,
+          AVG(n.nota_vigesimal) AS promedio
+        FROM academic_schema.nota n
+        JOIN academic_schema.competencia comp ON comp.id = n.competencia_id
+        GROUP BY n.alumno_id, comp.curso_id
+      )
+      SELECT
+        pa.id                                                 AS periodo_id,
+        s.id                                                  AS seccion_id,
+        a.id                                                  AS alumno_id,
+        g.nombre                                              AS grado,
+        s.nombre                                              AS seccion,
+        s.turno,
+        niv.nombre                                            AS nivel_educativo,
+        ROW_NUMBER() OVER (
+          PARTITION BY s.id, pa.id
+          ORDER BY a.apellido_paterno, a.apellido_materno, a.nombres
+        )                                                     AS numero_orden,
+        a.codigo_siagie                                       AS codigo_estudiante,
+        a.dni                                                 AS numero_documento,
+        a.apellido_paterno,
+        a.apellido_materno,
+        a.nombres,
+        a.sexo,
+        c.id                                                  AS curso_id,
+        c.nombre                                              AS curso,
+        c.codigo_cneb,
+        c.area_academica_id,
+        area.nombre                                           AS area_nombre,
+        area.orden                                            AS area_orden,
+        ROUND(pac.promedio, 2)                                AS nota_promedio,
+        sfa.comportamiento,
+        sfa.numero_areas_desaprobadas,
+        sfa.situacion_final,
+        sfa.motivo_retiro,
+        sfa.observaciones,
+        ie.codigo_ugel,
+        ie.nombre_ugel,
+        ie.nombre                                             AS nombre_ie,
+        ie.codigo_modular,
+        ie.resolucion_creacion,
+        ie.modalidad,
+        ie.gestion,
+        ie.departamento,
+        ie.provincia,
+        ie.distrito,
+        ie.centro_poblado,
+        pa.fecha_inicio                                       AS fecha_inicio_periodo,
+        pa.fecha_fin                                          AS fecha_fin_periodo,
+        pa.año                                                AS anio_escolar
+      FROM academic_schema.alumno a
+      JOIN academic_schema.seccion s             ON s.id = a.seccion_id
+      JOIN academic_schema.grado g               ON g.id = s.grado_id
+      JOIN academic_schema.nivel niv             ON niv.id = g.nivel_id
+      JOIN academic_schema.periodo_academico pa  ON pa.id = s.periodo_id
+      JOIN academic_schema.institucion_educativa ie ON ie.activo = TRUE
+      JOIN cursos_por_grado cpg                  ON cpg.grado_id = g.id
+      JOIN academic_schema.curso c               ON c.id = cpg.curso_id
+      LEFT JOIN academic_schema.area_academica area ON area.id = c.area_academica_id
+      LEFT JOIN promedios_alumno_curso pac
+        ON pac.alumno_id = a.id AND pac.curso_id = c.id
+      LEFT JOIN academic_schema.situacion_final_alumno sfa
+        ON sfa.alumno_id = a.id AND sfa.periodo_id = pa.id
+      WHERE ${periodoCond}
+        AND a.activo = TRUE
+      ORDER BY pa.año, g.nombre, s.nombre, a.apellido_paterno, a.apellido_materno, c.nombre
     `;
 
     return rows.map(r => ({
       ...r,
       numero_orden:              Number(r.numero_orden),
       anio_escolar:              Number(r.anio_escolar),
-      nota_promedio:             parseFloat(String(r.nota_promedio)),
+      area_orden:                r.area_orden !== null ? Number(r.area_orden) : null,
+      nota_promedio:             r.nota_promedio !== null && Number(r.nota_promedio) > 0
+        ? parseFloat(String(r.nota_promedio))
+        : 0,
       numero_areas_desaprobadas: r.numero_areas_desaprobadas !== null
         ? Number(r.numero_areas_desaprobadas)
         : null,

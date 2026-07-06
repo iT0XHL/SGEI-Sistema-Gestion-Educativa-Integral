@@ -122,7 +122,7 @@ ins_perfil AS (
 )
 INSERT INTO academic_schema.docente
   (id, perfil_usuario_id, dni, nombres, apellido_paterno, apellido_materno, especialidad, telefono, email_institucional, activo, fecha_ingreso)
-SELECT ip.pre_docente_id, ip.perfil_id, n.dni, n.nombres, n.ap_pat, n.ap_mat, n.especialidad, '987654321', n.usuario_login, TRUE, DATE '2025-03-01'
+SELECT ip.pre_docente_id, ip.perfil_id, n.dni, n.nombres, n.ap_pat, n.ap_mat, n.especialidad, '987654321', n.usuario_login, TRUE, DATE '2026-03-01'
 FROM ins_perfil ip JOIN nuevos_id n ON n.pre_docente_id = ip.pre_docente_id;
 
 -- ── Asignaciones: para cada docente del catálogo, para cada grado que

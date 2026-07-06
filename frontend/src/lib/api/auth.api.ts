@@ -16,14 +16,22 @@ export interface SessionUser {
 }
 
 export interface LoginResponse {
-  user:       SessionUser;
-  redirectTo: string;
+  user:                 SessionUser;
+  redirectTo:          string;
+  debeCambiarPassword?: boolean;
 }
 
 export interface ChangePasswordPayload {
   password_actual: string;
   password_nueva:  string;
 }
+
+export interface ForceChangePasswordPayload {
+  password_nueva: string;
+  confirmacion:   string;
+}
+
+export type { SessionUser };
 
 export const authApi = {
   login(payload: LoginPayload): Promise<LoginResponse> {
@@ -42,11 +50,7 @@ export const authApi = {
     return apiClient.patch<{ mensaje: string }>('/api/auth/change-password', payload);
   },
 
-  forgotPassword(email: string): Promise<{ enviado: boolean }> {
-    return apiClient.post<{ enviado: boolean }>('/api/auth/forgot-password', { email });
-  },
-
-  resetPassword(token: string, password_nueva: string): Promise<{ actualizada: boolean }> {
-    return apiClient.post<{ actualizada: boolean }>('/api/auth/reset-password', { token, password_nueva });
+  forceChangePassword(payload: ForceChangePasswordPayload): Promise<LoginResponse> {
+    return apiClient.post<LoginResponse>('/api/auth/force-change-password', payload);
   },
 };

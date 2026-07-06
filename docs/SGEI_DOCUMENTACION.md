@@ -1,6 +1,6 @@
 # SGEI — Sistema de Gestión Educativa Integral
 
-Documentación general del proyecto para el colegio San Isidro.
+Documentación general del proyecto para la IEP Virgen del Carmen - Las Viñas.
 
 ## 1. Contexto del proyecto
 

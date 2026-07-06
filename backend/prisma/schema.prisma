@@ -21,6 +21,7 @@ model Credencial {
   intentos_fallidos Int            @default(0) @db.SmallInt
   bloqueado_hasta   DateTime?      @db.Timestamptz(6)
   ultimo_acceso     DateTime?      @db.Timestamptz(6)
+  debe_cambiar_password Boolean      @default(false)
   created_at        DateTime       @default(now()) @db.Timestamptz(6)
   updated_at        DateTime       @default(now()) @db.Timestamptz(6)
   perfil            PerfilUsuario?
@@ -804,18 +805,33 @@ model BoletaPago {
 }
 
 model Notificacion {
-  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  usuario_destino_id String           @db.Uuid
-  tipo               TipoNotificacion
-  titulo             String           @db.VarChar(150)
-  cuerpo             String
-  url_accion         String?
-  leida              Boolean          @default(false)
-  fecha_lectura      DateTime?        @db.Timestamptz(6)
-  created_at         DateTime         @default(now()) @db.Timestamptz(6)
-  destino            PerfilUsuario    @relation(fields: [usuario_destino_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_destino_id   String           @db.Uuid
+  tipo                 TipoNotificacion
+  titulo               String           @db.VarChar(150)
+  cuerpo               String
+  url_accion           String?
+  leida                Boolean          @default(false)
+  fecha_lectura        DateTime?        @db.Timestamptz(6)
+  created_at           DateTime         @default(now()) @db.Timestamptz(6)
+  actor_id             String?          @db.Uuid
+  actor_rol            String?          @db.VarChar(20)
+  actor_nombre_snapshot String?         @db.VarChar(150)
+  evento               String?          @db.VarChar(50)
+  entidad_tipo         String?          @db.VarChar(40)
+  entidad_id           String?          @db.Uuid
+  prioridad            String           @default("normal") @db.VarChar(10)
+  metadata             Json?
+  canal                String           @default("app") @db.VarChar(15)
+  idempotency_key      String?          @unique @db.VarChar(200)
+  archivada            Boolean          @default(false)
+  expires_at           DateTime?        @db.Timestamptz(6)
+  destino              PerfilUsuario    @relation(fields: [usuario_destino_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([usuario_destino_id, leida], map: "idx_notificacion_destino")
+  @@index([evento], map: "idx_notificacion_evento")
+  @@index([actor_id], map: "idx_notificacion_actor")
+  @@index([entidad_tipo, entidad_id], map: "idx_notificacion_entidad")
   @@map("notificacion")
   @@schema("financial_schema")
 }

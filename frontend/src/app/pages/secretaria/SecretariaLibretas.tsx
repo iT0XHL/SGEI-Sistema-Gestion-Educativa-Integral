@@ -21,7 +21,7 @@ export default function SecretariaLibretas() {
   useEffect(() => {
     async function load() {
       try {
-        const pRes = await periodosApi.listar({ limit: 10 });
+        const pRes = await periodosApi.listar({ limit: 100 });
         setPeriodos(pRes.items);
         const activo = pRes.items.find(p => p.activo);
         if (activo) {

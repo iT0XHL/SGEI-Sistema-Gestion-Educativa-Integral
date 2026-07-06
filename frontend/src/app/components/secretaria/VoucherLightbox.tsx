@@ -31,7 +31,7 @@ export default function VoucherLightbox({ url, nombreArchivo, onClose }: Voucher
     setDownloading(true);
     setDownloadError('');
     try {
-      const resp = await fetch(url);
+      const resp = await fetch(url, { credentials: 'include' });
       if (!resp.ok) throw new Error('No se pudo descargar el archivo.');
       const blob = await resp.blob();
       const objectUrl = URL.createObjectURL(blob);

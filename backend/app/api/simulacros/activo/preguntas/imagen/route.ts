@@ -4,7 +4,6 @@
 //  enunciado. Guarda en /public/uploads/simulacros y devuelve la
 //  URL absoluta. No usa Supabase (no configurado en este entorno).
 // ============================================================
-import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';

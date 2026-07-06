@@ -12,7 +12,7 @@ export function GET(req: NextRequest, { params }: { params: { alumnoId: string }
       const ip        = req.headers.get('x-forwarded-for') ?? req.ip ?? null;
       const userAgent = req.headers.get('user-agent') ?? null;
 
-      const rows = await LibretaService.generarPdf(
+      const data = await LibretaService.generarBoleta(
         params.alumnoId,
         bimestreId,
         ctx.user,
@@ -20,10 +20,9 @@ export function GET(req: NextRequest, { params }: { params: { alumnoId: string }
         userAgent ?? undefined,
       );
 
-      const soloLiteral = ctx.user.rol === 'Alumno';
-      const pdfBuffer = await buildLibretaPdf(rows, { soloLiteral });
-      const alumnoNombre = rows[0]?.alumno_nombre ?? 'alumno';
-      const filename = `libreta_${alumnoNombre.replace(/\s+/g, '_')}.pdf`;
+      const pdfBuffer = await buildLibretaPdf(data);
+      const alumnoNombre = data.alumno.nombre || 'alumno';
+      const filename = `boleta_${alumnoNombre.replace(/\s+/g, '_')}.pdf`;
 
       return new NextResponse(pdfBuffer, {
         status: 200,

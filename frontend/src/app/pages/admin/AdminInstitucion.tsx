@@ -172,7 +172,7 @@ export default function AdminInstitucion() {
                 maxLength={300}
                 value={form.nombre}
                 onChange={e => setField('nombre', e.target.value)}
-                placeholder="Ej. I.E. San José de Calasanz"
+                placeholder="Ej. IEP Virgen del Carmen - Las Viñas"
                 className={inputCls}
               />
             </div>

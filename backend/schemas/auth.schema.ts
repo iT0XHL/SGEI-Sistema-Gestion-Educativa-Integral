@@ -39,6 +39,18 @@ export const ResetPasswordSchema = z.object({
 });
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
 
+export const ForceChangePasswordSchema = z.object({
+  password_nueva: z
+    .string()
+    .min(8, 'La nueva contraseña debe tener al menos 8 caracteres')
+    .max(128),
+  confirmacion: z.string().min(1, 'Confirma tu nueva contraseña'),
+}).refine((d) => d.password_nueva === d.confirmacion, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirmacion'],
+});
+export type ForceChangePasswordInput = z.infer<typeof ForceChangePasswordSchema>;
+
 export const AdminResetPasswordSchema = z.object({
   password_nueva: z
     .string()

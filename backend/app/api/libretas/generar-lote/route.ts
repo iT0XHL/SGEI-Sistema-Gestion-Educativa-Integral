@@ -15,7 +15,7 @@ export function POST(req: NextRequest) {
 
       for (const alumno of alumnos) {
         try {
-          const libreta = await LibretaService.generar(alumno.alumno_id, body.bimestreId, ctx.user);
+          await LibretaService.generar(alumno.alumno_id, body.bimestreId, ctx.user);
           results.push({ alumno_id: alumno.alumno_id, exito: true });
         } catch (err) {
           results.push({

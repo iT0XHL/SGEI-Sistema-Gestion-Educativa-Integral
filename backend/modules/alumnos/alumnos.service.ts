@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
+import { withAuditContext } from '@/lib/audit-context';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { AlumnosRepository, type ListFilters } from './alumnos.repository';
 import { desambiguarNombres } from './nombre-desambiguado.util';
@@ -251,8 +252,24 @@ export const AlumnosService = {
     return this.get(alumnoId);
   },
 
-  async adminResetPassword(_alumnoId: string, _input: unknown, _adminPerfilId: string) {
-    throw new Error('No implementado en FASE 1');
+  async adminResetPassword(alumnoId: string, input: { password_nueva: string }, adminPerfilId: string) {
+    const alumno = await AlumnosRepository.findById(alumnoId);
+    if (!alumno) throw new NotFoundError('Alumno');
+    if (!alumno.perfil_usuario_id) throw new NotFoundError('Perfil de usuario del alumno');
+
+    const perfil = await prisma.perfilUsuario.findUnique({
+      where: { id: alumno.perfil_usuario_id },
+      select: { credencial: { select: { id: true } } },
+    });
+    if (!perfil) throw new NotFoundError('Credencial del alumno');
+
+    const hash = await hashPassword(input.password_nueva);
+    await withAuditContext(adminPerfilId, (tx) =>
+      tx.credencial.update({
+        where: { id: perfil.credencial.id },
+        data: { password_hash: hash, debe_cambiar_password: true },
+      }),
+    );
   },
 
   async setBloqueoManual(alumnoId: string, bloqueado: boolean, adminPerfilId: string) {

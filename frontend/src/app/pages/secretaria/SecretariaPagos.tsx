@@ -7,13 +7,15 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router';
 import {
   Search, CheckCircle2, AlertCircle, Clock,
-  DollarSign, Users, Receipt, Loader2, MinusCircle,
+  DollarSign, Users, Receipt, Loader2, MinusCircle, Plus, X,
 } from 'lucide-react';
 import {
   secretariaApi,
   type AlumnoPagoResumenDTO,
   type EstadoPagoAlumno,
 } from '../../../lib/api/secretaria.api';
+import { pagosApi } from '../../../lib/api/pagos.api';
+import { apiClient } from '../../../lib/api/client';
 
 // ── Tipos derivados de UI ─────────────────────────────────────
 type FilterStatus = 'all' | EstadoPagoAlumno;
@@ -45,6 +47,19 @@ export default function SecretariaPagos() {
   const [fetchError, setFetchError] = useState('');
   const [filter,    setFilter]    = useState<FilterStatus>('all');
   const [search,    setSearch]    = useState('');
+
+  // Generar cuota modal
+  const [showGenerar, setShowGenerar] = useState(false);
+  const [genMes, setGenMes] = useState(new Date().getMonth() + 1);
+  const [genMonto, setGenMonto] = useState(350);
+  const [genVencimiento, setGenVencimiento] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split('T')[0];
+  });
+  const [genLoading, setGenLoading] = useState(false);
+  const [genResult, setGenResult] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
 
   // ── Carga inicial ─────────────────────────────────────────────
   useEffect(() => {
@@ -181,6 +196,16 @@ export default function SecretariaPagos() {
           <p className="text-xl font-bold text-slate-900">{countMorosos}</p>
           <p className="text-xs text-slate-400 mt-0.5">con cuotas vencidas</p>
         </div>
+      </div>
+
+      {/* Generate Monthly Payment */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => { setShowGenerar(true); setGenResult(null); setGenError(null); }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+        >
+          <Plus className="size-4" /> Generar cuota mensual
+        </button>
       </div>
 
       {/* Filters + Search */}
@@ -387,6 +412,126 @@ export default function SecretariaPagos() {
           )}
         </div>
       </div>
+
+      {/* ── Generar cuota mensual modal ── */}
+      {showGenerar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-semibold text-slate-800">Generar cuota mensual</h3>
+              <button onClick={() => setShowGenerar(false)} className="p-1.5 rounded-lg hover:bg-slate-100">
+                <X className="size-4 text-slate-500" />
+              </button>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setGenLoading(true);
+              setGenResult(null);
+              setGenError(null);
+              try {
+                // Fetch periodo activo + concepto
+                const periodoResp = await apiClient.get<{ id: string; nombre: string }>('/api/periodos/activo');
+                const [conceptos] = await Promise.all([
+                  pagosApi.listarConceptos(),
+                ]);
+                if (!conceptos || conceptos.length === 0) {
+                  setGenError('No hay conceptos de pago configurados.');
+                  return;
+                }
+                const payload = {
+                  periodo_id: periodoResp.id,
+                  concepto_id: conceptos[0].id,
+                  mes: genMes,
+                  monto: genMonto,
+                  fecha_vencimiento: genVencimiento,
+                };
+                const result = await pagosApi.generarMasivo(payload);
+                setGenResult(
+                  `Se generaron ${result.creados} cuota(s). ${result.saltados} alumno(s) ya tenían esta cuota.`,
+                );
+                // Refrescar datos
+                const res = await secretariaApi.pagosPorAlumno();
+                setData(res);
+              } catch (err) {
+                setGenError(err instanceof Error ? err.message : 'Error al generar cuotas.');
+              } finally {
+                setGenLoading(false);
+              }
+            }} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Mes</label>
+                <select
+                  value={genMes}
+                  onChange={e => setGenMes(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                >
+                  {[
+                    [1,'Enero'],[2,'Febrero'],[3,'Marzo'],[4,'Abril'],
+                    [5,'Mayo'],[6,'Junio'],[7,'Julio'],[8,'Agosto'],
+                    [9,'Setiembre'],[10,'Octubre'],[11,'Noviembre'],[12,'Diciembre'],
+                  ].map(([v, label]) => (
+                    <option key={v} value={v}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Monto (S/)</label>
+                <input
+                  type="number"
+                  value={genMonto}
+                  onChange={e => setGenMonto(Number(e.target.value))}
+                  min={1}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Fecha de vencimiento</label>
+                <input
+                  type="date"
+                  value={genVencimiento}
+                  onChange={e => setGenVencimiento(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+              </div>
+
+              {genError && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                  <AlertCircle className="size-4 text-red-600 shrink-0" />
+                  <p className="text-xs text-red-700">{genError}</p>
+                </div>
+              )}
+
+              {genResult && (
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                  <p className="text-xs text-emerald-700">{genResult}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGenerar(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={genLoading}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-sm font-medium transition-colors"
+                >
+                  {genLoading ? (
+                    <><Loader2 className="size-4 animate-spin" /> Generando…</>
+                  ) : (
+                    <><Plus className="size-4" /> Generar cuota</>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

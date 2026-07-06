@@ -35,7 +35,7 @@ export default function SecretariaAlumnos() {
     setLoading(true);
     setError('');
     try {
-      const aluRes = await alumnosAdminApi.listar({ limit: 200 });
+      const aluRes = await alumnosAdminApi.listar({ limit: 500 });
       setAlumnos(aluRes.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');

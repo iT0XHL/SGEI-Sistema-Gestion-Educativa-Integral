@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
+import { withAuditContext } from '@/lib/audit-context';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { DocentesRepository, type ListFilters } from './docentes.repository';
 import type { CreateDocenteInput, UpdateDocenteInput } from '@/schemas/personas.schema';
@@ -226,7 +227,17 @@ export const DocentesService = {
     throw new Error('No implementado en FASE 1');
   },
 
-  async adminResetPassword(_docenteId: string, _input: unknown, _adminPerfilId: string) {
-    throw new Error('No implementado en FASE 1');
+  async adminResetPassword(docenteId: string, input: { password_nueva: string }, adminPerfilId: string) {
+    const docente = await DocentesRepository.findById(docenteId);
+    if (!docente) throw new NotFoundError('Docente');
+    if (!docente.perfil?.credencial.id) throw new NotFoundError('Credencial del docente');
+
+    const hash = await hashPassword(input.password_nueva);
+    await withAuditContext(adminPerfilId, (tx) =>
+      tx.credencial.update({
+        where: { id: docente.perfil.credencial.id },
+        data: { password_hash: hash, debe_cambiar_password: true },
+      }),
+    );
   },
 };

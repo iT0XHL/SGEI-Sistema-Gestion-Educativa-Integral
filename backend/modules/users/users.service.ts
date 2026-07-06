@@ -171,7 +171,10 @@ export const UsersService = {
     if (!row) throw new NotFoundError('Usuario');
     const hash = await hashPassword(input.password_nueva);
     await withAuditContext(adminPerfilId, (tx) =>
-      tx.credencial.update({ where: { id: row.credencial.id }, data: { password_hash: hash } }),
+      tx.credencial.update({
+        where: { id: row.credencial.id },
+        data: { password_hash: hash, debe_cambiar_password: true },
+      }),
     );
   },
 

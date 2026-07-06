@@ -19,7 +19,7 @@ import {
 import { AuthRepository, MAX_FAILED_ATTEMPTS } from './auth.repository';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { REDIRECT_BY_ROLE, type LoginResult, type SessionUser } from './auth.types';
-import type { LoginInput, ChangePasswordInput, ForgotPasswordInput, ResetPasswordInput } from '@/schemas/auth.schema';
+import type { LoginInput, ChangePasswordInput, ForgotPasswordInput, ResetPasswordInput, ForceChangePasswordInput } from '@/schemas/auth.schema';
 
 const RESET_TOKEN_TTL_MIN = 30;
 const RESET_MAX_SOLICITUDES = 3;
@@ -156,7 +156,8 @@ export const AuthService = {
       entidadId: perfil.entidad_id,
       entidadTipo: perfil.entidad_tipo,
     };
-    return { token, user, redirectTo: REDIRECT_BY_ROLE[perfil.rol] };
+    const debeCambiarPassword = cred.debe_cambiar_password ?? false;
+    return { token, user, redirectTo: REDIRECT_BY_ROLE[perfil.rol], debeCambiarPassword };
   },
 
   /** Registra el evento de cierre de sesión. */
@@ -213,6 +214,56 @@ export const AuthService = {
     await withAuditContext(perfilId, (tx) =>
       AuthRepository.updatePasswordHash(tx, credencialId, hash),
     );
+  },
+
+  /**
+   * Cambio OBLIGATORIO de contraseña (primer inicio o reseteo por admin).
+   * No requiere password_actual; solo funciona si debe_cambiar_password = true.
+   * Revoca tokens viejos y emite uno nuevo.
+   */
+  async forceChangePassword(
+    perfilId: string,
+    credencialId: string,
+    input: ForceChangePasswordInput,
+  ): Promise<LoginResult> {
+    const cred = await AuthRepository.findCredencialById(credencialId);
+    if (!cred) throw new NotFoundError('Credencial');
+    if (!cred.debe_cambiar_password) {
+      throw new BusinessRuleError(
+        'NO_REQUIRED',
+        'No es necesario cambiar la contraseña en este momento.',
+      );
+    }
+
+    const hash = await hashPassword(input.password_nueva);
+    await withAuditContext(perfilId, (tx) =>
+      AuthRepository.forceUpdatePassword(tx, credencialId, hash),
+    );
+
+    // Revocar tokens viejos y emitir uno nuevo
+    revokeUserTokens(perfilId);
+
+    const perfil = await AuthRepository.getPerfilById(perfilId);
+    if (!perfil) throw new NotFoundError('Perfil');
+
+    const nombre = await resolveNombre(perfil, cred.usuario_login);
+    const token = signToken({
+      sub: cred.id,
+      perfilId: perfil.id,
+      rol: perfil.rol,
+      entidadId: perfil.entidad_id,
+      entidadTipo: perfil.entidad_tipo,
+      nombre,
+    });
+
+    const user: SessionUser = {
+      id: perfil.id,
+      rol: perfil.rol,
+      nombre,
+      entidadId: perfil.entidad_id,
+      entidadTipo: perfil.entidad_tipo,
+    };
+    return { token, user, redirectTo: REDIRECT_BY_ROLE[perfil.rol] };
   },
 
   /**

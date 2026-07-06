@@ -72,6 +72,14 @@ export const AuthRepository = {
     });
   },
 
+  /** Cambio obligatorio: actualiza hash + limpia flag. DEBE ir en withAuditContext. */
+  async forceUpdatePassword(tx: Tx, credencialId: string, hash: string): Promise<void> {
+    await tx.credencial.update({
+      where: { id: credencialId },
+      data: { password_hash: hash, debe_cambiar_password: false },
+    });
+  },
+
   /** Cuenta solicitudes de recuperación recientes (rate limiting básico). */
   contarTokensRecientes(credencialId: string, desde: Date) {
     return prisma.tokenRecuperacion.count({

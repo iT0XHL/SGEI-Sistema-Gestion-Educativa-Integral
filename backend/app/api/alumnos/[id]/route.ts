@@ -1,12 +1,13 @@
-import { withRole } from '@/lib/auth';
-import { ok, errorResponse } from '@/lib/response';
+import { withRole, canAccessAlumno, assertAccess } from '@/lib/auth';
+import { ok } from '@/lib/response';
 import { parseBody } from '@/lib/request';
 import { UpdateAlumnoSchema } from '@/schemas/personas.schema';
 import { AlumnosService } from '@/modules/alumnos/alumnos.service';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withRole(['Admin', 'Secretaria'], async (_req, { params }) => {
+export const GET = withRole(['Admin', 'Secretaria', 'Alumno'], async (_req, { params, user }) => {
+  assertAccess(canAccessAlumno(user, params.id));
   const alumno = await AlumnosService.get(params.id);
   return ok(alumno, 'Detalle del alumno');
 });

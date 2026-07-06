@@ -1,6 +1,7 @@
 // ============================================================
 //  modules/estadisticas/estadisticas.service.ts
 //  Lógica de cálculo de métricas y estadísticas del dashboard.
+//  Queries independientes se ejecutan en paralelo.
 // ============================================================
 import { prisma } from '@/lib/prisma';
 
@@ -26,32 +27,24 @@ export const EstadisticasService = {
     const hoy = new Date();
     const hoyDate = hoy.toISOString().split('T')[0];
 
-    // Período activo
-    const periodo = await prisma.periodoAcademico.findFirst({
-      where: { activo: true },
-      select: { id: true, nombre: true, anio: true, activo: true },
-    });
+    // ── Queries independientes (se ejecutan en paralelo) ──────
+    const [periodo, alumnosTotal, alumnosBloqueados, docentesTotal, asistenciaHoy] =
+      await Promise.all([
+        prisma.periodoAcademico.findFirst({
+          where: { activo: true },
+          select: { id: true, nombre: true, anio: true, activo: true },
+        }),
+        prisma.alumno.count(),
+        prisma.alumno.count({ where: { bloqueo_manual: true } }),
+        prisma.docente.count({ where: { activo: true } }),
+        prisma.asistenciaDocente.groupBy({
+          by: ['estado'],
+          where: { fecha: new Date(hoyDate) },
+          _count: true,
+        }),
+      ]);
 
-    // Total alumnos activos e inactivos
-    const alumnosTotal = await prisma.alumno.count();
-    const alumnosBloqueados = await prisma.alumno.count({
-      where: { bloqueo_manual: true },
-    });
-
-    // Total docentes activos
-    const docentesTotal = await prisma.docente.count({
-      where: { activo: true },
-    });
-
-    // Asistencia docentes hoy
-    const asistenciaHoy = await prisma.asistenciaDocente.groupBy({
-      by: ['estado'],
-      where: {
-        fecha: new Date(hoyDate),
-      },
-      _count: true,
-    });
-
+    // ── Procesar asistencia ────────────────────────────────────
     const asistenciaMap = new Map(
       asistenciaHoy.map((a) => [a.estado, a._count]),
     );
@@ -63,52 +56,30 @@ export const EstadisticasService = {
     const totalDocentes = docentesTotal;
     const sinRegistrar = Math.max(0, totalDocentes - registrados);
 
-    // Bimestres
+    // ── Queries que dependen del periodo (paralelas) ──────────
     let bimestresTotal = 0;
     let bimestresCerrados = 0;
-    if (periodo) {
-      bimestresTotal = await prisma.bimestre.count({
-        where: { periodo_id: periodo.id },
-      });
-      bimestresCerrados = await prisma.bimestre.count({
-        where: { periodo_id: periodo.id, cerrado: true },
-      });
-    }
-
-    // Secciones
     let secciones = 0;
-    if (periodo) {
-      secciones = await prisma.seccion.count({
-        where: { periodo_id: periodo.id },
-      });
-    }
-
-    // Asignaciones docentes
     let asignaciones = 0;
+
     if (periodo) {
-      asignaciones = await prisma.asignacionDocente.count({
-        where: { periodo_id: periodo.id, activo: true },
-      });
+      [bimestresTotal, bimestresCerrados, secciones, asignaciones] = await Promise.all([
+        prisma.bimestre.count({ where: { periodo_id: periodo.id } }),
+        prisma.bimestre.count({ where: { periodo_id: periodo.id, cerrado: true } }),
+        prisma.seccion.count({ where: { periodo_id: periodo.id } }),
+        prisma.asignacionDocente.count({ where: { periodo_id: periodo.id, activo: true } }),
+      ]);
     }
 
     return {
       periodo: periodo
         ? { id: periodo.id, nombre: periodo.nombre, año: periodo.anio, activo: periodo.activo }
         : null,
-      alumnos: {
-        total: alumnosTotal,
-        bloqueados: alumnosBloqueados,
-      },
-      docentes: {
-        total: docentesTotal,
-      },
+      alumnos: { total: alumnosTotal, bloqueados: alumnosBloqueados },
+      docentes: { total: docentesTotal },
       asistencia_hoy: {
-        presentes,
-        tardanzas,
-        faltas,
-        justificados,
-        sin_registrar: sinRegistrar,
-        total_docentes: totalDocentes,
+        presentes, tardanzas, faltas, justificados,
+        sin_registrar: sinRegistrar, total_docentes: totalDocentes,
       },
       bimestres: {
         total: bimestresTotal,

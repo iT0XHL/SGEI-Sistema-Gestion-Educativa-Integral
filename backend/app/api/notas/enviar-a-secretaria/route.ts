@@ -1,4 +1,3 @@
-import { type NextRequest } from 'next/server';
 import { withRole } from '@/lib/auth';
 import { parseBody } from '@/lib/request';
 import { ok, errorResponse } from '@/lib/response';

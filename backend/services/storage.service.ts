@@ -1,27 +1,15 @@
 // ============================================================
-//  services/storage.service.ts — Supabase Storage (buckets privados).
-//
-//  Usa la SERVICE KEY para operar con privilegios de administrador
-//  (bypass RLS de Storage). Las URLs firmadas tienen 300 s de vigencia.
-//
-//  Si SUPABASE_URL / SUPABASE_SERVICE_KEY no están configuradas,
-//  los métodos lanzan StorageNotConfiguredError con mensaje claro.
+//  services/storage.service.ts — Almacenamiento local (filesystem).
+//  Reemplazo completo de Supabase Storage para Hostinger VPS.
+//  Los archivos se guardan en {STORAGE_PATH}/{bucket}/{prefixPath}/.
+//  Sirve los archivos vía /api/files/ con verificación JWT.
 // ============================================================
-import { createClient } from '@supabase/supabase-js';
 import { env } from '@/config/env';
 import { AppError } from '@/errors/http-errors';
 import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE, type BucketName } from '@/storage/buckets';
 import path from 'node:path';
-
-class StorageNotConfiguredError extends AppError {
-  constructor() {
-    super(
-      'STORAGE_NOT_CONFIGURED',
-      'Supabase Storage no está configurado. Define SUPABASE_URL y SUPABASE_SERVICE_KEY en el .env',
-      503,
-    );
-  }
-}
+import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 
 class StorageValidationError extends AppError {
   constructor(message: string) {
@@ -29,33 +17,34 @@ class StorageValidationError extends AppError {
   }
 }
 
-function getClient() {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
-    throw new StorageNotConfiguredError();
+function bucketDir(bucket: BucketName): string {
+  return path.join(env.STORAGE_PATH, bucket);
+}
+
+async function ensureDir(p: string) {
+  try {
+    await fs.mkdir(p, { recursive: true });
+  } catch {
+    // race condition safe
   }
-  return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, {
-    auth: { persistSession: false },
-  });
 }
 
 export const StorageService = {
   /**
-   * Sube un archivo a Supabase Storage.
-   * @returns La ruta del objeto en el bucket (ej. "docente-uuid/1234-archivo.pdf").
+   * Sube un archivo al filesystem local.
+   * @returns La ruta relativa (ej. "materiales/docente-uuid/1234-archivo.pdf").
    */
   async upload(
     bucket: BucketName,
     prefixPath: string,
     file: File,
   ): Promise<string> {
-    // 1. Validar tamaño.
     if (file.size > MAX_FILE_SIZE) {
       throw new StorageValidationError(
         `El archivo supera el tamaño máximo permitido (${MAX_FILE_SIZE / 1024 / 1024} MB).`,
       );
     }
 
-    // 2. Validar extensión.
     const ext = path.extname(file.name).toLowerCase();
     const allowed = ALLOWED_EXTENSIONS[bucket];
     if (allowed && !allowed.includes(ext)) {
@@ -64,57 +53,52 @@ export const StorageService = {
       );
     }
 
-    // 3. Construir ruta única para evitar colisiones.
     const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    const objectPath = `${prefixPath}/${safeName}`;
+    const objectPath = `${bucket}/${prefixPath}/${safeName}`;
+    const fullPath = path.join(env.STORAGE_PATH, objectPath);
+
+    await ensureDir(path.dirname(fullPath));
 
     const arrayBuffer = await file.arrayBuffer();
-    const supabase = getClient();
-
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(objectPath, arrayBuffer, {
-        contentType: file.type || 'application/octet-stream',
-        upsert: false,
-      });
-
-    if (error) {
-      throw new AppError('STORAGE_UPLOAD_ERROR', `Error al subir archivo: ${error.message}`, 502);
-    }
+    await fs.writeFile(fullPath, Buffer.from(arrayBuffer));
 
     return objectPath;
   },
 
   /**
-   * Genera una URL firmada temporal (300 s) para un objeto privado.
+   * Genera una URL firmada temporal (300 s). Como es local,
+   * retorna una URL al endpoint /api/files/ con un token JWT
+   * firmado como query param (o confía en la cookie del usuario).
+   *
+   * Para simplificar, retorna la URL del backend que sirve el
+   * archivo con verificación de auth vía cookie (HttpOnly JWT).
    */
   async getSignedUrl(bucket: BucketName, objectPath: string): Promise<string> {
-    const supabase = getClient();
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(objectPath, 300);
-
-    if (error || !data?.signedUrl) {
-      throw new AppError(
-        'STORAGE_SIGNED_URL_ERROR',
-        `No se pudo generar la URL firmada: ${error?.message ?? 'unknown'}`,
-        502,
-      );
-    }
-
-    return data.signedUrl;
+    const apiUrl = env.APP_URL.replace(/\/+$/, '');
+    return `${apiUrl}/api/files/${objectPath}`;
   },
 
   /**
-   * Elimina un objeto del bucket. Falla silenciosamente si no existe.
+   * Elimina un archivo del filesystem. No falla si no existe.
    */
   async delete(bucket: BucketName, objectPath: string): Promise<void> {
-    const supabase = getClient();
-    await supabase.storage.from(bucket).remove([objectPath]);
+    const fullPath = path.join(env.STORAGE_PATH, objectPath);
+    try {
+      await fs.unlink(fullPath);
+    } catch {
+      // Silently ignore if file doesn't exist
+    }
   },
 
-  /** Verifica si Storage está configurado en el entorno actual. */
+  /**
+   * Retorna el path absoluto para servir el archivo.
+   */
+  getFilePath(objectPath: string): string {
+    return path.join(env.STORAGE_PATH, objectPath);
+  },
+
+  /** Siempre configurado en local filesystem. */
   isConfigured(): boolean {
-    return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY);
+    return true;
   },
 };

@@ -66,8 +66,10 @@ export function verifyToken(token: string): JwtClaims {
 export function authCookieOptions() {
   return {
     httpOnly: true,
-    secure: env.isProd, // solo HTTPS en producción
-    sameSite: 'strict' as const, // previene CSRF
+    // Solo HTTPS en producción; COOKIE_SECURE=false permite despliegues
+    // por HTTP plano (ej. VPS accedido por IP sin dominio/SSL).
+    secure: env.isProd && process.env.COOKIE_SECURE !== 'false',
+    sameSite: 'lax' as const, // previene CSRF
     path: '/',
     maxAge: 8 * 60 * 60, // 8 horas (segundos)
   };

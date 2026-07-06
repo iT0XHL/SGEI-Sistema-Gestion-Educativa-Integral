@@ -5,6 +5,7 @@ import { LibretaRepository } from './libreta.repository';
 import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
 import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import type { JwtClaims } from '@/lib/jwt';
+import type { BoletaData } from './boleta.types';
 
 type EstadoDestino = 'EN_REVISION' | 'OBSERVADA' | 'APROBADA' | 'PUBLICADA' | 'ANULADA';
 
@@ -70,13 +71,19 @@ export const LibretaService = {
     return agrupada;
   },
 
-  async generarPdf(
-    alumnoId:   string,
-    bimestreId: string | undefined,
-    user:       JwtClaims,
-    ip?:        string,
-    userAgent?: string,
-  ) {
+  /**
+   * Arma la BOLETA DE NOTAS anual del alumno (formato IEP Virgen del Carmen)
+   * lista para renderizar en PDF (alumno) o .docx (secretaría). La boleta es
+   * anual, por lo que `bimestreId` se ignora (se conserva por compatibilidad
+   * de la ruta). Aplica el control de acceso/bloqueo del alumno y audita.
+   */
+  async generarBoleta(
+    alumnoId:    string,
+    _bimestreId: string | undefined,
+    user:        JwtClaims,
+    ip?:         string,
+    userAgent?:  string,
+  ): Promise<BoletaData> {
     if (user.rol === 'Alumno') {
       if (user.entidadId !== alumnoId) {
         throw new ForbiddenError('LIBRETA_AJENA', 'Solo puedes descargar tu propia libreta.');
@@ -91,8 +98,8 @@ export const LibretaService = {
     }
 
     await LibretaRepository.refrescarVista();
-    const rows = await LibretaRepository.detalleConArea(alumnoId, bimestreId);
-    if (rows.length === 0) throw new NotFoundError('Libreta del alumno');
+    const data = await LibretaRepository.boletaData(alumnoId);
+    if (data.areas.length === 0) throw new NotFoundError('Libreta del alumno');
 
     await AuditService.log({
       usuarioId:       user.perfilId,
@@ -104,7 +111,7 @@ export const LibretaService = {
       userAgent,
     });
 
-    return rows;
+    return data;
   },
 
   // ── Secretaría / Admin: flujo de generación y estados ──────────────

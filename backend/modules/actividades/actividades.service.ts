@@ -1,16 +1,10 @@
-// ============================================================
-//  modules/actividades/actividades.service.ts
-//  RBAC:
-//    Docente  → CRUD de sus actividades (secciones asignadas)
-//    Alumno   → lectura de actividades de su sección + subir entrega
-//    Admin    → lectura global
-//    Secretaria → sin acceso
-// ============================================================
 import { ForbiddenError, NotFoundError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { StorageService } from '@/services/storage.service';
 import { BUCKETS } from '@/storage/buckets';
 import { AsistenciaAlumnosRepository } from '@/modules/asistencias/asistencia-alumnos.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
 import { prisma } from '@/lib/prisma';
 import { ActividadesRepository } from './actividades.repository';
 import type { JwtClaims } from '@/lib/jwt';
@@ -141,10 +135,20 @@ export const ActividadesService = {
       newValue: { titulo: actividad.titulo, tipo: actividad.tipo },
     });
 
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.ACTIVIDAD_PUBLICADA,
+      actor: { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        actividadId: actividad.id,
+        actividadTitulo: actividad.titulo,
+        seccionId: actividad.seccion_id,
+        cursoId: actividad.curso_id,
+      },
+    });
+
     return actividad;
   },
 
-  /** Crea actividad con adjunto subido a Storage. */
   async createWithFile(
     data: Omit<CreateActividadInput, 'url_adjunto'>,
     file: File,
@@ -165,7 +169,7 @@ export const ActividadesService = {
       file,
     );
 
-    return ActividadesRepository.create({
+    const actividad = await ActividadesRepository.create({
       docente_id: user.entidadId,
       curso_id: data.curso_id,
       seccion_id: data.seccion_id,
@@ -176,6 +180,19 @@ export const ActividadesService = {
       puntaje_maximo: data.puntaje_maximo,
       url_adjunto: objectPath,
     });
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.ACTIVIDAD_PUBLICADA,
+      actor: { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        actividadId: actividad.id,
+        actividadTitulo: actividad.titulo,
+        seccionId: actividad.seccion_id,
+        cursoId: actividad.curso_id,
+      },
+    });
+
+    return actividad;
   },
 
   async update(id: string, input: UpdateActividadInput, user: JwtClaims) {
@@ -210,8 +227,7 @@ export const ActividadesService = {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Sin permisos para eliminar actividades.');
     }
 
-    // Limpiar adjunto del docente en Storage si existe.
-    if (actividad.url_adjunto && StorageService.isConfigured()) {
+    if (actividad.url_adjunto) {
       await StorageService.delete(BUCKETS.ACTIVIDADES_ADJUNTOS, actividad.url_adjunto);
     }
 
@@ -229,14 +245,11 @@ export const ActividadesService = {
     return { id };
   },
 
-  // ── Entregas ────────────────────────────────────────────────
-
   async listEntregas(actividadId: string, user: JwtClaims) {
     const actividad = await ActividadesRepository.findById(actividadId);
     if (!actividad) throw new NotFoundError('Actividad');
 
     if (user.rol === 'Alumno') {
-      // El alumno solo ve su propia entrega.
       const entrega = await ActividadesRepository.findEntregaByAlumnoAndActividad(
         user.entidadId,
         actividadId,
@@ -251,7 +264,6 @@ export const ActividadesService = {
     return ActividadesRepository.listEntregas(actividadId);
   },
 
-  /** Alumno entrega (JSON sin archivo) */
   async submitEntrega(actividadId: string, input: SubmitEntregaInput, user: JwtClaims) {
     if (user.rol !== 'Alumno') {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo alumnos pueden entregar.');
@@ -278,7 +290,6 @@ export const ActividadesService = {
     );
 
     if (existente) {
-      // Re-entrega: solo actualizar si no ha sido calificada.
       if (existente.estado === 'calificado') {
         throw new BusinessRuleError('ENTREGA_CALIFICADA', 'Tu entrega ya fue calificada y no puede modificarse.');
       }
@@ -297,7 +308,6 @@ export const ActividadesService = {
     });
   },
 
-  /** Alumno entrega con archivo subido a Storage */
   async submitEntregaConArchivo(actividadId: string, comentario: string | null, file: File, user: JwtClaims) {
     if (user.rol !== 'Alumno') {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo alumnos pueden entregar.');
@@ -332,8 +342,7 @@ export const ActividadesService = {
       if (existente.estado === 'calificado') {
         throw new BusinessRuleError('ENTREGA_CALIFICADA', 'Tu entrega ya fue calificada.');
       }
-      // Borrar archivo anterior de Storage.
-      if (existente.url_archivo && StorageService.isConfigured()) {
+      if (existente.url_archivo) {
         await StorageService.delete(BUCKETS.ENTREGAS_ALUMNOS, existente.url_archivo);
       }
       return ActividadesRepository.updateEntrega(existente.id, {
@@ -353,7 +362,6 @@ export const ActividadesService = {
     });
   },
 
-  /** Docente califica una entrega */
   async calificarEntrega(entregaId: string, input: CalificarEntregaInput, user: JwtClaims) {
     if (user.rol !== 'Docente' && user.rol !== 'Admin') {
       throw new ForbiddenError('INSUFFICIENT_ROLE', 'Solo Docente y Admin pueden calificar entregas.');
@@ -379,28 +387,40 @@ export const ActividadesService = {
       }
     }
 
-    return ActividadesRepository.updateEntrega(entregaId, {
+    const resultado = await ActividadesRepository.updateEntrega(entregaId, {
       ...(input.nota !== undefined ? { nota: input.nota } : {}),
       ...(input.observacion_docente !== undefined ? { observacion_docente: input.observacion_docente } : {}),
       estado: input.estado ?? 'calificado',
       fecha_calificacion: new Date(),
     });
+
+    if (resultado.estado === 'calificado') {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.TAREA_CALIFICADA,
+        actor: { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+        contexto: {
+          entregaId: resultado.id,
+          actividadId: actividad.id,
+          actividadTitulo: actividad.titulo,
+          alumnoId: resultado.alumno_id,
+          cursoId: actividad.curso_id,
+          seccionId: actividad.seccion_id,
+        },
+      });
+    }
+
+    return resultado;
   },
 
-  /** URL firmada del archivo adjunto de la actividad (docente). */
   async getAdjuntoUrl(id: string, user: JwtClaims): Promise<{ url: string; es_firmada: boolean }> {
     const actividad = await this.get(id, user);
     if (!actividad.url_adjunto) {
       throw new NotFoundError('Adjunto de actividad');
     }
-    if (!StorageService.isConfigured()) {
-      return { url: actividad.url_adjunto, es_firmada: false };
-    }
     const signedUrl = await StorageService.getSignedUrl(BUCKETS.ACTIVIDADES_ADJUNTOS, actividad.url_adjunto);
     return { url: signedUrl, es_firmada: true };
   },
 
-  /** URL firmada del archivo de entrega de un alumno. */
   async getEntregaArchivoUrl(entregaId: string, user: JwtClaims): Promise<{ url: string; es_firmada: boolean }> {
     const entrega = await ActividadesRepository.findEntregaById(entregaId);
     if (!entrega) throw new NotFoundError('Entrega');
@@ -411,9 +431,6 @@ export const ActividadesService = {
 
     if (!entrega.url_archivo) throw new NotFoundError('Archivo de entrega');
 
-    if (!StorageService.isConfigured()) {
-      return { url: entrega.url_archivo, es_firmada: false };
-    }
     const signedUrl = await StorageService.getSignedUrl(BUCKETS.ENTREGAS_ALUMNOS, entrega.url_archivo);
     return { url: signedUrl, es_firmada: true };
   },

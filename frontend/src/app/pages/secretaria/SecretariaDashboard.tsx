@@ -98,7 +98,7 @@ export default function SecretariaDashboard() {
       <div>
         <p className="text-sm text-slate-500 mb-1">Panel de secretaría</p>
         <h1 className="text-2xl font-bold text-slate-900">Gestión Administrativa</h1>
-        <p className="text-sm text-slate-500 mt-0.5">I.E. San José de Calasanz · {periodoLabel}</p>
+        <p className="text-sm text-slate-500 mt-0.5">IEP Virgen del Carmen - Las Viñas · {periodoLabel}</p>
       </div>
 
       {pendientes > 0 && (

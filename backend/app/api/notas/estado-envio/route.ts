@@ -1,4 +1,3 @@
-import { type NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import { ok, errorResponse } from '@/lib/response';
 import { z } from 'zod';
@@ -11,7 +10,7 @@ const EstadoEnvioQuery = z.object({
   seccionId: z.string().uuid().optional(),
 });
 
-export const GET = withAuth(async (req, ctx) => {
+export const GET = withAuth(async (req) => {
   try {
     const query = parseQuery(req, EstadoEnvioQuery);
 

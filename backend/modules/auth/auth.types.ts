@@ -16,6 +16,7 @@ export interface LoginResult {
   token: string;
   user: SessionUser;
   redirectTo: string;
+  debeCambiarPassword?: boolean;
 }
 
 /** Ruta inicial por rol tras el login. */

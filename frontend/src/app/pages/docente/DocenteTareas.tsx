@@ -323,6 +323,8 @@ export default function DocenteTareas() {
   const [actDuePeriod,  setActDuePeriod]  = useState<'AM' | 'PM'>('AM');
   const [actScore,      setActScore]      = useState('20');
   const [editingActId,  setEditingActId]  = useState<string | null>(null);
+  const [actFile,       setActFile]       = useState<File | null>(null);
+  const actFileRef = useRef<HTMLInputElement>(null);
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -440,6 +442,7 @@ export default function DocenteTareas() {
     setActTitle(''); setActType('Tarea'); setActInstr('');
     setActDue(''); setActDueHour('8'); setActDueMinute('00');
     setActDuePeriod('AM'); setActScore('20'); setEditingActId(null);
+    setActFile(null);
   }
 
   // ── Materiales ────────────────────────────────────────────────
@@ -524,6 +527,9 @@ export default function DocenteTareas() {
       if (editingActId) {
         const actualizada = await actividadesApi.actualizar(editingActId, payload);
         setActivities(prev => prev.map(a => a.id === editingActId ? actualizada : a));
+      } else if (actFile) {
+        const nueva = await actividadesApi.crearConArchivo({ ...payload, archivo: actFile });
+        setActivities(prev => [nueva, ...prev]);
       } else {
         const nueva = await actividadesApi.crear(payload);
         setActivities(prev => [nueva, ...prev]);
@@ -912,27 +918,70 @@ export default function DocenteTareas() {
                           const num = val !== null ? parseFloat(val) : NaN;
                           const isValid = val === null || val === '' || (!isNaN(num) && num >= 0 && num <= act.puntaje_maximo);
                           const filled = val !== null && val !== '' && isValid;
+
+                          if (!entrega) {
+                            return (
+                              <td key={act.id} className="text-center px-2 py-2">
+                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-500 rounded-lg text-xs font-medium">
+                                  <AlertCircle className="size-3" />
+                                  No entregó
+                                </span>
+                              </td>
+                            );
+                          }
+
+                          const tieneArchivo = !!entrega.url_archivo;
+                          const tieneComentario = !!entrega.comentario_alumno;
+                          const isGraded = entrega.nota !== null;
+                          const statusLabel = isGraded ? 'Calificado' : 'Pendiente';
+                          const statusColor = isGraded ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600';
+
                           return (
                             <td key={act.id} className="text-center px-2 py-2">
-                              {entrega ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={act.puntaje_maximo}
-                                  value={val ?? ''}
-                                  onChange={e => handleGradeChange(entrega.id, e.target.value)}
-                                  className={`w-14 text-center text-sm border rounded-xl py-1.5 transition-all focus:outline-none focus:ring-2 ${
-                                    !isValid && val !== ''
-                                      ? 'border-red-400 bg-red-50 text-red-700 focus:ring-red-400'
-                                      : filled
-                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 focus:ring-emerald-400'
-                                        : 'border-slate-200 bg-slate-50 text-slate-700 focus:ring-indigo-400'
-                                  }`}
-                                  placeholder="—"
-                                />
-                              ) : (
-                                <span className="text-slate-300 text-sm">—</span>
-                              )}
+                              <div className="flex flex-col items-center gap-1.5">
+                                {!filled ? (
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold ${statusColor}`}>
+                                    {isGraded ? <CheckCircle2 className="size-3" /> : <Clock className="size-3" />}
+                                    {statusLabel}
+                                  </span>
+                                ) : null}
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={act.puntaje_maximo}
+                                    value={val ?? ''}
+                                    onChange={e => handleGradeChange(entrega.id, e.target.value)}
+                                    className={`w-14 text-center text-sm border rounded-xl py-1.5 transition-all focus:outline-none focus:ring-2 ${
+                                      !isValid && val !== ''
+                                        ? 'border-red-400 bg-red-50 text-red-700 focus:ring-red-400'
+                                        : filled
+                                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800 focus:ring-emerald-400'
+                                          : 'border-slate-200 bg-slate-50 text-slate-700 focus:ring-indigo-400'
+                                    }`}
+                                    placeholder="—"
+                                  />
+                                  {tieneArchivo && (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const { url } = await actividadesApi.getEntregaArchivoUrl(act.id, entrega.id);
+                                          window.open(url, '_blank');
+                                        } catch {}
+                                      }}
+                                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-indigo-600 transition-colors"
+                                      title="Descargar archivo"
+                                    >
+                                      <Download className="size-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                                {tieneComentario && (
+                                  <span className="text-[10px] text-slate-400 italic truncate max-w-[100px]" title={entrega.comentario_alumno!}>
+                                    "{entrega.comentario_alumno}"
+                                  </span>
+                                )}
+                              </div>
                             </td>
                           );
                         })}
@@ -1133,6 +1182,38 @@ export default function DocenteTareas() {
                 <p className={`text-xs text-right mt-1 ${actInstr.length >= 2000 ? 'text-red-500' : 'text-slate-400'}`}>
                   {actInstr.length}/2000
                 </p>
+              </div>
+
+              {/* Archivo adjunto opcional */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Archivo adjunto <span className="text-xs text-slate-400 font-normal">(opcional)</span>
+                </label>
+                <input
+                  ref={actFileRef}
+                  type="file"
+                  accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png"
+                  onChange={e => setActFile(e.target.files?.[0] ?? null)}
+                  className="hidden"
+                />
+                <div
+                  onClick={() => actFileRef.current?.click()}
+                  className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-indigo-300 hover:bg-indigo-50/20 transition-colors cursor-pointer"
+                >
+                  {actFile ? (
+                    <div className="flex items-center gap-2 justify-center">
+                      <CheckCircle2 className="size-5 text-emerald-500" />
+                      <p className="text-sm text-emerald-700 font-medium truncate max-w-[200px]">{actFile.name}</p>
+                      <span className="text-xs text-slate-400">{(actFile.size / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <Upload className="size-5 text-slate-300 mx-auto mb-1" />
+                      <p className="text-sm text-slate-500">Sube un archivo adjunto (opcional)</p>
+                      <p className="text-xs text-slate-400 mt-0.5">PDF · DOCX · PPTX · JPG · PNG · Máx. 10 MB</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

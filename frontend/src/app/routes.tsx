@@ -2,8 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import { AppShell } from './components/layout/AppShell';
 import { RouteErrorBoundary } from './components/feedback/ErrorBoundary';
 import Login from './pages/Login';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
+import ForceChangePassword from './pages/ForceChangePassword';
 import AlumnoDashboard from './pages/alumno/AlumnoDashboard';
 import AlumnoCursos from './pages/alumno/AlumnoCursos';
 import AlumnoCursoDetalle from './pages/alumno/AlumnoCursoDetalle';
@@ -44,8 +43,7 @@ import SecretariaLibretaPreview from './pages/secretaria/SecretariaLibretaPrevie
 
 export const router = createBrowserRouter([
   { path: '/', Component: Login, errorElement: <RouteErrorBoundary /> },
-  { path: '/forgot-password', Component: ForgotPassword, errorElement: <RouteErrorBoundary /> },
-  { path: '/reset-password', Component: ResetPassword, errorElement: <RouteErrorBoundary /> },
+  { path: '/cambiar-contrasena', Component: ForceChangePassword, errorElement: <RouteErrorBoundary /> },
 
   // ── Alumno Portal ────────────────────────────────────────
   {

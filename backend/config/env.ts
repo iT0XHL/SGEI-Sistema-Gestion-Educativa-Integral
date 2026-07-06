@@ -9,34 +9,28 @@ const EnvSchema = z.object({
     .enum(['development', 'test', 'production'])
     .default('development'),
 
-  // Base de datos — único requerido en la Fase 1.
   DATABASE_URL: z.string().min(1, 'DATABASE_URL es obligatoria'),
-  // DIRECT_URL: si no se define, se usa DATABASE_URL (válido en local).
   DIRECT_URL: z.string().min(1).optional(),
 
-  // JWT — requerido para auth.
   JWT_SECRET: z.string().min(32, 'JWT_SECRET es obligatorio (mín. 32 caracteres)'),
   JWT_EXPIRES_IN: z.string().default('8h'),
   JWT_COOKIE_NAME: z.string().default('sgei_token'),
 
-  // Seguridad.
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 
-  // Integración con el frontend existente.
   FRONTEND_ORIGIN: z.string().url().default('http://localhost:3000'),
-  MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(5),
+  MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(10),
 
-  // Supabase Storage — requerido para subida de archivos (materiales, entregas).
-  // No requerido para desarrollo local sin archivos.
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_SERVICE_KEY: z.string().min(1).optional(),
+  // Almacenamiento local (filesystem) — directorio donde se guardan los archivos.
+  // En Docker: persistir vía volumen. En Hostinger VPS: ruta absoluta.
+  STORAGE_PATH: z.string().default('./public/uploads'),
 
-  // Secreto compartido para autenticar al cron de notificaciones diarias.
-  CRON_SECRET: z.string().min(16).optional(),
+  // URL pública del backend para generar enlaces de descarga de archivos.
+  APP_URL: z.string().url().default('http://localhost:3001'),
 
-  // Envío de emails transaccionales (recuperación de contraseña).
-  // Sin configurar: el envío se registra en logs en vez de enviarse (modo dev).
-  RESEND_API_KEY: z.string().min(1).optional(),
+  CRON_SECRET: z.union([z.string().min(16), z.literal('')]).optional(),
+
+  RESEND_API_KEY: z.union([z.string().min(1), z.literal('')]).optional(),
   EMAIL_FROM: z.string().default('SGEI <no-reply@sgei.local>'),
 });
 
@@ -54,12 +48,9 @@ const data = parsed.data;
 
 export const env = {
   ...data,
-  // En local DIRECT_URL puede omitirse: cae a DATABASE_URL.
   DIRECT_URL: data.DIRECT_URL ?? data.DATABASE_URL,
   isProd: data.NODE_ENV === 'production',
   isDev: data.NODE_ENV === 'development',
-  SUPABASE_URL: data.SUPABASE_URL,
-  SUPABASE_SERVICE_KEY: data.SUPABASE_SERVICE_KEY,
 };
 
 export type Env = typeof env;

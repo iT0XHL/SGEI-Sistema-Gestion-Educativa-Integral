@@ -198,7 +198,7 @@ BEGIN
   ON CONFLICT DO NOTHING;
 
   INSERT INTO academic_schema.periodo_academico (id, año, nombre, fecha_inicio, fecha_fin, activo)
-  VALUES (v_periodo_id, 2025, 'Año Lectivo 2025', '2025-03-01', '2025-12-15', TRUE)
+  VALUES (v_periodo_id, 2026, 'Año Lectivo 2026', '2026-03-01', '2026-12-15', TRUE)
   ON CONFLICT DO NOTHING;
 
   -- ══════════════════════════════════════════════════════════════
@@ -253,8 +253,8 @@ BEGIN
 
   INSERT INTO academic_schema.bimestre (id, periodo_id, numero, nombre, fecha_inicio, fecha_fin, cerrado)
   VALUES
-    (v_bim1_id, v_periodo_id, 1, 'I Bimestre', '2025-03-01', '2025-05-31', FALSE),
-    (v_bim2_id, v_periodo_id, 2, 'II Bimestre', '2025-06-01', '2025-08-31', FALSE)
+    (v_bim1_id, v_periodo_id, 1, 'I Bimestre', '2026-03-01', '2026-05-31', FALSE),
+    (v_bim2_id, v_periodo_id, 2, 'II Bimestre', '2026-06-01', '2026-08-31', FALSE)
   ON CONFLICT DO NOTHING;
 
   -- ══════════════════════════════════════════════════════════════
@@ -356,18 +356,18 @@ BEGIN
     alumno_id, concepto_id, periodo_id, mes, monto,
     estado, fecha_vencimiento, fecha_pago, generado_por
   ) VALUES
-    (v_alu1_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pagado', '2025-01-31', '2025-01-05', v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pagado', '2025-02-28', '2025-02-03', v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 3, 350.00, 'Pagado', '2025-03-31', '2025-03-07', v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 4, 350.00, 'Pagado', '2025-04-30', '2025-04-04', v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 5, 350.00, 'Pendiente', '2025-05-31', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 6, 350.00, 'Pendiente', '2025-06-30', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 7, 350.00, 'Pendiente', '2025-07-31', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 8, 350.00, 'Pendiente', '2025-08-31', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 9, 350.00, 'Pendiente', '2025-09-30', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 10, 350.00, 'Pendiente', '2025-10-31', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 11, 350.00, 'Pendiente', '2025-11-30', NULL, v_perf_admin),
-    (v_alu1_id, v_concepto_id, v_periodo_id, 12, 350.00, 'Pendiente', '2025-12-31', NULL, v_perf_admin)
+    (v_alu1_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pagado', '2026-01-31', '2026-01-05', v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pagado', '2026-02-28', '2026-02-03', v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 3, 350.00, 'Pagado', '2026-03-31', '2026-03-07', v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 4, 350.00, 'Pagado', '2026-04-30', '2026-04-04', v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 5, 350.00, 'Pendiente', '2026-05-31', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 6, 350.00, 'Pendiente', '2026-06-30', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 7, 350.00, 'Pendiente', '2026-07-31', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 8, 350.00, 'Pendiente', '2026-08-31', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 9, 350.00, 'Pendiente', '2026-09-30', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 10, 350.00, 'Pendiente', '2026-10-31', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 11, 350.00, 'Pendiente', '2026-11-30', NULL, v_perf_admin),
+    (v_alu1_id, v_concepto_id, v_periodo_id, 12, 350.00, 'Pendiente', '2026-12-31', NULL, v_perf_admin)
   ON CONFLICT DO NOTHING;
 
   -- Insertar pagos para otros alumnos (muestra variada de estados)
@@ -375,16 +375,16 @@ BEGIN
     alumno_id, concepto_id, periodo_id, mes, monto,
     estado, fecha_vencimiento, fecha_pago, generado_por
   ) VALUES
-    (v_alu2_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pagado', '2025-01-31', '2025-01-08', v_perf_admin),
-    (v_alu2_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pagado', '2025-02-28', '2025-02-05', v_perf_admin),
-    (v_alu2_id, v_concepto_id, v_periodo_id, 3, 350.00, 'Pagado', '2025-03-31', '2025-03-10', v_perf_admin),
-    (v_alu2_id, v_concepto_id, v_periodo_id, 4, 350.00, 'Pendiente', '2025-04-30', NULL, v_perf_admin),
-    (v_alu5_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pagado', '2025-01-31', '2025-01-02', v_perf_admin),
-    (v_alu5_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pagado', '2025-02-28', '2025-02-01', v_perf_admin),
-    (v_alu5_id, v_concepto_id, v_periodo_id, 3, 350.00, 'Pagado', '2025-03-31', '2025-03-05', v_perf_admin),
-    (v_alu5_id, v_concepto_id, v_periodo_id, 4, 350.00, 'Pagado', '2025-04-30', '2025-04-10', v_perf_admin),
-    (v_alu6_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pendiente', '2025-01-31', NULL, v_perf_admin),
-    (v_alu6_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pendiente', '2025-02-28', NULL, v_perf_admin)
+    (v_alu2_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pagado', '2026-01-31', '2026-01-08', v_perf_admin),
+    (v_alu2_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pagado', '2026-02-28', '2026-02-05', v_perf_admin),
+    (v_alu2_id, v_concepto_id, v_periodo_id, 3, 350.00, 'Pagado', '2026-03-31', '2026-03-10', v_perf_admin),
+    (v_alu2_id, v_concepto_id, v_periodo_id, 4, 350.00, 'Pendiente', '2026-04-30', NULL, v_perf_admin),
+    (v_alu5_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pagado', '2026-01-31', '2026-01-02', v_perf_admin),
+    (v_alu5_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pagado', '2026-02-28', '2026-02-01', v_perf_admin),
+    (v_alu5_id, v_concepto_id, v_periodo_id, 3, 350.00, 'Pagado', '2026-03-31', '2026-03-05', v_perf_admin),
+    (v_alu5_id, v_concepto_id, v_periodo_id, 4, 350.00, 'Pagado', '2026-04-30', '2026-04-10', v_perf_admin),
+    (v_alu6_id, v_concepto_id, v_periodo_id, 1, 350.00, 'Pendiente', '2026-01-31', NULL, v_perf_admin),
+    (v_alu6_id, v_concepto_id, v_periodo_id, 2, 350.00, 'Pendiente', '2026-02-28', NULL, v_perf_admin)
   ON CONFLICT DO NOTHING;
 
   -- ══════════════════════════════════════════════════════════════
@@ -399,8 +399,8 @@ BEGIN
   INSERT INTO financial_schema.boleta_pago (pago_id, url_archivo, nombre_archivo, banco, numero_operacion, estado_revision)
   SELECT
     pago_ids.id,
-    'https://sgei.edu.pe/uploads/vouchers/' || pago_ids.alumno_id::TEXT || '_mayo_2025.jpg',
-    'comprobante_pago_mayo_2025.jpg',
+    'https://sgei.edu.pe/uploads/vouchers/' || pago_ids.alumno_id::TEXT || '_mayo_2026.jpg',
+    'comprobante_pago_mayo_2026.jpg',
     'Banco del Perú',
     LPAD((ROW_NUMBER() OVER (ORDER BY pago_ids.id))::TEXT, 10, '0'),
     'En_Revision'::financial_schema.estado_revision_boleta
@@ -453,12 +453,12 @@ BEGIN
     docente_id, curso_id, seccion_id, titulo, tipo,
     fecha_asignacion, fecha_limite, puntaje_maximo
   ) VALUES
-    (v_doc1_id, v_curso1_id, v_seccion_id, 'Práctica: Sistemas de ecuaciones 2×2', 'practica',   '2025-04-20'::TIMESTAMP, '2025-05-12'::TIMESTAMP, 20),
-    (v_doc1_id, v_curso1_id, v_seccion_id, 'Tarea: Problemas de aplicación',       'tarea',      '2025-04-15'::TIMESTAMP, '2025-05-05'::TIMESTAMP, 20),
-    (v_doc1_id, v_curso1_id, v_seccion_id, 'Práctica calificada N° 2',             'evaluacion', '2025-04-10'::TIMESTAMP, '2025-04-28'::TIMESTAMP, 20),
-    (v_doc1_id, v_curso1_id, v_seccion_id, 'Proyecto: Maqueta geométrica',         'proyecto',   '2025-04-25'::TIMESTAMP, '2025-05-20'::TIMESTAMP, 20),
-    (v_doc2_id, v_curso2_id, v_seccion_id, 'Ensayo argumentativo',                 'tarea',      '2025-04-22'::TIMESTAMP, '2025-05-15'::TIMESTAMP, 20),
-    (v_doc3_id, v_curso3_id, v_seccion_id, 'Mapa conceptual: Historia colonial',   'tarea',      '2025-04-18'::TIMESTAMP, '2025-05-10'::TIMESTAMP, 20)
+    (v_doc1_id, v_curso1_id, v_seccion_id, 'Práctica: Sistemas de ecuaciones 2×2', 'practica',   '2026-04-20'::TIMESTAMP, '2026-05-12'::TIMESTAMP, 20),
+    (v_doc1_id, v_curso1_id, v_seccion_id, 'Tarea: Problemas de aplicación',       'tarea',      '2026-04-15'::TIMESTAMP, '2026-05-05'::TIMESTAMP, 20),
+    (v_doc1_id, v_curso1_id, v_seccion_id, 'Práctica calificada N° 2',             'evaluacion', '2026-04-10'::TIMESTAMP, '2026-04-28'::TIMESTAMP, 20),
+    (v_doc1_id, v_curso1_id, v_seccion_id, 'Proyecto: Maqueta geométrica',         'proyecto',   '2026-04-25'::TIMESTAMP, '2026-05-20'::TIMESTAMP, 20),
+    (v_doc2_id, v_curso2_id, v_seccion_id, 'Ensayo argumentativo',                 'tarea',      '2026-04-22'::TIMESTAMP, '2026-05-15'::TIMESTAMP, 20),
+    (v_doc3_id, v_curso3_id, v_seccion_id, 'Mapa conceptual: Historia colonial',   'tarea',      '2026-04-18'::TIMESTAMP, '2026-05-10'::TIMESTAMP, 20)
   ON CONFLICT DO NOTHING;
 
   -- ══════════════════════════════════════════════════════════════
@@ -467,13 +467,13 @@ BEGIN
 
   INSERT INTO academic_schema.asistencia_docente (docente_id, registrado_por, fecha, estado)
   VALUES
-    (v_doc1_id, v_perf_admin, '2025-05-16'::DATE, 'P'),
-    (v_doc2_id, v_perf_admin, '2025-05-16'::DATE, 'P'),
-    (v_doc3_id, v_perf_admin, '2025-05-16'::DATE, 'T'),
-    (v_doc4_id, v_perf_admin, '2025-05-16'::DATE, 'F'),
-    (v_doc5_id, v_perf_admin, '2025-05-16'::DATE, 'P'),
-    (v_doc6_id, v_perf_admin, '2025-05-16'::DATE, 'P'),
-    (v_doc7_id, v_perf_admin, '2025-05-16'::DATE, 'P')
+    (v_doc1_id, v_perf_admin, '2026-05-16'::DATE, 'P'),
+    (v_doc2_id, v_perf_admin, '2026-05-16'::DATE, 'P'),
+    (v_doc3_id, v_perf_admin, '2026-05-16'::DATE, 'T'),
+    (v_doc4_id, v_perf_admin, '2026-05-16'::DATE, 'F'),
+    (v_doc5_id, v_perf_admin, '2026-05-16'::DATE, 'P'),
+    (v_doc6_id, v_perf_admin, '2026-05-16'::DATE, 'P'),
+    (v_doc7_id, v_perf_admin, '2026-05-16'::DATE, 'P')
   ON CONFLICT DO NOTHING;
 
   -- ══════════════════════════════════════════════════════════════
@@ -485,15 +485,15 @@ BEGIN
     departamento, provincia, distrito, direccion,
     telefono, email_institucional, gestion
   ) VALUES (
-    'Colegio "San Jorge"', '000001', 'UGEL-4', 'UGEL Lima Este',
+    'IEP Virgen del Carmen - Las Viñas', '000001', 'UGEL-4', 'UGEL Lima Este',
     'Lima', 'Lima', 'San Luis', 'Av. Principal 123, San Luis, Lima',
-    '+51-1-5551234', 'contacto@sansjorge.edu.pe', 'Privada'
+    '+51-1-5551234', 'contacto@virgendelcarmen.edu.pe', 'Privada'
   )
   ON CONFLICT DO NOTHING;
 
   RAISE NOTICE '========== SEED COMPLETADO ==========';
   RAISE NOTICE 'Identidad: 1 Admin + 1 Secretaria + 7 Docentes + 1 Alumno (acceso)';
-  RAISE NOTICE 'Academia: 12 Alumnos | 3° Secundaria | Sección A | Período 2025';
+  RAISE NOTICE 'Academia: 12 Alumnos | 3° Secundaria | Sección A | Período 2026';
   RAISE NOTICE 'Currículum: 8 Cursos | 4 Competencias | 2 Bimestres | Escala AD/A/B/C';
   RAISE NOTICE 'Evaluación: 24 Notas (I Bimestre)';
   RAISE NOTICE 'Horarios: 15 bloques (Lun–Sáb, 08:00–16:00)';

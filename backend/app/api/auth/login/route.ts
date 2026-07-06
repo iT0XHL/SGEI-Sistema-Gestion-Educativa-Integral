@@ -14,12 +14,12 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const input = await parseBody(req, LoginSchema);
-    const { token, user, redirectTo } = await AuthService.login(input, {
+    const { token, user, redirectTo, debeCambiarPassword } = await AuthService.login(input, {
       ip: getClientIp(req),
       userAgent: getUserAgent(req),
     });
 
-    const res = ok({ user, redirectTo }, 'Sesión iniciada correctamente');
+    const res = ok({ user, redirectTo, debeCambiarPassword }, 'Sesión iniciada correctamente');
     res.cookies.set(COOKIE_NAME, token, authCookieOptions());
     return res;
   } catch (error) {

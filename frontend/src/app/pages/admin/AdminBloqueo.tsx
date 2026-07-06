@@ -27,7 +27,7 @@ export default function AdminBloqueo() {
     (async () => {
       try {
         setLoading(true);
-        const res = await alumnosAdminApi.listar({ activo: 'true', limit: 200 });
+        const res = await alumnosAdminApi.listar({ activo: 'true', limit: 500 });
         if (!cancelled) setStudents(res.items.map(toRow));
       } catch {
         if (!cancelled) setErrorMsg('No se pudieron cargar los alumnos.');

@@ -39,6 +39,11 @@ INSERT INTO academic_schema.curso (nivel_id, nombre, horas_semanales) VALUES
   ('00000000-0000-0000-0004-000000000010', 'Música',            1)
 ON CONFLICT DO NOTHING;
 
+-- Corrige horas_semanales de cursos existentes creados por seeds
+-- anteriores (ej. 02-seed.sql crea 'Inglés' con 3h, pero debe ser 2h).
+UPDATE academic_schema.curso SET horas_semanales = 2
+WHERE nombre = 'Inglés' AND nivel_id = '00000000-0000-0000-0004-000000000001' AND horas_semanales = 3;
+
 -- ── Secundaria (19 cursos, suma 35 horas/semana) ───────────────
 INSERT INTO academic_schema.curso (nivel_id, nombre, horas_semanales) VALUES
   ('00000000-0000-0000-0004-000000000001', 'Aritmética',        3),

@@ -16,7 +16,7 @@ interface RoleCard {
 
 const ROLES: RoleCard[] = [
   { role: 'Alumno',     label: 'Alumno / Padre',  description: 'Accede a tus notas, asistencias y pagos', icon: BookOpen, color: 'text-blue-600 bg-blue-50',    borderActive: 'border-blue-500 bg-blue-50 ring-2 ring-blue-200',   credentials: { email: 'carlos.mendoza@sgei.edu.pe', password: '••••••••' } },
-  { role: 'Docente',    label: 'Docente',          description: 'Gestiona asistencias, tareas y calificaciones', icon: Users,  color: 'text-indigo-600 bg-indigo-50', borderActive: 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200', credentials: { email: 'ana.garcia@sgei.edu.pe',      password: '••••••••' } },
+  { role: 'Docente',    label: 'Docente',          description: 'Gestiona asistencias, tareas y calificaciones', icon: Users,  color: 'text-indigo-600 bg-indigo-50', borderActive: 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200', credentials: { email: 'sonia.villegas@sgei.edu.pe',      password: '••••••••' } },
   { role: 'Admin',      label: 'Administrador',    description: 'Administra cuentas, horarios y reportes',  icon: Shield, color: 'text-slate-600 bg-slate-100',   borderActive: 'border-slate-500 bg-slate-50 ring-2 ring-slate-200',   credentials: { email: 'director@sgei.edu.pe',         password: '••••••••' } },
   { role: 'Secretaria', label: 'Secretaría',       description: 'Gestiona pagos, vouchers y exporta SIAGIE', icon: FileText,color: 'text-teal-600 bg-teal-50',     borderActive: 'border-teal-500 bg-teal-50 ring-2 ring-teal-200',     credentials: { email: 'secretaria@sgei.edu.pe',       password: '••••••••' } },
 ];
@@ -52,8 +52,12 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const { redirectTo } = await authApi.login({ email: email.trim(), password, rol: selected });
-      navigate(redirectTo || ROLE_ROUTE[selected]);
+      const { redirectTo, debeCambiarPassword } = await authApi.login({ email: email.trim(), password, rol: selected });
+      if (debeCambiarPassword) {
+        navigate('/cambiar-contrasena', { replace: true });
+      } else {
+        navigate(redirectTo || ROLE_ROUTE[selected]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Credenciales incorrectas.');
     } finally {
@@ -180,18 +184,9 @@ export default function Login() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-                  Contraseña
-                </label>
-                <button
-                  type="button"
-                  onClick={() => navigate('/forgot-password')}
-                  className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  ¿Olvidaste tu contraseña?
-                </button>
-              </div>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">
+                Contraseña
+              </label>
               <div className="relative">
                 <input
                   id="password"

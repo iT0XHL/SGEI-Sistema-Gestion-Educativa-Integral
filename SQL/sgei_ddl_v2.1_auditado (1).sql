@@ -158,18 +158,20 @@ CREATE TABLE auth_schema.credencial (
     activo            BOOLEAN      NOT NULL DEFAULT TRUE,
     intentos_fallidos SMALLINT     NOT NULL DEFAULT 0 CHECK (intentos_fallidos >= 0),
     bloqueado_hasta   TIMESTAMPTZ,
-    ultimo_acceso     TIMESTAMPTZ,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    ultimo_acceso         TIMESTAMPTZ,
+    debe_cambiar_password BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 COMMENT ON TABLE  auth_schema.credencial IS 'Credenciales de autenticación. Separada del perfil para RLS.';
-COMMENT ON COLUMN auth_schema.credencial.password_hash     IS 'bcrypt cost 12. Nunca texto plano.';
-COMMENT ON COLUMN auth_schema.credencial.nombres           IS 'Nombres del usuario (usado para Admin/Secretaria).';
-COMMENT ON COLUMN auth_schema.credencial.apellido_paterno  IS 'Apellido paterno del usuario (usado para Admin/Secretaria).';
-COMMENT ON COLUMN auth_schema.credencial.apellido_materno  IS 'Apellido materno del usuario (usado para Admin/Secretaria).';
-COMMENT ON COLUMN auth_schema.credencial.intentos_fallidos IS 'Se bloquea la cuenta al llegar a 5 intentos consecutivos.';
-COMMENT ON COLUMN auth_schema.credencial.bloqueado_hasta   IS 'NULL = cuenta activa. Fecha futura = bloqueada temporalmente.';
+COMMENT ON COLUMN auth_schema.credencial.password_hash              IS 'bcrypt cost 12. Nunca texto plano.';
+COMMENT ON COLUMN auth_schema.credencial.nombres                    IS 'Nombres del usuario (usado para Admin/Secretaria).';
+COMMENT ON COLUMN auth_schema.credencial.apellido_paterno           IS 'Apellido paterno del usuario (usado para Admin/Secretaria).';
+COMMENT ON COLUMN auth_schema.credencial.apellido_materno           IS 'Apellido materno del usuario (usado para Admin/Secretaria).';
+COMMENT ON COLUMN auth_schema.credencial.intentos_fallidos          IS 'Se bloquea la cuenta al llegar a 5 intentos consecutivos.';
+COMMENT ON COLUMN auth_schema.credencial.bloqueado_hasta            IS 'NULL = cuenta activa. Fecha futura = bloqueada temporalmente.';
+COMMENT ON COLUMN auth_schema.credencial.debe_cambiar_password      IS 'TRUE = debe cambiar contraseña en el próximo inicio de sesión.';
 
 
 CREATE TABLE auth_schema.perfil_usuario (
@@ -953,7 +955,8 @@ BEGIN
     IF NEW.cerrado = TRUE AND OLD.cerrado = FALSE THEN
         UPDATE academic_schema.nota
         SET    cerrada = TRUE
-        WHERE  bimestre_id = NEW.id;
+        WHERE  bimestre_id = NEW.id
+          AND  cerrada = FALSE;
     END IF;
     RETURN NEW;
 END;

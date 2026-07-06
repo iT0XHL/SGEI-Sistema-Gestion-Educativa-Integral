@@ -61,7 +61,7 @@ export default function AdminEstructura() {
       const [nivs, pers, docs] = await Promise.all([
         estructuraApi.niveles(),
         periodosApi.listar({ activo: true, limit: 1 }),
-        docentesAdminApi.listar({ activo: 'true', limit: 200 }),
+        docentesAdminApi.listar({ activo: 'true', limit: 500 }),
       ]);
       setNiveles(nivs);
       setPeriodo(pers.items[0] ?? null);

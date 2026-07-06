@@ -7,6 +7,20 @@ import type {
   EstadoPago,
 } from '../../types/pago';
 
+export interface GenerarMasivoPayload {
+  periodo_id:        string;
+  concepto_id:       string;
+  mes:               number;
+  monto:             number;
+  fecha_vencimiento: string;
+}
+
+export interface GenerarMasivoResult {
+  creados:      number;
+  saltados:     number;
+  total_alumnos: number;
+}
+
 export interface ListarPagosParams {
   alumnoId?:  string;
   periodoId?: string;
@@ -35,5 +49,18 @@ export const pagosApi = {
 
   listarConceptos(): Promise<ConceptoPago[]> {
     return apiClient.get<ConceptoPago[]>('/api/pagos/conceptos');
+  },
+
+  generarMasivo(payload: GenerarMasivoPayload): Promise<GenerarMasivoResult> {
+    return apiClient.post<GenerarMasivoResult>('/api/pagos/generar-masivo', payload);
+  },
+
+  subirVoucher(pagoId: string, archivo: File, banco: string, numeroOperacion: string): Promise<unknown> {
+    const fd = new FormData();
+    fd.append('pago_id', pagoId);
+    fd.append('archivo', archivo);
+    fd.append('banco', banco);
+    fd.append('numero_operacion', numeroOperacion);
+    return apiClient.postFormData('/api/boletas', fd);
   },
 };

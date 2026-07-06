@@ -6,7 +6,8 @@
 # ============================================================
 BASE=http://localhost:3001/api
 T=/tmp/sgei; mkdir -p "$T"
-declare -A EMAIL=( [Admin]=director@sgei.edu.pe [Secretaria]=secretaria@sgei.edu.pe [Docente]=ana.garcia@sgei.edu.pe [Alumno]=benjamin.cruz@sgei.edu.pe )
+# Docente: gladys.tello (los docentes del seed original se eliminan en SQL/17)
+declare -A EMAIL=( [Admin]=director@sgei.edu.pe [Secretaria]=secretaria@sgei.edu.pe [Docente]=gladys.tello@sgei.edu.pe [Alumno]=benjamin.cruz@sgei.edu.pe )
 declare -A EID
 
 login() {

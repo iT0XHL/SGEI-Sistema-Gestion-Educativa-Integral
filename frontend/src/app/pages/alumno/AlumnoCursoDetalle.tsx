@@ -27,6 +27,7 @@ interface UploadState {
   file:      File | null;
   status:    'idle' | 'selected' | 'uploading' | 'submitted' | 'error';
   errorMsg?: string;
+  comentario?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -244,21 +245,27 @@ export default function AlumnoCursoDetalle() {
 
   function handleFileSelect(actId: string, files: FileList | null) {
     if (!files || files.length === 0) return;
-    setUploadState(actId, { file: files[0]!, status: 'selected' });
+    const st = getState(actId);
+    setUploadState(actId, { file: files[0]!, status: 'selected', comentario: st.comentario });
+  }
+
+  function handleComentarioChange(actId: string, comentario: string) {
+    const st = getState(actId);
+    setUploadState(actId, { ...st, comentario });
   }
 
   async function handleSubmit(actividadId: string) {
     const st = getState(actividadId);
     if (!st.file) return;
 
-    setUploadState(actividadId, { file: st.file, status: 'uploading' });
+    setUploadState(actividadId, { file: st.file, status: 'uploading', comentario: st.comentario });
     try {
-      const entregaNueva = await actividadesApi.entregarConArchivo(actividadId, st.file);
+      const entregaNueva = await actividadesApi.entregarConArchivo(actividadId, st.file, st.comentario);
       setEntregaMap(prev => ({ ...prev, [actividadId]: entregaNueva }));
-      setUploadState(actividadId, { file: st.file, status: 'submitted' });
+      setUploadState(actividadId, { file: st.file, status: 'submitted', comentario: st.comentario });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al entregar. Intenta de nuevo.';
-      setUploadState(actividadId, { file: st.file, status: 'error', errorMsg: msg });
+      setUploadState(actividadId, { file: st.file, status: 'error', errorMsg: msg, comentario: st.comentario });
     }
   }
 
@@ -581,20 +588,35 @@ export default function AlumnoCursoDetalle() {
                     ) : st.status === 'submitted' ? (
                       /* Submitted banner */
                       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
-                        <div className="flex items-center gap-2 flex-1">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
                           <CheckCircle2 className="size-4 text-blue-500 shrink-0" />
-                          <p className="text-sm text-blue-700 font-medium">
+                          <p className="text-sm text-blue-700 font-medium truncate">
                             {st.file ? st.file.name : 'Tu entrega fue recibida.'}
                           </p>
                         </div>
-                        {!vencida && (
-                          <button
-                            onClick={() => handleReupload(act.id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-100 border border-blue-300 text-blue-700 rounded-lg text-xs font-medium transition-colors shrink-0"
-                          >
-                            <RefreshCw className="size-3.5" /> Volver a entregar
-                          </button>
-                        )}
+                        <div className="flex gap-2 shrink-0">
+                          {entrega?.url_archivo && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const { url } = await actividadesApi.getEntregaArchivoUrl(act.id, entrega.id);
+                                  window.open(url, '_blank');
+                                } catch {}
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-100 border border-blue-300 text-blue-700 rounded-lg text-xs font-medium transition-colors"
+                            >
+                              <Download className="size-3.5" /> Ver archivo
+                            </button>
+                          )}
+                          {!vencida && (
+                            <button
+                              onClick={() => handleReupload(act.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-100 border border-blue-300 text-blue-700 rounded-lg text-xs font-medium transition-colors"
+                            >
+                              <RefreshCw className="size-3.5" /> Volver a entregar
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                     ) : st.status === 'uploading' ? (
@@ -651,6 +673,18 @@ export default function AlumnoCursoDetalle() {
                         </p>
                         <p className="text-xs text-slate-400 mt-1">PDF · DOCX · XLSX · Máx. 10 MB</p>
                       </button>
+                    )}
+
+                    {/* Comentario opcional */}
+                    {st.status === 'selected' && st.file && (
+                      <textarea
+                        value={st.comentario ?? ''}
+                        onChange={e => handleComentarioChange(act.id, e.target.value)}
+                        placeholder="Agrega un comentario para tu docente (opcional)"
+                        maxLength={500}
+                        rows={2}
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      />
                     )}
 
                     {/* Submit button */}

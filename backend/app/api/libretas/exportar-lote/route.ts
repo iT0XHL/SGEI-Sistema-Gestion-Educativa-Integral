@@ -4,7 +4,6 @@ import { parseQuery } from '@/lib/request';
 import { getClientIp, getUserAgent } from '@/lib/request';
 import { errorResponse } from '@/lib/response';
 import { ForbiddenError } from '@/errors/http-errors';
-import { LibretaService } from '@/modules/libretas/libreta.service';
 import { LibretaRepository } from '@/modules/libretas/libreta.repository';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { ExportarLoteQuery } from '@/modules/libretas/libreta.schema';
@@ -35,10 +34,9 @@ export function GET(req: NextRequest) {
         try {
           // §24: la descarga interna de secretaría/admin se permite aun con deuda
           // del alumno (queda auditada); no se omiten los bloqueados en el lote.
-          const rows = await LibretaRepository.detalleConArea(alumno.alumno_id, bimestreId);
-          if (rows.length === 0) continue;
-          const meta = await LibretaRepository.metaPdf(alumno.alumno_id);
-          const docBuffer = await buildLibretaDocx(rows, meta);
+          const data = await LibretaRepository.boletaData(alumno.alumno_id);
+          if (data.areas.length === 0) continue;
+          const docBuffer = await buildLibretaDocx(data);
           const nombre = `${alumno.alumno_nombre.replace(/\s+/g, '_')}.docx`;
           pdfBuffers.push({ nombre, buffer: docBuffer });
 

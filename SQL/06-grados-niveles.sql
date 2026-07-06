@@ -131,8 +131,8 @@ BEGIN
   -- ══════════════════════════════════════════════════════════════
   INSERT INTO academic_schema.bimestre (id, periodo_id, numero, nombre, fecha_inicio, fecha_fin, cerrado)
   VALUES
-    (v_bim3_id, v_periodo_id, 3, 'III Bimestre', '2025-09-01', '2025-10-31', FALSE),
-    (v_bim4_id, v_periodo_id, 4, 'IV Bimestre',  '2025-11-01', '2025-12-15', FALSE)
+    (v_bim3_id, v_periodo_id, 3, 'III Bimestre', '2026-09-01', '2026-10-31', FALSE),
+    (v_bim4_id, v_periodo_id, 4, 'IV Bimestre',  '2026-11-01', '2026-12-15', FALSE)
   ON CONFLICT DO NOTHING;
 
   -- ══════════════════════════════════════════════════════════════

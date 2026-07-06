@@ -42,7 +42,7 @@ async function request<T>(
     ...init,
     credentials: 'include',
     headers: {
-      ...(init?.body && !(init.body instanceof FormData)
+      ...(init?.body && typeof init.body === 'string'
         ? { 'Content-Type': 'application/json' }
         : {}),
       ...init?.headers,

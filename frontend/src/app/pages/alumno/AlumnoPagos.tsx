@@ -7,6 +7,8 @@ import { useSession } from '../../../lib/hooks/useSession';
 import { pagosApi } from '../../../lib/api/pagos.api';
 import { boletasApi } from '../../../lib/api/boletas.api';
 import { apiClient } from '../../../lib/api/client';
+import { BASE_URL } from '../../../lib/api/client';
+import VoucherLightbox from '../../components/secretaria/VoucherLightbox';
 import type { EstadoPagoRow, EstadoPago } from '../../../types/pago';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -77,6 +79,12 @@ export default function AlumnoPagos() {
   const [uploading,    setUploading]    = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Voucher lightbox
+  const [voucherView, setVoucherView] = useState<{
+    pagoId: string; url: string; nombreArchivo: string | null;
+  } | null>(null);
+  const [loadingVoucher, setLoadingVoucher] = useState<string | null>(null);
+
   // Other modals
   const [obsModal,      setObsModal]      = useState<{ id: string; month: string } | null>(null);
   const [reuploadModal, setReuploadModal] = useState<string | null>(null); // pago_id
@@ -138,6 +146,25 @@ export default function AlumnoPagos() {
     }
   }
 
+  async function handleVerVoucher(pagoId: string) {
+    if (loadingVoucher) return;
+    setLoadingVoucher(pagoId);
+    setErrorMsg(null);
+    try {
+      const boletas = await boletasApi.listar({ pagoId });
+      const boleta = boletas[0];
+      if (!boleta?.url_archivo) throw new Error('No se encontró el comprobante.');
+      const url = boleta.url_archivo.startsWith('http')
+        ? boleta.url_archivo
+        : `${BASE_URL}/api/files/${boleta.url_archivo}`;
+      setVoucherView({ pagoId, url, nombreArchivo: boleta.nombre_archivo });
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error al cargar el comprobante.');
+    } finally {
+      setLoadingVoucher(null);
+    }
+  }
+
   function handleConfirmarReenvio() {
     setUploadModal(reuploadModal);
     setReuploadModal(null);
@@ -163,7 +190,7 @@ export default function AlumnoPagos() {
 
   const anio             = pagos.length > 0 ? getAnio(pagos[0]!) : new Date().getFullYear();
   const montoPrimero     = pagos[0]?.monto ?? 350;
-  const institucionNombre = institucion?.nombre ?? 'I.E. San José de Calasanz';
+  const institucionNombre = institucion?.nombre ?? 'IEP Virgen del Carmen - Las Viñas';
 
   // Obs modal data (computed once, used in JSX)
   const obsRow = obsModal ? (pagos.find(p => p.pago_id === obsModal.id) ?? null) : null;
@@ -369,16 +396,36 @@ export default function AlumnoPagos() {
                     )}
 
                     {hasVoucher && (
-                      <button
-                        onClick={() => setObsModal({ id: row.pago_id, month: mesLabel })}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200"
-                      >
-                        <MessageSquare className="size-3.5" />
-                        {row.observacion_rechazo ? 'Ver observación' : 'Sin observaciones'}
-                        {row.observacion_rechazo && isRejected && (
-                          <span className="size-2 rounded-full bg-red-500 ml-0.5" />
-                        )}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleVerVoucher(row.pago_id)}
+                          disabled={loadingVoucher === row.pago_id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200 disabled:opacity-50"
+                        >
+                          {loadingVoucher === row.pago_id ? (
+                            <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          ) : (
+                            <svg className="size-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          )}
+                          {loadingVoucher === row.pago_id ? 'Cargando…' : 'Ver voucher'}
+                        </button>
+                        <button
+                          onClick={() => setObsModal({ id: row.pago_id, month: mesLabel })}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200"
+                        >
+                          <MessageSquare className="size-3.5" />
+                          {row.observacion_rechazo ? 'Ver observación' : 'Sin observaciones'}
+                          {row.observacion_rechazo && isRejected && (
+                            <span className="size-2 rounded-full bg-red-500 ml-0.5" />
+                          )}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -510,6 +557,15 @@ export default function AlumnoPagos() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Voucher lightbox ── */}
+      {voucherView && (
+        <VoucherLightbox
+          url={voucherView.url}
+          nombreArchivo={voucherView.nombreArchivo}
+          onClose={() => setVoucherView(null)}
+        />
       )}
 
       {/* ── Re-upload confirmation modal ── */}

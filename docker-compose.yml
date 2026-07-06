@@ -1,7 +1,4 @@
 services:
-  # ============================================================
-  # PostgreSQL 15 — Base de datos con DDL auto-cargado
-  # ============================================================
   db:
     image: postgres:15-alpine
     container_name: sgei-db
@@ -13,26 +10,9 @@ services:
       - "5432:5432"
     volumes:
       - sgei-db-data:/var/lib/postgresql/data
-      # PostgreSQL ejecuta los scripts de /docker-entrypoint-initdb.d en orden
-      # alfabético del nombre destino (solo al crear el volumen desde cero).
-      # Orden requerido: setup → DDL → migraciones (alteran/crean tablas del
-      # DDL) → seed (datos). Por eso las migraciones van como 01a/01b, después
-      # del DDL (01) y antes del seed (02).
-      - "./SQL/00-setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
-      - "./SQL/sgei_ddl_v2.1_auditado (1).sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
-      - "./SQL/01_notificaciones_eventos.sql:/docker-entrypoint-initdb.d/01a-notificaciones.sql:ro"
-      - "./SQL/03-libretas-migration.sql:/docker-entrypoint-initdb.d/01b-libretas.sql:ro"
-      - "./SQL/04-fix-audit-trigger.sql:/docker-entrypoint-initdb.d/01c-fix-audit.sql:ro"
-      - "./SQL/05-simulacro-banco.sql:/docker-entrypoint-initdb.d/01d-simulacro-banco.sql:ro"
-      - "./SQL/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
-      - "./SQL/06-grados-niveles.sql:/docker-entrypoint-initdb.d/03-grados-niveles.sql:ro"
-      - "./SQL/06-grados-niveles.sql:/docker-entrypoint-initdb.d/03-grados-niveles.sql:ro"
-      - "./SQL/07-horarios-publicacion.sql:/docker-entrypoint-initdb.d/04-horarios-publicacion.sql:ro"
-      - "./SQL/08-horarios-descanso.sql:/docker-entrypoint-initdb.d/05-horarios-descanso.sql:ro"
-      - "./SQL/09-competencia-grado.sql:/docker-entrypoint-initdb.d/06-competencia-grado.sql:ro"
-      - "./SQL/10-seed-demo-completo.sql:/docker-entrypoint-initdb.d/07-seed-demo-completo.sql:ro"
-      - "./SQL/11-nivel-horario-config.sql:/docker-entrypoint-initdb.d/08-nivel-horario-config.sql:ro"
-      - "./SQL/12-nivel-horario-total-horas.sql:/docker-entrypoint-initdb.d/09-nivel-horario-total-horas.sql:ro"
+      - "./SQL/consolidated/setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
+      - "./SQL/consolidated/ddl.sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+      - "./SQL/consolidated/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sgei -d sgei_db"]
       interval: 5s
@@ -42,9 +22,6 @@ services:
     networks:
       - sgei-network
 
-  # ============================================================
-  # Backend — Next.js 14 Route Handlers (puerto 3001)
-  # ============================================================
   backend:
     build:
       context: ./backend
@@ -54,28 +31,18 @@ services:
       db:
         condition: service_healthy
     environment:
-      # Base de datos
       DATABASE_URL: "postgresql://sgei:sgei@db:5432/sgei_db"
       DIRECT_URL: "postgresql://sgei:sgei@db:5432/sgei_db"
-
-      # Node
       NODE_ENV: "development"
-
-      # JWT
       JWT_SECRET: "dev-secret-cambiar-en-produccion-minimo-64-caracteres-1234567890abcdef"
       JWT_EXPIRES_IN: "8h"
       JWT_COOKIE_NAME: "sgei_token"
-
-      # Seguridad
       BCRYPT_SALT_ROUNDS: "12"
-
-      # CORS
       FRONTEND_ORIGIN: "http://localhost:3000"
-
-      # Almacenamiento
-      MAX_FILE_SIZE_MB: "5"
-
-      # Hot reload (Windows)
+      MAX_FILE_SIZE_MB: "10"
+      # Almacenamiento local
+      STORAGE_PATH: "/app/public/uploads"
+      APP_URL: "http://localhost:3001"
       WATCHPACK_POLLING: "true"
     ports:
       - "3001:3001"
@@ -83,6 +50,7 @@ services:
       - ./backend:/app
       - /app/node_modules
       - /app/.next
+      - ./uploads:/app/public/uploads
     networks:
       - sgei-network
     healthcheck:
@@ -92,9 +60,6 @@ services:
       retries: 5
       start_period: 30s
 
-  # ============================================================
-  # Frontend — Vite React (puerto 3000)
-  # ============================================================
   frontend:
     build:
       context: ./frontend
@@ -103,7 +68,6 @@ services:
     depends_on:
       - backend
     environment:
-      # Hot reload con polling (Windows)
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "3000:3000"
