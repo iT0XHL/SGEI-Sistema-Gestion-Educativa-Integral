@@ -43,6 +43,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GHCR exige nombres de imagen en minúsculas; el owner puede tener
+      # mayúsculas (iT0XHL). Recalcula BACKEND_IMAGE/FRONTEND_IMAGE en minúsculas.
+      - name: Normalizar nombres de imagen a minúsculas
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "BACKEND_IMAGE=ghcr.io/$OWNER_LC/sgei-backend" >> "$GITHUB_ENV"
+          echo "FRONTEND_IMAGE=ghcr.io/$OWNER_LC/sgei-frontend" >> "$GITHUB_ENV"
+
       - name: Build & push backend
         uses: docker/build-push-action@v6
         with:
