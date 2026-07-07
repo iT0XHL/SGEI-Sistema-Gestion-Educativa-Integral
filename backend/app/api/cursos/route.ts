@@ -4,7 +4,7 @@
 //   POST — crea un curso                (Admin)
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateCursoSchema, NivelIdQuery } from '@/schemas/academic.schema';
 import { CursoService } from '@/modules/academic/estructura.service';

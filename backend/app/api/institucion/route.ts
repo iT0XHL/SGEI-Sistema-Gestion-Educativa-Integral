@@ -2,7 +2,7 @@
 //  GET /api/institucion — Datos de la institución educativa activa.
 // ============================================================
 import { withAuth } from '@/lib/auth';
-import { ok, okCached } from '@/lib/response';
+import { okCached } from '@/lib/response';
 import { InstitucionService } from '@/modules/academic/estructura.service';
 
 export const dynamic = 'force-dynamic';

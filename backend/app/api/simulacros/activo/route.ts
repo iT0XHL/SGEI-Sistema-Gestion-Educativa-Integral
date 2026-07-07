@@ -3,7 +3,7 @@
 //  Devuelve null si no hay ninguno → la UI muestra "Sin simulacros activos".
 // ============================================================
 import { withAuth } from '@/lib/auth';
-import { ok, okCached } from '@/lib/response';
+import { okCached } from '@/lib/response';
 import { SimulacroService } from '@/modules/simulacros/simulacro.service';
 
 export const dynamic = 'force-dynamic';

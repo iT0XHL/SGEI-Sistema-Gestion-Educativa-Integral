@@ -4,7 +4,7 @@
 //   POST — crea una sección                          (Admin)
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateSeccionSchema, SeccionesQuery } from '@/schemas/academic.schema';
 import { SeccionService } from '@/modules/academic/estructura.service';

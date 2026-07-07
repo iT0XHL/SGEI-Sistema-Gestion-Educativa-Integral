@@ -4,7 +4,7 @@
 // ============================================================
 import { z } from 'zod';
 import { withAuth } from '@/lib/auth';
-import { ok, okCached } from '@/lib/response';
+import { okCached } from '@/lib/response';
 import { parseQuery } from '@/lib/request';
 import { EscalaService } from '@/modules/academic/periodo.service';
 

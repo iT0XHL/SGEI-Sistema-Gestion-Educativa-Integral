@@ -4,7 +4,7 @@
 //   POST — crea un grado                (Admin)
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateGradoSchema, NivelIdQuery } from '@/schemas/academic.schema';
 import { GradoService } from '@/modules/academic/estructura.service';

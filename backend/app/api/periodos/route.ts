@@ -1,5 +1,5 @@
 import { withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreatePeriodoSchema, ListPeriodosQuery } from '@/schemas/periodo.schema';
 import { PeriodoService } from '@/modules/periodo/periodo.service';

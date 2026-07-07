@@ -4,7 +4,7 @@
 //   POST — asigna un curso del nivel al grado   (Admin)
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody } from '@/lib/request';
 import { AssignGradoCursoSchema } from '@/schemas/academic.schema';
 import { GradoCursoService } from '@/modules/academic/estructura.service';

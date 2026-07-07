@@ -1,5 +1,5 @@
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateBimestreSchema, ListBimestresQuery } from '@/schemas/periodo.schema';
 import { BimestreService } from '@/modules/periodo/periodo.service';

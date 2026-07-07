@@ -6,7 +6,7 @@
 //   pudieran leerlo). Lo usan el AppShell y el módulo de Simulacros.
 // ============================================================
 import { withAuth } from '@/lib/auth';
-import { ok, okCached } from '@/lib/response';
+import { okCached } from '@/lib/response';
 import { PeriodoService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';

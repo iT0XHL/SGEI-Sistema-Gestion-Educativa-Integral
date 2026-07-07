@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth';
-import { ok, okCached, errorResponse } from '@/lib/response';
+import { okCached, errorResponse } from '@/lib/response';
 import { PagoService } from '@/modules/pagos/pago.service';
 
 export function GET(req: NextRequest) {

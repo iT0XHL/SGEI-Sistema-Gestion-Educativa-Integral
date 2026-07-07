@@ -7,7 +7,7 @@
 //   devuelven esos; si no, se cae al default del nivel (grado_id NULL).
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, okCached, created } from '@/lib/response';
+import { okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateCompetenciaSchema, CompetenciasQuery } from '@/schemas/academic.schema';
 import { CompetenciaService } from '@/modules/academic/estructura.service';
