@@ -103,7 +103,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || '22' }}
-          source: "SQL/consolidated"
+          source: "SQL/"
           target: ${{ env.DEPLOY_PATH }}/SQL
 
       - name: Desplegar (pull + up)

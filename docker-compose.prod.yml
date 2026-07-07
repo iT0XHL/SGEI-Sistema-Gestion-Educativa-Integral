@@ -31,9 +31,9 @@ services:
       # Corre en orden alfabético del nombre destino, SOLO al crear el volumen
       # desde cero. Incluye ya todas las migraciones (debe_cambiar_password,
       # índices, etc.), así que prod queda 1:1 con dev.
-      - "./SQL/consolidated/setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
-      - "./SQL/consolidated/ddl.sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
-      - "./SQL/consolidated/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
+      - "./SQL/setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
+      - "./SQL/ddl.sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+      - "./SQL/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sgei} -d ${POSTGRES_DB:-sgei_db}"]
       interval: 5s
