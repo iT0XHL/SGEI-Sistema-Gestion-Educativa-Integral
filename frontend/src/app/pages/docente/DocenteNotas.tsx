@@ -18,7 +18,7 @@ interface Competencia {
   descripcion: string | null;
   tipo:        'regular' | 'transversal';
   orden:       number;
-  peso:        number;
+  peso:        number | string; // Decimal(5,2) → llega como string en JSON
 }
 
 interface AsignacionOpcion {
@@ -200,7 +200,10 @@ export default function DocenteNotas() {
     }));
   }
 
-  /** Promedio ponderado por peso de criterio: sum(nota*peso)/sum(peso). */
+  /** Promedio ponderado por peso de criterio: sum(nota*peso)/sum(peso).
+   *  `peso` llega como string (Decimal serializado en JSON), por eso se
+   *  coacciona con Number antes de operar — de lo contrario `sumPeso += peso`
+   *  concatena cadenas y el promedio sale 0.0. */
   function computeAvg(alumnoId: string): number | null {
     let sumPonderada = 0;
     let sumPeso = 0;
@@ -208,9 +211,10 @@ export default function DocenteNotas() {
       const raw = cellGrades[alumnoId]?.[comp.id] ?? '';
       const v = parseFloat(raw);
       if (!isNaN(v) && v >= 0 && v <= 20) {
-        const peso = comp.peso ?? 100;
-        sumPonderada += v * peso;
-        sumPeso += peso;
+        const peso = Number(comp.peso);
+        const w = Number.isFinite(peso) && peso > 0 ? peso : 100;
+        sumPonderada += v * w;
+        sumPeso += w;
       }
     }
     if (sumPeso === 0) return null;

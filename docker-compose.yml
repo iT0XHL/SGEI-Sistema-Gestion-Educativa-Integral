@@ -10,9 +10,9 @@ services:
       - "5432:5432"
     volumes:
       - sgei-db-data:/var/lib/postgresql/data
-      - "./SQL/consolidated/setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
-      - "./SQL/consolidated/ddl.sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
-      - "./SQL/consolidated/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
+      - "./SQL/setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
+      - "./SQL/ddl.sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+      - "./SQL/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sgei -d sgei_db"]
       interval: 5s

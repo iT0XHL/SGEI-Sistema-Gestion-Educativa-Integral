@@ -149,14 +149,15 @@ export const AuthService = {
       userAgent: meta.userAgent,
     });
 
+    const debeCambiarPassword = cred.debe_cambiar_password ?? false;
     const user: SessionUser = {
       id: perfil.id,
       rol: perfil.rol,
       nombre,
       entidadId: perfil.entidad_id,
       entidadTipo: perfil.entidad_tipo,
+      debeCambiarPassword,
     };
-    const debeCambiarPassword = cred.debe_cambiar_password ?? false;
     return { token, user, redirectTo: REDIRECT_BY_ROLE[perfil.rol], debeCambiarPassword };
   },
 
@@ -190,6 +191,7 @@ export const AuthService = {
       nombre,
       entidadId: perfil.entidad_id,
       entidadTipo: perfil.entidad_tipo,
+      debeCambiarPassword: cred.debe_cambiar_password ?? false,
     };
   },
 
@@ -262,6 +264,7 @@ export const AuthService = {
       nombre,
       entidadId: perfil.entidad_id,
       entidadTipo: perfil.entidad_tipo,
+      debeCambiarPassword: false, // se acaba de limpiar el flag
     };
     return { token, user, redirectTo: REDIRECT_BY_ROLE[perfil.rol] };
   },

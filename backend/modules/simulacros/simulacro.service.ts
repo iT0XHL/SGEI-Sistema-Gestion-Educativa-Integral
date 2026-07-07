@@ -134,7 +134,8 @@ export const SimulacroService = {
    * Guarda (reemplaza) el bloque de 5 preguntas del docente para curso+grado.
    * Requiere un simulacro ACTIVO y que el docente dicte ese curso en ese grado.
    */
-  async guardarPreguntas(docenteId: string, input: GuardarPreguntasInput) {
+  async guardarPreguntas(user: JwtClaims, input: GuardarPreguntasInput) {
+    const docenteId = user.entidadId;
     const periodo = await getPeriodoActivo();
     const sim = await SimulacroRepo.findActivo(periodo.id);
     if (!sim) {
@@ -155,7 +156,7 @@ export const SimulacroService = {
       throw new ConflictError('No tienes asignado ese curso en ese grado para el período activo.');
     }
 
-    return PreguntaRepo.replaceBlock({
+    const resultado = await PreguntaRepo.replaceBlock({
       simulacroId: sim.id,
       docenteId,
       cursoId: input.curso_id,
@@ -168,6 +169,25 @@ export const SimulacroService = {
         respuesta_correcta: p.respuesta_correcta,
       })),
     });
+
+    // Notifica a secretaría/admin que el docente cargó su bloque de preguntas,
+    // para que el Admin pueda curar el examen. Nombres para un mensaje claro.
+    const [curso, grado] = await Promise.all([
+      prisma.curso.findUnique({ where: { id: input.curso_id }, select: { nombre: true } }),
+      prisma.grado.findUnique({ where: { id: input.grado_id }, select: { nombre: true } }),
+    ]);
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.SIMULACRO_PREGUNTAS_CARGADAS,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: {
+        simulacroId:     sim.id,
+        simulacroNombre: sim.nombre,
+        cursoNombre:     curso?.nombre,
+        gradoNombre:     grado?.nombre,
+      },
+    });
+
+    return resultado;
   },
 
   // ── Curaduría (Admin) ───────────────────────────────────────

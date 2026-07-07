@@ -113,6 +113,23 @@ export const NotaService = {
       });
     }
 
+    // Notifica UNA vez a secretaría/admin que el docente registró notas, para
+    // que puedan continuar el flujo (revisión / generación de libretas).
+    const primeraCompetenciaId = input.notas[0]?.competencia_id;
+    let cursoNombre: string | undefined;
+    if (primeraCompetenciaId) {
+      const comp = await prisma.competencia.findUnique({
+        where:  { id: primeraCompetenciaId },
+        select: { curso: { select: { nombre: true } } },
+      });
+      cursoNombre = comp?.curso?.nombre;
+    }
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.NOTAS_REGISTRADAS,
+      actor:  { perfilId: user.perfilId, rol: user.rol, nombre: user.nombre },
+      contexto: { cursoNombre, bimestreNombre },
+    });
+
     return { registradas: notas.length, notas };
   },
 

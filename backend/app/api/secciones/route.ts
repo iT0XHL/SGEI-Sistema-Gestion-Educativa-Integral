@@ -4,7 +4,7 @@
 //   POST — crea una sección                          (Admin)
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, created } from '@/lib/response';
+import { ok, okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateSeccionSchema, SeccionesQuery } from '@/schemas/academic.schema';
 import { SeccionService } from '@/modules/academic/estructura.service';
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withAuth(async (req) => {
   const { periodoId, gradoId } = parseQuery(req, SeccionesQuery);
   const data = await SeccionService.list({ periodoId, gradoId });
-  return ok(data, 'Secciones');
+  return okCached(data, 'Secciones');
 });
 
 export const POST = withRole(['Admin'], async (req) => {

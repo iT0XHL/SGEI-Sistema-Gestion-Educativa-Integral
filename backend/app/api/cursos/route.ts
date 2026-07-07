@@ -4,7 +4,7 @@
 //   POST — crea un curso                (Admin)
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, created } from '@/lib/response';
+import { ok, okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateCursoSchema, NivelIdQuery } from '@/schemas/academic.schema';
 import { CursoService } from '@/modules/academic/estructura.service';
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withAuth(async (req) => {
   const { nivelId } = parseQuery(req, NivelIdQuery);
   const data = await CursoService.list(nivelId);
-  return ok(data, 'Cursos');
+  return okCached(data, 'Cursos');
 });
 
 export const POST = withRole(['Admin'], async (req) => {

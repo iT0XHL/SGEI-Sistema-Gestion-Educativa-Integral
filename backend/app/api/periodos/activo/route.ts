@@ -6,12 +6,12 @@
 //   pudieran leerlo). Lo usan el AppShell y el módulo de Simulacros.
 // ============================================================
 import { withAuth } from '@/lib/auth';
-import { ok } from '@/lib/response';
+import { ok, okCached } from '@/lib/response';
 import { PeriodoService } from '@/modules/periodo/periodo.service';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(async () => {
   const data = await PeriodoService.getActivo();
-  return ok(data, 'Período y bimestre activos');
+  return okCached(data, 'Período y bimestre activos');
 });

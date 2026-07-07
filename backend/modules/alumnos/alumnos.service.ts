@@ -3,6 +3,7 @@ import { hashPassword } from '@/lib/password';
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { withAuditContext } from '@/lib/audit-context';
+import { revokeUserTokens } from '@/lib/token-blacklist';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { AlumnosRepository, type ListFilters } from './alumnos.repository';
 import { desambiguarNombres } from './nombre-desambiguado.util';
@@ -94,7 +95,8 @@ export const AlumnosService = {
 
     return prisma.$transaction(async (tx) => {
       const cred = await tx.credencial.create({
-        data: { usuario_login: input.usuario_login, password_hash: passwordHash },
+        // Cuenta nueva: se obliga a cambiar la contraseña en el primer login.
+        data: { usuario_login: input.usuario_login, password_hash: passwordHash, debe_cambiar_password: true },
         select: { id: true },
       });
 
@@ -174,8 +176,9 @@ export const AlumnosService = {
   async update(
     alumnoId: string,
     input: UpdateAlumnoInput,
-    adminPerfilId: string,
+    actor: JwtClaims,
   ): Promise<AlumnoDTO> {
+    const adminPerfilId = actor.perfilId;
     const current = await AlumnosRepository.findById(alumnoId);
     if (!current) throw new NotFoundError('Alumno');
 
@@ -187,7 +190,7 @@ export const AlumnosService = {
       if (existing) throw new ConflictError('Ya existe otro alumno con ese DNI');
     }
 
-    return prisma.$transaction(async (tx) => {
+    const alumno = await prisma.$transaction(async (tx) => {
       if (input.usuario_login && input.usuario_login !== current.perfil?.credencial.usuario_login) {
         const existing = await tx.credencial.findUnique({
           where: { usuario_login: input.usuario_login },
@@ -232,6 +235,17 @@ export const AlumnosService = {
 
       return this.get(alumnoId);
     });
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.ALUMNO_ACTUALIZADO,
+      actor:  { perfilId: actor.perfilId, rol: actor.rol, nombre: actor.nombre },
+      contexto: {
+        alumnoId,
+        alumnoNombre: `${alumno.nombres} ${alumno.apellido_paterno}`.trim(),
+      },
+    });
+
+    return alumno;
   },
 
   async setActivo(alumnoId: string, activo: boolean, adminPerfilId: string): Promise<AlumnoDTO> {
@@ -270,6 +284,9 @@ export const AlumnosService = {
         data: { password_hash: hash, debe_cambiar_password: true },
       }),
     );
+    // Invalida la sesión activa del alumno: al volver a entrar se le forzará
+    // el cambio de contraseña (debe_cambiar_password = true).
+    revokeUserTokens(alumno.perfil_usuario_id);
   },
 
   async setBloqueoManual(alumnoId: string, bloqueado: boolean, adminPerfilId: string) {

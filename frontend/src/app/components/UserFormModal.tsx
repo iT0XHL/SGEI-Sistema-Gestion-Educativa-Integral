@@ -68,11 +68,15 @@ function normalize(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
 }
 
-function generateLogin(nombres: string, apellido: string): string {
+function generateLogin(nombres: string, apellido: string, dni: string): string {
   const n = normalize(nombres.split(' ')[0] || '');
   const a = normalize(apellido);
   if (!n || !a) return '';
-  return `${n}.${a}@sgei.edu.pe`;
+  // Se añaden los últimos 4 dígitos del DNI para que el correo sea único
+  // (evita el choque "Ya existe una cuenta con ese correo" entre homónimos).
+  const digitos = (dni || '').replace(/\D/g, '');
+  const sufijo = digitos.length >= 4 ? digitos.slice(-4) : '';
+  return `${n}.${a}${sufijo}@sgei.edu.pe`;
 }
 
 function generatePassword(): string {
@@ -244,9 +248,9 @@ export default function UserFormModal({ mode, rol: initialRol, lockRol, initialD
   // Auto-generación de credenciales en modo create
   useEffect(() => {
     if (mode !== 'create') return;
-    const login = generateLogin(form.nombres, form.apellido_paterno);
+    const login = generateLogin(form.nombres, form.apellido_paterno, form.dni);
     if (login) set('usuario_login', login);
-  }, [form.nombres, form.apellido_paterno, mode]);
+  }, [form.nombres, form.apellido_paterno, form.dni, mode]);
 
   // Inicializar contraseña en modo create
   useEffect(() => {

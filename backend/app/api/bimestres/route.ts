@@ -1,5 +1,5 @@
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, created } from '@/lib/response';
+import { ok, okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateBimestreSchema, ListBimestresQuery } from '@/schemas/periodo.schema';
 import { BimestreService } from '@/modules/periodo/periodo.service';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withAuth(async (req) => {
   const q = parseQuery(req, ListBimestresQuery);
   const data = await BimestreService.list(q);
-  return ok(data, 'Listado de bimestres');
+  return okCached(data, 'Listado de bimestres');
 });
 
 export const POST = withRole(['Admin'], async (req, { user }) => {

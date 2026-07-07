@@ -2,6 +2,9 @@ import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError, BusinessRuleError } from '@/errors/http-errors';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { PeriodoRepository, BimestreRepository, type ListFilters, type BimestreFilters } from './periodo.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
+import type { JwtClaims } from '@/lib/jwt';
 import type { CreatePeriodoInput, UpdatePeriodoInput, CreateBimestreInput, UpdateBimestreInput } from '@/schemas/periodo.schema';
 import { prisma } from '@/lib/prisma';
 
@@ -106,7 +109,8 @@ export const PeriodoService = {
     return result;
   },
 
-  async setActivo(id: string, activo: boolean, perfilId: string): Promise<PeriodoDTO> {
+  async setActivo(id: string, activo: boolean, actor: JwtClaims): Promise<PeriodoDTO> {
+    const perfilId = actor.perfilId;
     const current = await PeriodoRepository.findById(id);
     if (!current) throw new NotFoundError('Período académico');
 
@@ -128,6 +132,16 @@ export const PeriodoService = {
       entidadId: id,
       newValue: { activo },
     });
+
+    // Activar un período es un cambio global que afecta a toda la comunidad:
+    // notifica a todos los usuarios activos (el resolver los resuelve).
+    if (activo) {
+      await NotificacionService.notificarEvento({
+        evento: NotificationEvents.PERIODO_ACTUALIZADO,
+        actor:  { perfilId: actor.perfilId, rol: actor.rol, nombre: actor.nombre },
+        contexto: { periodoNombre: result.nombre },
+      });
+    }
 
     return result;
   },

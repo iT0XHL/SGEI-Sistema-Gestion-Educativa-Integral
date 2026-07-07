@@ -5,7 +5,7 @@
 //  Usado por Railway como health check de despliegue.
 // ============================================================
 import { prisma } from '@/lib/prisma';
-import { ok, errorResponse } from '@/lib/response';
+import { ok, okCached, errorResponse } from '@/lib/response';
 import { AppError } from '@/errors/http-errors';
 
 // Health check siempre dinámico: nunca cachear.
@@ -37,7 +37,7 @@ export async function GET() {
       );
     }
 
-    return ok(payload, 'Servicio operativo');
+    return okCached(payload, 'Servicio operativo');
   } catch (error) {
     return errorResponse(error);
   }

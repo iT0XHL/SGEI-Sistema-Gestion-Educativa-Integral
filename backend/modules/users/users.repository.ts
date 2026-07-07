@@ -114,6 +114,8 @@ export const UsersRepository = {
         data: {
           usuario_login: input.usuarioLogin,
           password_hash: input.passwordHash,
+          // Cuenta nueva: se obliga a cambiar la contraseña en el primer login.
+          debe_cambiar_password: true,
         },
         select: credencialSafeSelect,
       });

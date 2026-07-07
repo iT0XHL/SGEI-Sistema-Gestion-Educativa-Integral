@@ -180,8 +180,11 @@ export async function resolverDestinatarios(
       break;
     }
 
-    // ── Boleta subida → secretarías + admins (supervisión) ───────────────────
+    // ── Boleta subida / notas registradas / preguntas de simulacro cargadas →
+    //    secretarías + admins (supervisión y siguiente paso del flujo) ─────────
     case NotificationEvents.BOLETA_SUBIDA:
+    case NotificationEvents.NOTAS_REGISTRADAS:
+    case NotificationEvents.SIMULACRO_PREGUNTAS_CARGADAS:
     case NotificationEvents.NOTAS_ENVIADAS_A_SECRETARIA: {
       const [admins, secre] = await Promise.all([
         perfilesPorRol(db, 'Admin'),

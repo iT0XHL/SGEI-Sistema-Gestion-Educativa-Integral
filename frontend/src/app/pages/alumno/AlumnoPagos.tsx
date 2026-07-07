@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Upload, CheckCircle2, Clock, X, CreditCard, DollarSign,
-  AlertCircle, Bell, MessageSquare, RefreshCw, Paperclip
+  AlertCircle, Bell, RefreshCw, Paperclip
 } from 'lucide-react';
 import { useSession } from '../../../lib/hooks/useSession';
 import { pagosApi } from '../../../lib/api/pagos.api';
@@ -86,7 +86,6 @@ export default function AlumnoPagos() {
   const [loadingVoucher, setLoadingVoucher] = useState<string | null>(null);
 
   // Other modals
-  const [obsModal,      setObsModal]      = useState<{ id: string; month: string } | null>(null);
   const [reuploadModal, setReuploadModal] = useState<string | null>(null); // pago_id
 
   // ── Data loading ──────────────────────────────────────────────────────────────
@@ -192,9 +191,6 @@ export default function AlumnoPagos() {
   const montoPrimero     = pagos[0]?.monto ?? 350;
   const institucionNombre = institucion?.nombre ?? 'IEP Virgen del Carmen - Las Viñas';
 
-  // Obs modal data (computed once, used in JSX)
-  const obsRow = obsModal ? (pagos.find(p => p.pago_id === obsModal.id) ?? null) : null;
-
   // ── Skeleton ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -239,21 +235,18 @@ export default function AlumnoPagos() {
 
       {/* ── Rejection notification banner ── */}
       {rechazadosConObs.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
-          <div className="flex items-center gap-2">
-            <Bell className="size-4 text-red-600 shrink-0" />
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <Bell className="size-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
             <p className="text-sm font-semibold text-red-800">
               {rechazadosConObs.length === 1
-                ? 'Un voucher fue rechazado con observación'
-                : `${rechazadosConObs.length} vouchers fueron rechazados con observaciones`}
+                ? 'Tienes un voucher rechazado'
+                : `Tienes ${rechazadosConObs.length} vouchers rechazados`}
+            </p>
+            <p className="text-xs text-red-600 mt-0.5">
+              Revisa el motivo en cada cuota y vuelve a enviar tu comprobante corregido.
             </p>
           </div>
-          {rechazadosConObs.map(p => (
-            <div key={p.pago_id} className="ml-6 bg-white border border-red-200 rounded-xl px-3 py-2">
-              <p className="text-xs font-medium text-red-700">{getNombreMes(p)} {getAnio(p)}:</p>
-              <p className="text-xs text-red-600 mt-0.5">{p.observacion_rechazo}</p>
-            </div>
-          ))}
         </div>
       )}
 
@@ -330,112 +323,114 @@ export default function AlumnoPagos() {
             const mesLabel   = `${getNombreMes(row)} ${getAnio(row)}`;
 
             return (
-              <div key={row.pago_id} className="px-5 py-4 hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-3 flex-wrap">
-                  {/* Icon */}
+              <div
+                key={row.pago_id}
+                className={`px-5 py-4 transition-colors ${
+                  isRejected ? 'bg-red-50/40 border-l-2 border-red-400' : 'hover:bg-slate-50'
+                }`}
+              >
+                {/* ── Header: icon · info + badges · amount ── */}
+                <div className="flex items-start gap-3">
                   <div className={`flex size-10 items-center justify-center rounded-xl shrink-0 ${
                     isRejected ? 'bg-red-100' : 'bg-slate-100'
                   }`}>
                     <CreditCard className={`size-5 ${isRejected ? 'text-red-500' : 'text-slate-500'}`} />
                   </div>
 
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{mesLabel}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-slate-800">{mesLabel}</p>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${pst.cls}`}>
+                        <PayIcon className="size-3" /> {pst.label}
+                      </span>
+                      {vst && VIcon && (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${vst.cls}`}>
+                          <VIcon className="size-3" /> {vst.label}
+                        </span>
+                      )}
+                    </div>
                     {row.fecha_pago && (
-                      <p className="text-xs text-slate-400">Pagado el {formatFecha(row.fecha_pago)}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Pagado el {formatFecha(row.fecha_pago)}</p>
                     )}
-                    {hasVoucher && (
+                    {hasVoucher && !isRejected && (
                       <p className={`text-xs mt-0.5 ${
-                        row.estado_boleta === 'Aprobada'  ? 'text-emerald-600' :
-                        row.estado_boleta === 'Rechazada' ? 'text-red-600' :
-                        'text-blue-600'
+                        row.estado_boleta === 'Aprobada' ? 'text-emerald-600' : 'text-blue-600'
                       }`}>
                         {row.estado_boleta === 'Aprobada'
                           ? 'Voucher aprobado por Secretaría'
-                          : row.estado_boleta === 'Rechazada'
-                            ? 'Voucher rechazado por Secretaría'
-                            : 'Voucher enviado — en revisión'}
+                          : 'Voucher enviado — en revisión'}
                       </p>
                     )}
                   </div>
 
-                  {/* Amount */}
-                  <p className="text-sm font-bold text-slate-800">S/ {row.monto}</p>
-
-                  {/* Payment status badge */}
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${pst.cls}`}>
-                    <PayIcon className="size-3" /> {pst.label}
-                  </span>
-
-                  {/* Voucher status badge */}
-                  {vst && VIcon && (
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${vst.cls}`}>
-                      <VIcon className="size-3" /> {vst.label}
-                    </span>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {puedeSubirVoucher(row) && !puedeReenviar(row) && (
-                      <button
-                        onClick={() => { setUploadModal(row.pago_id); setSelectedFile(null); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-medium transition-colors"
-                      >
-                        <Upload className="size-3.5" /> Subir voucher
-                      </button>
-                    )}
-
-                    {puedeReenviar(row) && (
-                      <button
-                        onClick={() => setReuploadModal(row.pago_id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium transition-colors"
-                      >
-                        <RefreshCw className="size-3.5" /> Volver a enviar
-                      </button>
-                    )}
-
-                    {hasVoucher && (
-                      <>
-                        <button
-                          onClick={() => handleVerVoucher(row.pago_id)}
-                          disabled={loadingVoucher === row.pago_id}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200 disabled:opacity-50"
-                        >
-                          {loadingVoucher === row.pago_id ? (
-                            <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                          ) : (
-                            <svg className="size-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          )}
-                          {loadingVoucher === row.pago_id ? 'Cargando…' : 'Ver voucher'}
-                        </button>
-                        <button
-                          onClick={() => setObsModal({ id: row.pago_id, month: mesLabel })}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200"
-                        >
-                          <MessageSquare className="size-3.5" />
-                          {row.observacion_rechazo ? 'Ver observación' : 'Sin observaciones'}
-                          {row.observacion_rechazo && isRejected && (
-                            <span className="size-2 rounded-full bg-red-500 ml-0.5" />
-                          )}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  <p className="text-sm font-bold text-slate-800 shrink-0">S/ {row.monto}</p>
                 </div>
 
-                {isRejected && row.observacion_rechazo && (
-                  <div className="mt-3 ml-13 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-                    <Bell className="size-3.5 text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-red-700">{row.observacion_rechazo}</p>
+                {/* ── Rejection detail panel ── */}
+                {isRejected && (
+                  <div className="mt-3 rounded-xl border border-red-200 bg-white overflow-hidden">
+                    <div className="flex items-center gap-2 px-3.5 py-2 bg-red-100/60 border-b border-red-200">
+                      <AlertCircle className="size-4 text-red-600 shrink-0" />
+                      <p className="text-xs font-semibold text-red-800">Voucher rechazado por Secretaría</p>
+                    </div>
+                    <div className="px-3.5 py-3">
+                      {row.observacion_rechazo ? (
+                        <>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-red-400 mb-1">
+                            Motivo del rechazo
+                          </p>
+                          <p className="text-sm text-red-700 leading-relaxed">{row.observacion_rechazo}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-500">
+                          Secretaría no dejó una observación. Verifica tu comprobante y vuelve a enviarlo.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
+
+                {/* ── Actions ── */}
+                <div className="flex items-center gap-2 flex-wrap mt-3">
+                  {puedeReenviar(row) && (
+                    <button
+                      onClick={() => setReuploadModal(row.pago_id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium transition-colors"
+                    >
+                      <RefreshCw className="size-3.5" /> Volver a enviar
+                    </button>
+                  )}
+
+                  {puedeSubirVoucher(row) && !puedeReenviar(row) && (
+                    <button
+                      onClick={() => { setUploadModal(row.pago_id); setSelectedFile(null); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-medium transition-colors"
+                    >
+                      <Upload className="size-3.5" /> Subir voucher
+                    </button>
+                  )}
+
+                  {hasVoucher && (
+                    <button
+                      onClick={() => handleVerVoucher(row.pago_id)}
+                      disabled={loadingVoucher === row.pago_id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-medium transition-colors border border-slate-200 disabled:opacity-50"
+                    >
+                      {loadingVoucher === row.pago_id ? (
+                        <svg className="animate-spin size-3.5" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <svg className="size-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      )}
+                      {loadingVoucher === row.pago_id ? 'Cargando…' : 'Ver / descargar comprobante'}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -515,45 +510,6 @@ export default function AlumnoPagos() {
                   )}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Observation view modal ── */}
-      {obsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-base font-semibold text-slate-800">Observación — {obsModal.month}</h3>
-              <button onClick={() => setObsModal(null)} className="p-1.5 rounded-lg hover:bg-slate-100">
-                <X className="size-4 text-slate-500" />
-              </button>
-            </div>
-            <div className="p-6">
-              {obsRow?.observacion_rechazo ? (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MessageSquare className="size-4 text-amber-600" />
-                    <p className="text-sm font-semibold text-amber-800">Observación de Secretaría:</p>
-                  </div>
-                  <p className="text-sm text-amber-800 leading-relaxed">
-                    {obsRow.observacion_rechazo}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center py-8 text-center">
-                  <CheckCircle2 className="size-10 text-emerald-300 mb-3" />
-                  <p className="text-slate-600 font-medium">Sin observaciones</p>
-                  <p className="text-sm text-slate-400 mt-1">No hay comentarios de Secretaría para este voucher.</p>
-                </div>
-              )}
-              <button
-                onClick={() => setObsModal(null)}
-                className="mt-4 w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Cerrar
-              </button>
             </div>
           </div>
         </div>

@@ -26,6 +26,8 @@ export const NotificationEvents = {
   MATERIAL_PUBLICADO:    'MATERIAL_PUBLICADO',
   ACTIVIDAD_PUBLICADA:   'ACTIVIDAD_PUBLICADA',
   SIMULACRO_PROGRAMADO:  'SIMULACRO_PROGRAMADO',
+  SIMULACRO_PREGUNTAS_CARGADAS: 'SIMULACRO_PREGUNTAS_CARGADAS',
+  NOTAS_REGISTRADAS:     'NOTAS_REGISTRADAS',
   NOTAS_ENVIADAS_A_SECRETARIA: 'NOTAS_ENVIADAS_A_SECRETARIA',
   // Libretas
   LIBRETA_PUBLICADA:     'LIBRETA_PUBLICADA',
@@ -76,6 +78,8 @@ export const EVENTO_CONFIG: Record<NotificationEvent, EventoMeta> = {
   MATERIAL_PUBLICADO:          { tipo: 'academico',  prioridad: 'normal',  entidad: 'material' },
   ACTIVIDAD_PUBLICADA:         { tipo: 'academico',  prioridad: 'normal',  entidad: 'actividad' },
   SIMULACRO_PROGRAMADO:        { tipo: 'academico',  prioridad: 'alta',    entidad: 'simulacro' },
+  SIMULACRO_PREGUNTAS_CARGADAS:{ tipo: 'academico',  prioridad: 'normal',  entidad: 'simulacro' },
+  NOTAS_REGISTRADAS:           { tipo: 'academico',  prioridad: 'normal',  entidad: 'nota' },
   NOTAS_ENVIADAS_A_SECRETARIA: { tipo: 'academico',  prioridad: 'alta',    entidad: 'nota' },
   LIBRETA_PUBLICADA:           { tipo: 'academico',  prioridad: 'urgente', entidad: 'libreta' },
   LIBRETA_BLOQUEADA:           { tipo: 'academico',  prioridad: 'alta',    entidad: 'libreta' },

@@ -1,11 +1,18 @@
 # ============================================================
-# SGEI CI/CD — Build + Deploy a Hostinger VPS
+# SGEI CI/CD — Build (GHCR) + Deploy a Hostinger VPS
+#
+#   push a master
+#     → build imágenes de producción (backend y frontend) → GHCR
+#     → scp del compose + SQL consolidado + .env.example al VPS
+#     → SSH: docker compose pull && up -d
+#
+# El VPS NO compila (clave en un KVM 1). Solo descarga imágenes.
 # ============================================================
 name: SGEI CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 env:
@@ -14,12 +21,12 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/sgei-frontend
 
 jobs:
+  # ── 1) Build & push de imágenes a GHCR ─────────────────────
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,7 +38,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Backend ──────────────────────────────────────────────
       - name: Build & push backend
         uses: docker/build-push-action@v6
         with:
@@ -42,7 +48,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── Frontend ─────────────────────────────────────────────
       - name: Build & push frontend
         uses: docker/build-push-action@v6
         with:
@@ -55,33 +60,69 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ── 2) Deploy al VPS por SSH ───────────────────────────────
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
+    if: github.ref == 'refs/heads/master'
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/sgei' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
+      # Copia el compose y el .env de ejemplo al directorio de despliegue.
+      - name: Copiar compose + .env.example al VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          source: "docker-compose.prod.yml,.env.production.example"
+          target: ${{ env.DEPLOY_PATH }}
+
+      # Copia el SQL consolidado (se monta en la BD la primera vez).
+      - name: Copiar SQL consolidado al VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          source: "SQL/consolidated"
+          target: ${{ env.DEPLOY_PATH }}/SQL
+
+      - name: Desplegar (pull + up)
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          # GHCR_PAT es OPCIONAL: solo si dejas los paquetes de GHCR privados.
+          # Si los haces públicos (recomendado), no hace falta.
+          envs: GHCR_PAT,GHCR_USER
           script: |
-            cd /opt/sgei
+            set -e
+            export GHCR_PAT="${{ secrets.GHCR_PAT }}"
+            export GHCR_USER="${{ github.repository_owner }}"
+            cd ${{ env.DEPLOY_PATH }}
 
-            # Pull latest images
+            # Login a GHCR solo si los paquetes son privados.
+            if [ -n "$GHCR_PAT" ]; then
+              echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            fi
+
+            # En el primer despliegue no existe .env: lo creamos del ejemplo,
+            # avisamos y salimos para que edites los secretos.
+            if [ ! -f .env ]; then
+              cp .env.production.example .env
+              echo "⚠  Se creó .env desde el ejemplo en ${{ env.DEPLOY_PATH }}."
+              echo "   Edita POSTGRES_PASSWORD, JWT_SECRET y FRONTEND_ORIGIN y vuelve a desplegar."
+              exit 1
+            fi
+
             docker compose -f docker-compose.prod.yml pull
-
-            # Apply DB migrations (SQL scripts)
-            docker compose -f docker-compose.prod.yml up -d db
-            docker compose -f docker-compose.prod.yml exec -T db psql -U sgei -d sgei_db -f /docker-entrypoint-initdb.d/*.sql
-
-            # Restart services
-            docker compose -f docker-compose.prod.yml up -d --force-recreate
-
-            # Cleanup old images
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f

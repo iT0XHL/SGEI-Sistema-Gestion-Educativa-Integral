@@ -14,6 +14,6 @@ export const GET = withRole(['Admin', 'Secretaria', 'Alumno'], async (_req, { pa
 
 export const PATCH = withRole(['Admin', 'Secretaria'], async (req, { params, user }) => {
   const input = await parseBody(req, UpdateAlumnoSchema);
-  const alumno = await AlumnosService.update(params.id, input, user.perfilId);
+  const alumno = await AlumnosService.update(params.id, input, user);
   return ok(alumno, 'Alumno actualizado');
 });

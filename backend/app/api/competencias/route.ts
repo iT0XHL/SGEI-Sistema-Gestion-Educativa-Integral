@@ -7,7 +7,7 @@
 //   devuelven esos; si no, se cae al default del nivel (grado_id NULL).
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok, created } from '@/lib/response';
+import { ok, okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreateCompetenciaSchema, CompetenciasQuery } from '@/schemas/academic.schema';
 import { CompetenciaService } from '@/modules/academic/estructura.service';
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withAuth(async (req) => {
   const { cursoId, gradoId } = parseQuery(req, CompetenciasQuery);
   const data = await CompetenciaService.list(cursoId, gradoId);
-  return ok(data, 'Competencias');
+  return okCached(data, 'Competencias');
 });
 
 export const POST = withRole(['Admin'], async (req) => {

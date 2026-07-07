@@ -4,7 +4,7 @@
 // ============================================================
 import { z } from 'zod';
 import { withAuth } from '@/lib/auth';
-import { ok } from '@/lib/response';
+import { ok, okCached } from '@/lib/response';
 import { parseQuery } from '@/lib/request';
 import { EscalaService } from '@/modules/academic/periodo.service';
 
@@ -15,5 +15,5 @@ const Query = z.object({ periodoId: z.string().uuid('periodoId es obligatorio') 
 export const GET = withAuth(async (req) => {
   const { periodoId } = parseQuery(req, Query);
   const data = await EscalaService.cobertura(periodoId);
-  return ok(data, 'Cobertura de la escala');
+  return okCached(data, 'Cobertura de la escala');
 });

@@ -18,6 +18,7 @@ import {
   useNotificaciones, useContarNoLeidas, useMarcarTodasLeidas, useMarcarLeida,
 } from '../../../hooks/shared/useNotificaciones';
 import { useRealtimeNotifications } from '../../../hooks/shared/useRealtimeNotifications';
+import ForceChangePassword from '../../pages/ForceChangePassword';
 import type { Notificacion } from '../../../types/notificacion';
 
 function getInitials(nombre: string): string {
@@ -146,6 +147,8 @@ export function AppShell() {
   const { session } = useSession();
   const displayName = session?.nombre ?? '…';
   const initials = session ? getInitials(session.nombre) : '…';
+  // Cambio de contraseña obligatorio: se muestra un modal sobre el home borroso.
+  const mustChangePassword = Boolean(session?.debeCambiarPassword);
 
   // Notificaciones reales: polling (React Query) + tiempo real (SSE) + toasts.
   const { data: notificaciones = [] } = useNotificaciones();
@@ -232,7 +235,13 @@ export function AppShell() {
   const isActive = (path: string) => location.pathname === path || (path !== `/${role}/inicio` && location.pathname.startsWith(path));
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <>
+    <div
+      className={`flex h-screen bg-slate-50 overflow-hidden transition-[filter] duration-200 ${
+        mustChangePassword ? 'blur-md pointer-events-none select-none' : ''
+      }`}
+      aria-hidden={mustChangePassword || undefined}
+    >
       {/* ── Mobile overlay ── */}
       {sidebarOpen && (
         <div
@@ -432,5 +441,14 @@ export function AppShell() {
         </main>
       </div>
     </div>
+
+    {/* Modal obligatorio de cambio de contraseña, sobre el home borroso. */}
+    {mustChangePassword && (
+      <ForceChangePassword
+        variant="overlay"
+        onDone={() => queryClient.invalidateQueries({ queryKey: ['session'] })}
+      />
+    )}
+    </>
   );
 }

@@ -5,7 +5,7 @@
 //  Sin flujo de publicación: se sirve siempre en vivo.
 // ============================================================
 import { withAuth, withRole } from '@/lib/auth';
-import { ok } from '@/lib/response';
+import { ok, okCached } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { DescansosQuery, UpsertDescansoSchema } from '@/modules/horarios/horario-descanso.schema';
 import { HorarioDescansoService } from '@/modules/horarios/horario-descanso.service';
@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withAuth(async (req) => {
   const { periodoId, nivelIds } = parseQuery(req, DescansosQuery);
   const data = await HorarioDescansoService.listarPorNiveles(nivelIds, periodoId);
-  return ok(data, 'Recreo y Refrigerio');
+  return okCached(data, 'Recreo y Refrigerio');
 });
 
 export const PUT = withRole(['Admin'], async (req, { user }) => {

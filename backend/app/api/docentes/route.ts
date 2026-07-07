@@ -14,6 +14,6 @@ export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
 
 export const POST = withRole(['Admin'], async (req, { user }) => {
   const input = await parseBody(req, CreateDocenteSchema);
-  const docente = await DocentesService.create(input, user.perfilId);
+  const docente = await DocentesService.create(input, user);
   return created(docente, 'Docente creado');
 });

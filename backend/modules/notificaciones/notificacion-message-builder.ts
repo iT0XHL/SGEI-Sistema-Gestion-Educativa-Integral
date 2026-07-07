@@ -35,6 +35,7 @@ export interface NotificacionContexto {
   docenteNombre?: string;
   seccionId?:     string;
   seccionNombre?: string;
+  gradoNombre?:   string;
   cursoId?:       string;
   cursoNombre?:   string;
   bimestreNombre?: string;
@@ -244,6 +245,19 @@ export function buildNotificationMessage(
       titulo = 'Notas enviadas a secretaría';
       cuerpo = `${actor} envió las notas${ctx.bimestreNombre ? ` del ${ctx.bimestreNombre}` : ''} a secretaría para revisión.`.trim();
       url    = '/secretaria/libretas';
+      break;
+
+    case NotificationEvents.NOTAS_REGISTRADAS:
+      titulo = `${actor} registró calificaciones`;
+      cuerpo = `${actor} registró calificaciones${ctx.cursoNombre ? ` de ${ctx.cursoNombre}` : ''}${ctx.bimestreNombre ? ` (${ctx.bimestreNombre})` : ''} en el sistema.`;
+      url    = '/secretaria/libretas';
+      break;
+
+    case NotificationEvents.SIMULACRO_PREGUNTAS_CARGADAS:
+      titulo = `${actor} cargó preguntas de simulacro`;
+      cuerpo = `${actor} cargó su bloque de preguntas${ctx.cursoNombre ? ` de ${ctx.cursoNombre}` : ''}${ctx.gradoNombre ? ` (${ctx.gradoNombre})` : ''}${ctx.simulacroNombre ? ` para el simulacro "${ctx.simulacroNombre}"` : ''}.`;
+      url    = '/admin/simulacro';
+      entidadId = ctx.simulacroId ?? null;
       break;
 
     case NotificationEvents.LIBRETA_PUBLICADA:

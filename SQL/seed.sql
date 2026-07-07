@@ -1213,3 +1213,92 @@ BEGIN
     RAISE NOTICE 'Horarios publicados (secciones + docentes)';
 END $pub$;
 
+-- ================================================================
+--  ÍNDICES FALTANTES (FK sin cobertura)
+--  Se ejecutan fuera de transacción para persistir incluso si el
+--  seed falla. Cada bloque captura undefined_table por si alguna
+--  tabla no se creó.
+-- ================================================================
+
+-- financial_schema.pago · concepto_id → concepto_pago
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_pago_concepto ON financial_schema.pago (concepto_id);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- financial_schema.pago · generado_por → perfil_usuario
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_pago_generado_por ON financial_schema.pago (generado_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- financial_schema.boleta_pago · revisado_por → perfil_usuario
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_boleta_pago_revisado_por ON financial_schema.boleta_pago (revisado_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- financial_schema.boleta_pago · ORDER BY fecha_subida DESC (sin filtro)
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_boleta_fecha_subida ON financial_schema.boleta_pago (fecha_subida DESC);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- financial_schema.boleta_pago · filtro por estado_revision + ORDER BY fecha_subida
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_boleta_estado_fecha ON financial_schema.boleta_pago (estado_revision, fecha_subida DESC);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- academic_schema.asistencia_docente · registrado_por → perfil_usuario
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_asistencia_docente_registrado_por ON academic_schema.asistencia_docente (registrado_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- academic_schema.libreta · generada_por / aprobada_por / publicada_por → perfil_usuario
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_libreta_generada_por ON academic_schema.libreta (generada_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_libreta_aprobada_por ON academic_schema.libreta (aprobada_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_libreta_publicada_por ON academic_schema.libreta (publicada_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- audit_schema.sesion_auditoria · columnas de búsqueda frecuente
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_sesion_auditoria_usuario ON audit_schema.sesion_auditoria (usuario_id);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_sesion_auditoria_entidad ON audit_schema.sesion_auditoria (entidad_afectada, entidad_id);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- audit_schema.historial_nota · nota_id / modificado_por
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_historial_nota_nota ON audit_schema.historial_nota (nota_id);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_historial_nota_modificado_por ON audit_schema.historial_nota (modificado_por);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- academic_schema.horario_publicacion_bloque · rango de horas
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_horario_publicacion_bloque_inicio ON academic_schema.horario_publicacion_bloque (hora_inicio);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- financial_schema.notificacion · orden por fecha
+DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_notificacion_created_at ON financial_schema.notificacion (created_at);
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+

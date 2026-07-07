@@ -27,35 +27,13 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - sgei-db-data:/var/lib/postgresql/data
-      # Los scripts corren en orden alfabético del nombre destino,
-      # SOLO cuando el volumen se crea desde cero (mismo orden que dev).
-      - "./SQL/00-setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
-      - "./SQL/sgei_ddl_v2.1_auditado (1).sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
-      - "./SQL/01_notificaciones_eventos.sql:/docker-entrypoint-initdb.d/01a-notificaciones.sql:ro"
-      - "./SQL/03-libretas-migration.sql:/docker-entrypoint-initdb.d/01b-libretas.sql:ro"
-      - "./SQL/04-fix-audit-trigger.sql:/docker-entrypoint-initdb.d/01c-fix-audit.sql:ro"
-      - "./SQL/05-simulacro-banco.sql:/docker-entrypoint-initdb.d/01d-simulacro-banco.sql:ro"
-      - "./SQL/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
-      - "./SQL/06-grados-niveles.sql:/docker-entrypoint-initdb.d/03-grados-niveles.sql:ro"
-      - "./SQL/07-horarios-publicacion.sql:/docker-entrypoint-initdb.d/04-horarios-publicacion.sql:ro"
-      - "./SQL/08-horarios-descanso.sql:/docker-entrypoint-initdb.d/05-horarios-descanso.sql:ro"
-      - "./SQL/09-competencia-grado.sql:/docker-entrypoint-initdb.d/06-competencia-grado.sql:ro"
-      - "./SQL/10-seed-demo-completo.sql:/docker-entrypoint-initdb.d/07-seed-demo-completo.sql:ro"
-      - "./SQL/11-nivel-horario-config.sql:/docker-entrypoint-initdb.d/08-nivel-horario-config.sql:ro"
-      - "./SQL/12-nivel-horario-total-horas.sql:/docker-entrypoint-initdb.d/09-nivel-horario-total-horas.sql:ro"
-      - "./SQL/13-horarios-completos.sql:/docker-entrypoint-initdb.d/10-horarios-completos.sql:ro"
-      - "./SQL/14-cursos-por-nivel.sql:/docker-entrypoint-initdb.d/11-cursos-por-nivel.sql:ro"
-      - "./SQL/15-docentes-por-area.sql:/docker-entrypoint-initdb.d/12-docentes-por-area.sql:ro"
-      - "./SQL/16-horario-completo-nuevo.sql:/docker-entrypoint-initdb.d/13-horario-completo-nuevo.sql:ro"
-      - "./SQL/17-eliminar-docentes-sin-horario.sql:/docker-entrypoint-initdb.d/14-eliminar-docentes-sin-horario.sql:ro"
-      - "./SQL/18-competencias-cursos-nuevos.sql:/docker-entrypoint-initdb.d/15-competencias-cursos-nuevos.sql:ro"
-      - "./SQL/19-area-academica-criterios.sql:/docker-entrypoint-initdb.d/16-area-academica-criterios.sql:ro"
-      - "./SQL/20-regenerar-bimestre1-catalogo-nuevo.sql:/docker-entrypoint-initdb.d/17-regenerar-bimestre1-catalogo-nuevo.sql:ro"
-      - "./SQL/21-limpieza-post-borrado-docentes.sql:/docker-entrypoint-initdb.d/18-limpieza-post-borrado-docentes.sql:ro"
-      - "./SQL/22-formato-siagie-area-academica.sql:/docker-entrypoint-initdb.d/19-formato-siagie-area-academica.sql:ro"
-      - "./SQL/23-competencias-estandar-4-criterios.sql:/docker-entrypoint-initdb.d/20-competencias-estandar-4-criterios.sql:ro"
-      - "./SQL/24-token-recuperacion.sql:/docker-entrypoint-initdb.d/21-token-recuperacion.sql:ro"
-      - "./SQL/25-limpieza-cursos-genericos.sql:/docker-entrypoint-initdb.d/22-limpieza-cursos-genericos.sql:ro"
+      # SQL CONSOLIDADO (fuente de verdad, idéntico a docker-compose.yml de dev).
+      # Corre en orden alfabético del nombre destino, SOLO al crear el volumen
+      # desde cero. Incluye ya todas las migraciones (debe_cambiar_password,
+      # índices, etc.), así que prod queda 1:1 con dev.
+      - "./SQL/consolidated/setup.sql:/docker-entrypoint-initdb.d/00-setup.sql:ro"
+      - "./SQL/consolidated/ddl.sql:/docker-entrypoint-initdb.d/01-ddl.sql:ro"
+      - "./SQL/consolidated/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sgei} -d ${POSTGRES_DB:-sgei_db}"]
       interval: 5s

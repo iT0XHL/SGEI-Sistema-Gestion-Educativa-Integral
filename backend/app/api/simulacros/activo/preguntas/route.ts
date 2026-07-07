@@ -20,6 +20,6 @@ export const GET = withRole(['Docente'], async (req, { user }) => {
 
 export const POST = withRole(['Docente'], async (req, { user }) => {
   const input = await parseBody(req, GuardarPreguntasSchema);
-  const data = await SimulacroService.guardarPreguntas(user.entidadId, input);
+  const data = await SimulacroService.guardarPreguntas(user, input);
   return created(data, 'Preguntas guardadas');
 });

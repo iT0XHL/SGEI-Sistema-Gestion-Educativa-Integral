@@ -1,5 +1,5 @@
 import { withRole } from '@/lib/auth';
-import { ok, created } from '@/lib/response';
+import { ok, okCached, created } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { CreatePeriodoSchema, ListPeriodosQuery } from '@/schemas/periodo.schema';
 import { PeriodoService } from '@/modules/periodo/periodo.service';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const GET = withRole(['Admin', 'Secretaria'], async (req) => {
   const q = parseQuery(req, ListPeriodosQuery);
   const data = await PeriodoService.list(q);
-  return ok(data, 'Listado de períodos');
+  return okCached(data, 'Listado de períodos');
 });
 
 export const POST = withRole(['Admin'], async (req, { user }) => {

@@ -17,6 +17,18 @@ export function ok<T>(
   return NextResponse.json({ success: true, data, message }, { status: statusCode });
 }
 
+/** Respuesta de éxito con caché pública. */
+export function okCached<T>(
+  data: T,
+  message = 'OK',
+  maxAge = 60,
+): NextResponse<ApiSuccess<T>> {
+  return NextResponse.json(
+    { success: true, data, message },
+    { status: 200, headers: { 'Cache-Control': `public, max-age=${maxAge}, s-maxage=${maxAge * 2}` } },
+  );
+}
+
 /** Respuesta de éxito para creación de recursos (201). */
 export function created<T>(data: T, message = 'Recurso creado'): NextResponse<ApiSuccess<T>> {
   return ok(data, message, 201);

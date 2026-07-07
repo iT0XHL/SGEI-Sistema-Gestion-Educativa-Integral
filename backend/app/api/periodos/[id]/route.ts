@@ -22,6 +22,6 @@ export const DELETE = withRole(['Admin'], async (_req, { params, user }) => {
 
 export const PUT = withRole(['Admin'], async (req, { params, user }) => {
   const body = await parseBody(req, ActivarPeriodoSchema);
-  const result = await PeriodoService.setActivo(params.id, body.activo, user.perfilId);
+  const result = await PeriodoService.setActivo(params.id, body.activo, user);
   return ok(result, `Período ${body.activo ? 'activado' : 'desactivado'}`);
 });

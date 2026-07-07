@@ -5,7 +5,7 @@
 // ============================================================
 import { z } from 'zod';
 import { withAuth, withRole } from '@/lib/auth';
-import { ok } from '@/lib/response';
+import { ok, okCached } from '@/lib/response';
 import { parseBody, parseQuery } from '@/lib/request';
 import { UpsertEscalaSchema } from '@/schemas/academic.schema';
 import { EscalaService } from '@/modules/academic/periodo.service';
@@ -17,7 +17,7 @@ const Query = z.object({ periodoId: z.string().uuid('periodoId es obligatorio') 
 export const GET = withAuth(async (req) => {
   const { periodoId } = parseQuery(req, Query);
   const data = await EscalaService.list(periodoId);
-  return ok(data, 'Escala de calificaciones');
+  return okCached(data, 'Escala de calificaciones');
 });
 
 export const PUT = withRole(['Admin'], async (req) => {

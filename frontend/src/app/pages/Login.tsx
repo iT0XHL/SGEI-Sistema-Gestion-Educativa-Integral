@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { GraduationCap, Eye, EyeOff, ArrowRight, BookOpen, Users, Shield, FileText } from 'lucide-react';
 import type { Role } from '../data/mockData';
 import { authApi } from '../../lib/api/auth.api';
@@ -27,6 +28,7 @@ const ROLE_ROUTE: Record<Role, string> = {
 
 export default function Login() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Role>('Alumno');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -52,12 +54,11 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const { redirectTo, debeCambiarPassword } = await authApi.login({ email: email.trim(), password, rol: selected });
-      if (debeCambiarPassword) {
-        navigate('/cambiar-contrasena', { replace: true });
-      } else {
-        navigate(redirectTo || ROLE_ROUTE[selected]);
-      }
+      const { redirectTo } = await authApi.login({ email: email.trim(), password, rol: selected });
+      // Refresca la sesión cacheada para que AppShell lea el estado fresco
+      // (incluye debeCambiarPassword → muestra el modal sobre el home borroso).
+      await queryClient.invalidateQueries({ queryKey: ['session'] });
+      navigate(redirectTo || ROLE_ROUTE[selected]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Credenciales incorrectas.');
     } finally {

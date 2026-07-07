@@ -13,6 +13,8 @@ export interface SessionUser {
   nombre:      string;
   entidadId:   string;
   entidadTipo: string;
+  /** TRUE = debe cambiar la contraseña; AppShell muestra el modal obligatorio. */
+  debeCambiarPassword?: boolean;
 }
 
 export interface LoginResponse {

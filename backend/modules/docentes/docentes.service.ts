@@ -3,8 +3,12 @@ import { hashPassword } from '@/lib/password';
 import { paginate } from '@/lib/response';
 import { NotFoundError, ConflictError } from '@/errors/http-errors';
 import { withAuditContext } from '@/lib/audit-context';
+import { revokeUserTokens } from '@/lib/token-blacklist';
 import { AuditService } from '@/modules/auditoria/audit.service';
 import { DocentesRepository, type ListFilters } from './docentes.repository';
+import { NotificacionService } from '@/modules/notificaciones/notificacion.service';
+import { NotificationEvents } from '@/modules/notificaciones/notificacion.events';
+import type { JwtClaims } from '@/lib/jwt';
 import type { CreateDocenteInput, UpdateDocenteInput } from '@/schemas/personas.schema';
 
 export interface DocenteDTO {
@@ -67,7 +71,8 @@ export const DocentesService = {
     };
   },
 
-  async create(input: CreateDocenteInput, adminPerfilId: string): Promise<DocenteDTO> {
+  async create(input: CreateDocenteInput, actor: JwtClaims): Promise<DocenteDTO> {
+    const adminPerfilId = actor.perfilId;
     const existing = await DocentesRepository.findByDNI(input.dni);
     if (existing) throw new ConflictError('Ya existe un docente con ese DNI');
 
@@ -79,9 +84,10 @@ export const DocentesService = {
 
     const passwordHash = await hashPassword(input.password);
 
-    return prisma.$transaction(async (tx) => {
+    const docente = await prisma.$transaction(async (tx) => {
       const cred = await tx.credencial.create({
-        data: { usuario_login: input.usuario_login, password_hash: passwordHash },
+        // Cuenta nueva: se obliga a cambiar la contraseña en el primer login.
+        data: { usuario_login: input.usuario_login, password_hash: passwordHash, debe_cambiar_password: true },
         select: { id: true },
       });
 
@@ -145,13 +151,25 @@ export const DocentesService = {
 
       return { ...docente, usuario_login: input.usuario_login };
     });
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.DOCENTE_CREADO,
+      actor:  { perfilId: actor.perfilId, rol: actor.rol, nombre: actor.nombre },
+      contexto: {
+        docenteId:     docente.id,
+        docenteNombre: `${docente.nombres} ${docente.apellido_paterno}`.trim(),
+      },
+    });
+
+    return docente;
   },
 
   async update(
     docenteId: string,
     input: UpdateDocenteInput,
-    adminPerfilId: string,
+    actor: JwtClaims,
   ): Promise<DocenteDTO> {
+    const adminPerfilId = actor.perfilId;
     const current = await DocentesRepository.findById(docenteId);
     if (!current) throw new NotFoundError('Docente');
 
@@ -160,7 +178,7 @@ export const DocentesService = {
       if (existing) throw new ConflictError('Ya existe otro docente con ese DNI');
     }
 
-    return prisma.$transaction(async (tx) => {
+    const docente = await prisma.$transaction(async (tx) => {
       if (input.usuario_login && input.usuario_login !== current.perfil?.credencial.usuario_login) {
         const existing = await tx.credencial.findUnique({
           where: { usuario_login: input.usuario_login },
@@ -203,6 +221,17 @@ export const DocentesService = {
 
       return this.get(docenteId);
     });
+
+    await NotificacionService.notificarEvento({
+      evento: NotificationEvents.DOCENTE_ACTUALIZADO,
+      actor:  { perfilId: actor.perfilId, rol: actor.rol, nombre: actor.nombre },
+      contexto: {
+        docenteId,
+        docenteNombre: `${docente.nombres} ${docente.apellido_paterno}`.trim(),
+      },
+    });
+
+    return docente;
   },
 
   async setActivo(docenteId: string, activo: boolean, adminPerfilId: string): Promise<DocenteDTO> {
@@ -239,5 +268,8 @@ export const DocentesService = {
         data: { password_hash: hash, debe_cambiar_password: true },
       }),
     );
+    // Invalida la sesión activa del docente: al volver a entrar se le forzará
+    // el cambio de contraseña (debe_cambiar_password = true).
+    revokeUserTokens(docente.perfil_usuario_id);
   },
 };

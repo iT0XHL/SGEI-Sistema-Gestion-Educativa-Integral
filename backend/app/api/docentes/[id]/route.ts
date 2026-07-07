@@ -13,6 +13,6 @@ export const GET = withRole(['Admin', 'Secretaria'], async (_req, { params }) =>
 
 export const PATCH = withRole(['Admin'], async (req, { params, user }) => {
   const input = await parseBody(req, UpdateDocenteSchema);
-  const docente = await DocentesService.update(params.id, input, user.perfilId);
+  const docente = await DocentesService.update(params.id, input, user);
   return ok(docente, 'Docente actualizado');
 });

@@ -9,6 +9,6 @@ import { PeriodoService } from '@/modules/periodo/periodo.service';
 export const dynamic = 'force-dynamic';
 
 export const PATCH = withRole(['Admin'], async (_req, { params, user }) => {
-  const periodo = await PeriodoService.setActivo(params.id, true, user.perfilId);
+  const periodo = await PeriodoService.setActivo(params.id, true, user);
   return ok(periodo, 'Período activado');
 });
